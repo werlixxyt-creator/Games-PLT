@@ -40,6 +40,8 @@ public static class Database
         // SQL подходит и для SQLite, и для PostgreSQL.
         AddColumnIfMissing(db, "Matches", "Mode", "INTEGER NOT NULL DEFAULT 0");
         AddColumnIfMissing(db, "Matches", "Fast", "BOOLEAN NOT NULL DEFAULT FALSE");
+        // матчи до появления сложности считаем сыгранными на нормальной (1)
+        AddColumnIfMissing(db, "Matches", "Difficulty", "INTEGER NOT NULL DEFAULT 1");
         // бывший режим «Скорость» (1) — теперь «Классика» в быстром темпе
         db.ExecuteSqlRaw("UPDATE \"Matches\" SET \"Mode\" = 0, \"Fast\" = TRUE WHERE \"Mode\" = 1");
         AddColumnIfMissing(db, "AspNetUsers", "SliderSkin", "TEXT NULL");

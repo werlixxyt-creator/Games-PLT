@@ -57,24 +57,28 @@ public sealed class Match
 {
     private readonly Random _rnd;
     private readonly ModeRules _rules;
+    private readonly DifficultyRules _diff;
     private int _finishedCount;
     private double? _firstFinishAt;
 
-    public Match(string id, GameMode mode, bool fast, Random rnd, bool practice = false)
+    public Match(string id, GameMode mode, bool fast, Difficulty difficulty, Random rnd, bool practice = false)
     {
         Id = id;
         Mode = mode;
         Fast = fast;
+        Difficulty = difficulty;
         Practice = practice;
         _rnd = rnd;
         _rules = mode.Rules();
-        Level = LevelGenerator.Generate(fast, rnd);
+        _diff = difficulty.Rules();
+        Level = LevelGenerator.Generate(fast, _diff, rnd);
     }
 
     public string Id { get; }
     public GameMode Mode { get; }
     /// <summary>Быстрый темп: ползунок заполняется одним нажатием. Иначе стрелку надо держать.</summary>
     public bool Fast { get; }
+    public Difficulty Difficulty { get; }
     /// <summary>Тренировка с ботом: в базу не сохраняется.</summary>
     public bool Practice { get; }
     public Slider[] Level { get; }
@@ -141,12 +145,12 @@ public sealed class Match
 
         if (held == 0)
         {
-            p.Progress -= GameRules.IdleDrainPerSecond * dt;
+            p.Progress -= _diff.IdleDrainPerSecond * dt;
         }
         else if ((held & ~target) != 0)
         {
             // зажата хоть одна неправильная стрелка (даже вместе с правильной) — штраф
-            p.Progress -= GameRules.WrongDrainPerSecond * dt;
+            p.Progress -= _diff.WrongDrainPerSecond * dt;
         }
         else
         {
@@ -189,7 +193,7 @@ public sealed class Match
         }
         else
         {
-            p.StunUntil = GameTime + GameRules.FastWrongStunSeconds;
+            p.StunUntil = GameTime + _diff.FastWrongStunSeconds;
         }
     }
 
@@ -213,8 +217,11 @@ public sealed class Match
         else if (_rules.Lives > 0 && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Miss(p);
     }
 
-    /// <summary>Как часто бот ошибается: в «Хардкоре» он осторожнее, иначе почти всегда выбывает.</summary>
-    private double BotMistakeChance(double usual) => _rules.Lives > 0 ? 0.03 : usual;
+    /// <summary>Как часто бот ошибается: зависит от сложности; в «Хардкоре» он осторожнее, иначе почти всегда выбывает.</summary>
+    private double BotMistakeChance(double usual) => (_rules.Lives > 0 ? 0.03 : usual) * _diff.BotMistakes;
+
+    /// <summary>Сколько бот «замечает» новую стрелку: на лёгкой — дольше, на сложной — быстрее.</summary>
+    private double BotReactionTime(double spread) => (0.2 + _rnd.NextDouble() * spread) * _diff.BotReaction;
 
     private void BotThinkFast(Player bot, double dt)
     {
@@ -225,7 +232,7 @@ public sealed class Match
         if (bot.BotSeenIndex != bot.Index)
         {
             bot.BotSeenIndex = bot.Index;
-            bot.BotWait = 0.2 + _rnd.NextDouble() * 0.2;
+            bot.BotWait = BotReactionTime(0.2);
             bot.BotWrong = _rnd.NextDouble() < BotMistakeChance(0.08) ? 1 : 0;
         }
 
@@ -252,7 +259,7 @@ public sealed class Match
         {
             // новый ползунок: бот "замечает" стрелку с задержкой и иногда ошибается
             bot.BotSeenIndex = bot.Index;
-            bot.BotWait = 0.2 + _rnd.NextDouble() * 0.25;
+            bot.BotWait = BotReactionTime(0.25);
             bot.BotWrong = _rnd.NextDouble() < BotMistakeChance(0.12) ? 0.3 : 0;
             SetHeld(bot, 0);
         }
@@ -313,15 +320,16 @@ public sealed class Match
         matchId = Id,
         mode = Mode.ToWire(),
         fast = Fast,
+        difficulty = Difficulty.ToWire(),
         practice = Practice,
         mirror = _rules.Mirror,
         blind = _rules.Blind,
         lives = _rules.Lives,
         you = yourSlot,
         countdown = GameRules.CountdownSeconds,
-        stun = GameRules.FastWrongStunSeconds,
-        idleDrain = GameRules.IdleDrainPerSecond,
-        wrongDrain = GameRules.WrongDrainPerSecond,
+        stun = _diff.FastWrongStunSeconds,
+        idleDrain = _diff.IdleDrainPerSecond,
+        wrongDrain = _diff.WrongDrainPerSecond,
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds }),
         players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin }),
     };
@@ -380,6 +388,7 @@ public sealed class Match
         Code = Id,
         Mode = Mode,
         Fast = Fast,
+        Difficulty = Difficulty,
         PlayedAt = DateTime.UtcNow,
         Duration = Math.Round(Math.Max(0, GameTime), 2),
         SliderCount = Level.Length,

@@ -56,11 +56,11 @@ public sealed record Slider(Arrow Arrow, double FillSeconds);
 public static class LevelGenerator
 {
     /// <param name="fast">Быстрый темп: ползунок — одно нажатие, зато их больше.</param>
-    public static Slider[] Generate(bool fast, Random rnd)
+    public static Slider[] Generate(bool fast, DifficultyRules d, Random rnd)
     {
         var count = fast
-            ? rnd.Next(GameRules.FastMinSliders, GameRules.FastMaxSliders + 1)
-            : rnd.Next(GameRules.MinSliders, GameRules.MaxSliders + 1);
+            ? rnd.Next(d.FastMinSliders, d.FastMaxSliders + 1)
+            : rnd.Next(d.MinSliders, d.MaxSliders + 1);
         var sliders = new Slider[count];
 
         for (var i = 0; i < count; i++)
@@ -73,8 +73,8 @@ public static class LevelGenerator
             // не больше двух одинаковых стрелок подряд — иначе скучно
             while (i >= 2 && arrow == sliders[i - 1].Arrow && arrow == sliders[i - 2].Arrow);
 
-            var seconds = fast ? 0 : GameRules.MinFillSeconds
-                          + rnd.NextDouble() * (GameRules.MaxFillSeconds - GameRules.MinFillSeconds);
+            var seconds = fast ? 0 : d.MinFillSeconds
+                          + rnd.NextDouble() * (d.MaxFillSeconds - d.MinFillSeconds);
 
             sliders[i] = new Slider(arrow, Math.Round(seconds, 2));
         }

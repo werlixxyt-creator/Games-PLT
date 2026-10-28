@@ -18,7 +18,13 @@ const MODES = {
 // темп выбирается для любого режима
 const PACES = {
   normal: { name: "обычный", desc: "Держи стрелку, пока ползунок не заполнится." },
-  fast: { name: "быстрый", desc: "Одно нажатие — один ползунок, но их 20–30." },
+  fast: { name: "быстрый", desc: "Одно нажатие — один ползунок, но их намного больше." },
+};
+// сложность — для матчей и тренировок; сам баланс задаёт сервер (GameRules.cs)
+const DIFFS = {
+  easy: { name: "лёгкая", desc: "Меньше ползунков, штрафы мягче, бот медлительный." },
+  normal: { name: "нормальная", desc: "Обычный баланс." },
+  hard: { name: "сложная", desc: "Больше ползунков, заполняются быстрее, штрафы и паузы жёстче, бот почти не ошибается." },
 };
 
 const SKIN_SLOTS = ["slider", "win", "streak"];
@@ -55,15 +61,18 @@ let online = false;      // хотим ли быть подключены к х�
 let profile = null;      // ответ /api/account/me
 let gameMode = "classic";
 let pace = "normal";
+let difficulty = "normal";
 try {
+  if (DIFFS[localStorage.getItem("arrowrush.difficulty")]) difficulty = localStorage.getItem("arrowrush.difficulty");
   if (MODES[localStorage.getItem("arrowrush.mode")]) gameMode = localStorage.getItem("arrowrush.mode");
   else if (localStorage.getItem("arrowrush.mode") === "speed") pace = "fast"; // бывший режим «Скорость»
   if (PACES[localStorage.getItem("arrowrush.pace")]) pace = localStorage.getItem("arrowrush.pace");
 } catch { /* приватный режим */ }
 
-/** «Зеркало · быстрый» — режим и темп одной строкой. */
-function modeLabel(mode, fast) {
-  return `${MODES[mode].name} · ${PACES[fast ? "fast" : "normal"].name}`;
+/** «Зеркало · быстрый · сложная» — режим, темп и (если не нормальная) сложность одной строкой. */
+function modeLabel(mode, fast, diff = "normal") {
+  const label = `${MODES[mode].name} · ${PACES[fast ? "fast" : "normal"].name}`;
+  return diff !== "normal" && DIFFS[diff] ? `${label} · ${DIFFS[diff].name}` : label;
 }
 
 // режимы с нажатиями: свой прогресс считаем сразу по нажатию, не дожидаясь сервера
@@ -357,6 +366,25 @@ for (const t of document.querySelectorAll("#pace-tabs .tab")) {
   t.addEventListener("click", () => { if (t.dataset.pace !== pace) setPace(t.dataset.pace); });
 }
 
+function setDifficulty(d) {
+  difficulty = d;
+  try { localStorage.setItem("arrowrush.difficulty", d); } catch { /* ничего */ }
+  const tabs = [...document.querySelectorAll("#diff-tabs .tab")];
+  tabs.forEach((t) => {
+    const on = t.dataset.difficulty === d;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-checked", on);
+  });
+  $("diff-tabs").dataset.active = tabs.findIndex((t) => t.dataset.difficulty === d);
+  $("diff-tabs").dataset.level = d;
+  $("diff-desc").textContent = DIFFS[d].desc;
+}
+
+for (const t of document.querySelectorAll("#diff-tabs .tab")) {
+  t.addEventListener("click", () => { if (t.dataset.difficulty !== difficulty) setDifficulty(t.dataset.difficulty); });
+}
+setDifficulty(difficulty);
+
 /** Описания и итоги на карточках режимов — под выбранный темп. В «Хардкоре» паузы за ошибку нет. */
 function renderModeInfo() {
   for (const slide of document.querySelectorAll("#mode-stage .mode-slide")) {
@@ -438,7 +466,7 @@ function applyProfile(p) {
       : `${m.place} из ${m.players} · ${m.sliders}/${m.total}`;
     const tag = document.createElement("span");
     tag.className = "tag-mode";
-    tag.textContent = modeLabel(m.mode, m.fast).toLowerCase();
+    tag.textContent = modeLabel(m.mode, m.fast, m.difficulty).toLowerCase();
     what.append(text, tag);
 
     const when = document.createElement("span");
@@ -639,12 +667,12 @@ async function findMatch(practice) {
     search = { startedAt: performance.now(), inQueue: 1, botAfter: 12, timer: null };
     search.timer = setInterval(updateSearch, 250);
     updateSearch();
-    $("search-mode").textContent = `Режим: ${modeLabel(gameMode, pace === "fast")}`;
+    $("search-mode").textContent = `Режим: ${modeLabel(gameMode, pace === "fast", difficulty)}`;
     show("search");
   }
 
   try {
-    await conn.invoke("FindMatch", gameMode, pace === "fast", practice);
+    await conn.invoke("FindMatch", gameMode, pace === "fast", difficulty, practice);
   } catch (e) {
     // текст HubException с сервера приходит после "HubException: "
     const msg = String((e && e.message) || "").split("HubException: ")[1];
@@ -742,7 +770,7 @@ function startMatch(d) {
   $("combo").hidden = true;
 
   $("hud-lives-box").hidden = !d.lives;
-  $("hud-tag").textContent = modeLabel(d.mode, d.fast) + (d.practice ? " · тренировка" : "");
+  $("hud-tag").textContent = modeLabel(d.mode, d.fast, d.difficulty) + (d.practice ? " · тренировка" : "");
   $("hud-tag").style.setProperty("--c", MODES[d.mode].color);
 
   // моя дорожка

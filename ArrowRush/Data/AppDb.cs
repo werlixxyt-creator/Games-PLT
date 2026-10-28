@@ -25,6 +25,7 @@ public sealed class MatchRecord
     public GameMode Mode { get; set; }
     /// <summary>Быстрый темп (нажатия) или обычный (удержание).</summary>
     public bool Fast { get; set; }
+    public Difficulty Difficulty { get; set; } = Difficulty.Normal;
     public DateTime PlayedAt { get; set; }
     public double Duration { get; set; }
     public int SliderCount { get; set; }

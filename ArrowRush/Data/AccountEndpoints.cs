@@ -93,6 +93,7 @@ public static class AccountEndpoints
             {
                 p.Match.Mode,
                 p.Match.Fast,
+                p.Match.Difficulty,
                 p.Match.PlayedAt,
                 p.Place,
                 Players = p.Match.Participants.Count,
@@ -137,6 +138,7 @@ public static class AccountEndpoints
             {
                 mode = r.Mode.ToWire(),
                 fast = r.Fast,
+                difficulty = r.Difficulty.ToWire(),
                 // SQLite теряет пометку UTC — возвращаем её, чтобы браузер показал местное время
                 playedAt = DateTime.SpecifyKind(r.PlayedAt, DateTimeKind.Utc),
                 place = r.Place,
