@@ -469,6 +469,8 @@ h3 {
   height: 330px;
   touch-action: pan-y;
   user-select: none;
+  /* дальние карточки (через одну) лежат за краем — их не видно и при перелистывании */
+  overflow: hidden;
 }
 .mode-slide {
   --off: 0;

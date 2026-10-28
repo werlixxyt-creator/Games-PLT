@@ -331,9 +331,12 @@ function setGameMode(mode, animate = false) {
   $("screen-modes").style.setProperty("--c", MODES[mode].color);
 
   if (animate) {
-    const cur = document.querySelector(`#mode-stage [data-game-mode="${mode}"] .slide-icon`);
-    const [x, y] = fx.anchor(cur);
-    fx.ring(x, y, getComputedStyle(cur).getPropertyValue("--c").trim(), 120, 4);
+    // карточка ещё едет — кольцо рисуем там, где она остановится: по центру, на месте иконки
+    const cur = document.querySelector(`#mode-stage [data-game-mode="${mode}"]`);
+    const stage = $("mode-stage").getBoundingClientRect();
+    const icon = cur.querySelector(".slide-icon");
+    const y = stage.top + cur.offsetTop + icon.offsetTop + icon.offsetHeight / 2;
+    fx.ring(stage.left + stage.width / 2, y, getComputedStyle(cur).getPropertyValue("--c").trim(), 120, 4);
   }
   renderModeInfo();
 }
