@@ -1,6 +1,8 @@
 using System.Security.Claims;
+using ArrowRush.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 namespace ArrowRush.Game;
 
@@ -10,11 +12,19 @@ namespace ArrowRush.Game;
 /// queued, matchStart, state, matchEnd.
 /// </summary>
 [Authorize]
-public sealed class GameHub(MatchManager manager) : Hub
+public sealed class GameHub(MatchManager manager, AppDb db) : Hub
 {
-    /// <param name="mode">"classic" или "speed".</param>
-    public Task FindMatch(string? mode) =>
-        manager.FindMatchAsync(Context.ConnectionId, Context.UserIdentifier!, Context.User!.FindFirstValue(ClaimTypes.Name)!, GameModes.Parse(mode));
+    /// <param name="mode">"classic", "speed", "mirror", "blind" или "hardcore".</param>
+    /// <param name="practice">true — сразу матч с ботом, не в статистику.</param>
+    public async Task FindMatch(string? mode, bool practice)
+    {
+        var userId = Context.UserIdentifier!;
+        // скин ползунков берём из базы: его увидят соперники
+        var skin = await db.Users.Where(u => u.Id == userId).Select(u => u.SliderSkin).FirstOrDefaultAsync();
+
+        await manager.FindMatchAsync(Context.ConnectionId, userId, Context.User!.FindFirstValue(ClaimTypes.Name)!,
+            Skins.Equipped(Skins.Slider, skin), GameModes.Parse(mode), practice);
+    }
 
     public Task CancelSearch() => manager.CancelSearchAsync(Context.ConnectionId);
 

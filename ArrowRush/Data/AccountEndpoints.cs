@@ -17,6 +17,7 @@ public static class AccountEndpoints
     public const int MaxPasswordLength = 64;
 
     public sealed record Credentials(string? UserName, string? Password);
+    public sealed record SkinChoice(string? Slot, string? Id);
 
     public static void MapAccount(this WebApplication app)
     {
@@ -25,6 +26,7 @@ public static class AccountEndpoints
         api.MapPost("/login", Login);
         api.MapPost("/logout", Logout);
         api.MapGet("/me", Me).RequireAuthorization();
+        api.MapPost("/skin", SetSkin).RequireAuthorization();
     }
 
     private static async Task<IResult> Register(Credentials body, UserManager<AppUser> users, SignInManager<AppUser> signIn)
@@ -99,9 +101,28 @@ public static class AccountEndpoints
             })
             .ToListAsync();
 
+        var achievements = await LoadAchievementsAsync(db, userId!);
+
         return Results.Ok(new
         {
             userName = user.UserName,
+            streak = new { current = achievements.Streak, best = achievements.BestStreak },
+            skins = Skins.All.Select(s => new
+            {
+                slot = s.Slot,
+                id = s.Id,
+                name = s.Name,
+                by = s.By.ToString().ToLowerInvariant(),
+                need = s.Need,
+                have = achievements.Value(s.By),
+                unlocked = achievements.Has(s),
+            }),
+            equipped = new Dictionary<string, string>
+            {
+                [Skins.Slider] = Skins.Equipped(Skins.Slider, user.SliderSkin),
+                [Skins.Win] = Skins.Equipped(Skins.Win, user.WinSkin),
+                [Skins.StreakSlot] = Skins.Equipped(Skins.StreakSlot, user.StreakSkin),
+            },
             // { classic: {games, wins, sliders}, speed: {...} } — нули, если в режиме ещё не играл
             stats = Enum.GetValues<GameMode>().ToDictionary(
                 m => m.ToWire(),
@@ -121,6 +142,46 @@ public static class AccountEndpoints
                 left = r.Left,
             }),
         });
+    }
+
+    /// <summary>Надеть скин — только открытый.</summary>
+    private static async Task<IResult> SetSkin(SkinChoice body, ClaimsPrincipal principal, AppDb db)
+    {
+        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        var user = userId is null ? null : await db.Users.FindAsync(userId);
+        if (user is null) return Results.Unauthorized();
+
+        var skin = Skins.Find(body.Slot, body.Id);
+        if (skin is null) return Error("Нет такого скина");
+        if (!(await LoadAchievementsAsync(db, userId!)).Has(skin)) return Error("Этот скин ещё не открыт");
+
+        switch (skin.Slot)
+        {
+            case Skins.Slider: user.SliderSkin = skin.Id; break;
+            case Skins.Win: user.WinSkin = skin.Id; break;
+            case Skins.StreakSlot: user.StreakSkin = skin.Id; break;
+        }
+        await db.SaveChangesAsync();
+        return Results.Ok();
+    }
+
+    /// <summary>Итоги по всем режимам и серии побед подряд (текущая и лучшая).</summary>
+    private static async Task<Achievements> LoadAchievementsAsync(AppDb db, string userId)
+    {
+        var results = await db.MatchParticipants
+            .Where(p => p.UserId == userId)
+            .OrderBy(p => p.MatchRecordId)
+            .Select(p => new { Win = p.Place == 1 && p.FinishTime != null, p.Sliders })
+            .ToListAsync();
+
+        int streak = 0, best = 0;
+        foreach (var r in results)
+        {
+            streak = r.Win ? streak + 1 : 0;
+            best = Math.Max(best, streak);
+        }
+
+        return new Achievements(results.Count, results.Count(r => r.Win), results.Sum(r => r.Sliders), streak, best);
     }
 
     private static string? ValidateName(string name)

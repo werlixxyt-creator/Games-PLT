@@ -10,6 +10,11 @@ namespace ArrowRush.Data;
 public sealed class AppUser : IdentityUser
 {
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Надетые скины (Id из <see cref="Skins"/>), null — по умолчанию.</summary>
+    public string? SliderSkin { get; set; }
+    public string? WinSkin { get; set; }
+    public string? StreakSkin { get; set; }
 }
 
 /// <summary>Сыгранный матч.</summary>

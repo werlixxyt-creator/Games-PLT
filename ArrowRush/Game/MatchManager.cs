@@ -10,7 +10,7 @@ namespace ArrowRush.Game;
 /// </summary>
 public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory scopes, ILogger<MatchManager> log) : BackgroundService
 {
-    private sealed record QueuedPlayer(string ConnectionId, string UserId, string Name, GameMode Mode, double JoinedAt);
+    private sealed record QueuedPlayer(string ConnectionId, string UserId, string Name, string Skin, GameMode Mode, double JoinedAt);
     private sealed record Outgoing(IReadOnlyList<string> To, string Method, object Payload);
 
     private static readonly string[] BotNames = ["Бот Шустрик", "Бот Ракета", "Бот Стрелок"];
@@ -26,7 +26,8 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
 
     // ---------- Вызовы из GameHub ----------
 
-    public Task FindMatchAsync(string connectionId, string userId, string name, GameMode mode)
+    /// <param name="practice">Тренировка: матч с ботом сразу, без очереди и без записи в статистику.</param>
+    public Task FindMatchAsync(string connectionId, string userId, string name, string skin, GameMode mode, bool practice)
     {
         List<Outgoing> outbox;
         lock (_lock)
@@ -38,8 +39,17 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
             if (_queue.Any(q => q.UserId == userId) || _matches.Any(m => m.Players.Any(p => p.UserId == userId && !p.Left)))
                 throw new HubException("Ты уже ищешь матч или играешь в другой вкладке");
 
-            _queue.Add(new QueuedPlayer(connectionId, userId, name, mode, Now));
-            outbox = QueueUpdates();
+            var me = new QueuedPlayer(connectionId, userId, name, skin, mode, Now);
+            if (practice)
+            {
+                outbox = [];
+                StartMatch(mode, [me], outbox, practice: true);
+            }
+            else
+            {
+                _queue.Add(me);
+                outbox = QueueUpdates();
+            }
         }
         return SendAsync(outbox);
     }
@@ -152,25 +162,30 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
         if (changed) outbox.AddRange(QueueUpdates());
     }
 
-    private void StartMatch(GameMode mode, List<QueuedPlayer> group, List<Outgoing> outbox)
+    private void StartMatch(GameMode mode, List<QueuedPlayer> group, List<Outgoing> outbox, bool practice = false)
     {
-        var match = new Match(Guid.NewGuid().ToString("N")[..8], mode, new Random(_rnd.Next()));
+        var match = new Match(Guid.NewGuid().ToString("N")[..8], mode, new Random(_rnd.Next()), practice);
 
         var slot = 0;
         foreach (var q in group)
         {
-            match.Players.Add(new Player { Slot = slot++, Name = q.Name, ConnectionId = q.ConnectionId, UserId = q.UserId });
+            match.Players.Add(new Player { Slot = slot++, Name = q.Name, ConnectionId = q.ConnectionId, UserId = q.UserId, Skin = q.Skin });
             _matchByConnection[q.ConnectionId] = match;
         }
 
         // одиночке — один бот, чтобы не ждать вечно
         if (match.Players.Count < GameRules.MinPlayers)
         {
-            match.Players.Add(new Player { Slot = slot, Name = BotNames[_rnd.Next(BotNames.Length)] });
+            match.Players.Add(new Player
+            {
+                Slot = slot,
+                Name = BotNames[_rnd.Next(BotNames.Length)],
+                Skin = Skins.SliderIds[_rnd.Next(Skins.SliderIds.Length)],
+            });
         }
 
         _matches.Add(match);
-        log.LogInformation("Матч {Id} ({Mode}): {Players}", match.Id, mode, string.Join(", ", match.Players.Select(p => p.Name)));
+        log.LogInformation("Матч {Id} ({Mode}{Practice}): {Players}", match.Id, mode, practice ? ", тренировка" : "", string.Join(", ", match.Players.Select(p => p.Name)));
 
         foreach (var p in match.Players.Where(p => !p.IsBot))
         {
@@ -196,7 +211,7 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
                 }
                 foreach (var c in to) _matchByConnection.Remove(c);
                 _matches.RemoveAt(i);
-                finished.Add(match.ToRecord());
+                if (!match.Practice) finished.Add(match.ToRecord());
                 continue;
             }
 

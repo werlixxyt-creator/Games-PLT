@@ -53,14 +53,19 @@ const fx = (() => {
   const drifters = reduce ? [] : Array.from({ length: Math.round(Math.min(46, (W * H) / 32000)) }, drifter);
 
   function drawArrow(ctx, x, y, size, rot, color, alpha) {
+    ctx.globalAlpha = alpha;
+    drawShape(ctx, ARROW, x, y, size, rot, color);
+  }
+
+  /** Фигура из viewBox 24×24 с центром в (x, y); прозрачность — текущая у ctx. */
+  function drawShape(ctx, path, x, y, size, rot, color) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rot);
     ctx.scale(size / 24, size / 24);
     ctx.translate(-12, -12);
-    ctx.globalAlpha = alpha;
     ctx.fillStyle = color;
-    ctx.fill(ARROW);
+    ctx.fill(path);
     ctx.restore();
   }
 
@@ -151,19 +156,189 @@ const fx = (() => {
     }
   }
 
+  // ---------- Скины эффектов ----------
+
+  const STAR = (() => {
+    const path = new Path2D();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? 4.5 : 11;
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      path[i ? "lineTo" : "moveTo"](12 + Math.cos(a) * r, 12 + Math.sin(a) * r);
+    }
+    path.closePath();
+    return path;
+  })();
+  const GOLD = ["#f2ad16", "#ffd54a", "#ff9f1c"];
+  const ICE = ["#7cc8ff", "#4aa3f0", "#a9dcff"];
+  const FIRE = ["#ff7a1a", "#ffb020", "#e83250"];
+  const VOLT = ["#12bfe8", "#7a5cff", "#ffd400"];
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  /** Звёзды падают сверху, крутясь. */
+  function stars(n = 70) {
+    if (reduce) return;
+    for (let i = 0; i < n; i++) {
+      add({
+        kind: "star",
+        x: Math.random() * W, y: -30 - Math.random() * H * 0.5,
+        vx: (Math.random() - 0.5) * 80, vy: 160 + Math.random() * 220,
+        rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 6,
+        size: 12 + Math.random() * 16, color: pick(GOLD),
+        life: 0, max: 2.6 + Math.random() * 1.4,
+      });
+    }
+  }
+
+  /** Медленный снегопад. */
+  function snow(n = 130) {
+    if (reduce) return;
+    for (let i = 0; i < n; i++) {
+      add({
+        kind: "flake",
+        x: Math.random() * W, y: -20 - Math.random() * H * 0.7,
+        vx: (Math.random() - 0.5) * 30, vy: 60 + Math.random() * 90,
+        rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 2,
+        size: 4 + Math.random() * 7, color: pick(ICE), sway: Math.random() * Math.PI * 2,
+        life: 0, max: 4 + Math.random() * 2,
+      });
+    }
+  }
+
+  /** Ракеты снизу, на вершине — взрыв искрами. */
+  function fireworks(n = 7) {
+    if (reduce) return;
+    for (let i = 0; i < n; i++) {
+      add({
+        kind: "rocket",
+        x: W * (0.15 + Math.random() * 0.7), y: H + 10,
+        vx: (Math.random() - 0.5) * 60, vy: -(H * 0.9 + Math.random() * H * 0.5),
+        color: COLORS[i % 4],
+        life: -i * 0.22, max: 0.75 + Math.random() * 0.25,
+      });
+    }
+  }
+
+  /** Угольки поднимаются вверх и мерцают (серия «Пламя»; color null — радуга). */
+  function embers(x, y, n, palette) {
+    if (reduce) return;
+    for (let i = 0; i < n; i++) {
+      add({
+        kind: "ember",
+        x: x + (Math.random() - 0.5) * 80, y: y + (Math.random() - 0.5) * 20,
+        vx: (Math.random() - 0.5) * 90, vy: -(80 + Math.random() * 200),
+        size: 2 + Math.random() * 4,
+        color: palette ? pick(palette) : null, hue: Math.random() * 360,
+        life: 0, max: 0.9 + Math.random() * 0.9, flick: Math.random() * 10,
+      });
+    }
+  }
+
+  /** Короткие ломаные разряды во все стороны (серия «Молнии»). */
+  function zaps(x, y, n) {
+    if (reduce) return;
+    for (let i = 0; i < n; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 260 + Math.random() * 380;
+      add({
+        kind: "zap", x, y, color: pick(VOLT),
+        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+        life: 0, max: 0.35 + Math.random() * 0.3, seed: Math.random() * 100,
+      });
+    }
+    ring(x, y, VOLT[0], 120, 4);
+  }
+
+  /** Эффект победы выбранного скина. */
+  function win(kind, x, y) {
+    if (kind === "stars") stars();
+    else if (kind === "snow") snow();
+    else if (kind === "fireworks") fireworks();
+    else confetti(180);
+    if (x !== undefined) arrowsFrom(x, y, 28);
+  }
+
+  /** Эффект серии побед выбранного скина; power растёт с длиной серии. */
+  function streak(kind, x, y, power = 1) {
+    const n = Math.round(30 * Math.min(2.5, power));
+    if (kind === "electric") zaps(x, y, Math.round(n * 0.6));
+    else if (kind === "rainbow") { embers(x, y, n, null); ring(x, y, COLORS[2], 110, 4); }
+    else { embers(x, y, n, FIRE); ring(x, y, FIRE[0], 100, 4); }
+  }
+
   function drawParticles(dt) {
     fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     fctx.clearRect(0, 0, W, H);
     if (parts.length === 0) return;
 
-    fctx.globalCompositeOperation = "lighter";
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i];
       p.life += dt;
+      if (p.life < 0) continue; // ракета ещё ждёт своей очереди
       const k = p.life / p.max;
-      if (k >= 1) { parts.splice(i, 1); continue; }
+      if (k >= 1) {
+        parts.splice(i, 1);
+        if (p.kind === "rocket") burst(p.x, p.y, p.color, 46, 1.5);
+        continue;
+      }
 
-      if (p.kind === "spark") {
+      // искры, кольца и стрелки светятся («lighter»); остальное на светлом фоне так выцветает — рисуем обычным смешиванием
+      fctx.globalCompositeOperation = p.kind === "spark" || p.kind === "ring" || p.kind === "arrow" ? "lighter" : "source-over";
+
+      if (p.kind === "star" || p.kind === "flake") {
+        p.x += (p.vx + (p.sway !== undefined ? Math.sin((p.sway += dt * 2)) * 30 : 0)) * dt;
+        p.y += p.vy * dt;
+        p.rot += p.vr * dt;
+        fctx.globalAlpha = Math.min(1, (1 - k) * 3);
+        if (p.kind === "star") {
+          drawShape(fctx, STAR, p.x, p.y, p.size, p.rot, p.color);
+        } else {
+          fctx.strokeStyle = p.color;
+          fctx.lineWidth = 1.6;
+          fctx.beginPath();
+          for (let j = 0; j < 3; j++) {
+            const a = p.rot + (j * Math.PI) / 3;
+            fctx.moveTo(p.x - Math.cos(a) * p.size, p.y - Math.sin(a) * p.size);
+            fctx.lineTo(p.x + Math.cos(a) * p.size, p.y + Math.sin(a) * p.size);
+          }
+          fctx.stroke();
+        }
+      } else if (p.kind === "rocket") {
+        p.vy *= 1 - dt * 1.6;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        fctx.globalAlpha = 1;
+        fctx.strokeStyle = p.color;
+        fctx.lineWidth = 3;
+        fctx.beginPath();
+        fctx.moveTo(p.x, p.y);
+        fctx.lineTo(p.x - p.vx * 0.04, p.y - p.vy * 0.04);
+        fctx.stroke();
+      } else if (p.kind === "ember") {
+        p.vx *= 1 - dt * 1.5;
+        p.x += p.vx * dt + Math.sin(p.life * 8 + p.flick) * 0.6;
+        p.y += p.vy * dt;
+        fctx.globalAlpha = (1 - k) * (0.6 + 0.4 * Math.sin(p.life * 30 + p.flick));
+        fctx.fillStyle = p.color || `hsl(${(p.hue + p.life * 400) % 360} 95% 55%)`;
+        fctx.beginPath();
+        fctx.arc(p.x, p.y, p.size * (1 - k * 0.5), 0, Math.PI * 2);
+        fctx.fill();
+      } else if (p.kind === "zap") {
+        p.vx *= 1 - dt * 4;
+        p.vy *= 1 - dt * 4;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        // ломаная от точки назад по скорости
+        fctx.globalAlpha = 1 - k;
+        fctx.strokeStyle = p.color;
+        fctx.lineWidth = 2;
+        fctx.beginPath();
+        fctx.moveTo(p.x, p.y);
+        for (let j = 1; j <= 3; j++) {
+          const jit = Math.sin(p.seed + j * 7 + p.life * 40) * 6;
+          fctx.lineTo(p.x - p.vx * 0.02 * j - p.vy * 0.004 * jit, p.y - p.vy * 0.02 * j + p.vx * 0.004 * jit);
+        }
+        fctx.stroke();
+      } else if (p.kind === "spark") {
         p.vx *= 1 - dt * 2.5;
         p.vy = p.vy * (1 - dt * 2.5) + 600 * dt;
         p.x += p.vx * dt;
@@ -188,8 +363,7 @@ const fx = (() => {
         p.y += p.vy * dt;
         drawArrow(fctx, p.x, p.y, p.size, ROT[p.d], p.color, (1 - k) * 0.9);
       } else {
-        // конфетти рисуем обычным смешиванием, иначе на светлом выцветает
-        fctx.globalCompositeOperation = "source-over";
+        // конфетти
         p.sway += dt * 4;
         p.x += (p.vx + Math.sin(p.sway) * 40) * dt;
         p.y += p.vy * dt;
@@ -202,7 +376,6 @@ const fx = (() => {
         fctx.fillStyle = p.color;
         fctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
         fctx.restore();
-        fctx.globalCompositeOperation = "lighter";
       }
     }
     fctx.globalCompositeOperation = "source-over";
@@ -261,7 +434,7 @@ const fx = (() => {
 
   return {
     colors: COLORS,
-    burst, ring, confetti, arrowsFrom,
+    burst, ring, confetti, arrowsFrom, win, streak,
     retrigger, countUp, anchor,
     setCalm(on) { calmTarget = on ? 1 : 0; },
   };

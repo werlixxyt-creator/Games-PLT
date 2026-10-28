@@ -8,10 +8,33 @@ const KEY_TO_ARROW = {
 const ROTATION = [-90, 0, 90, 180];
 const ARROW_CHAR = ["←", "↑", "→", "↓"];
 
+// порядок здесь — порядок карточек в меню; правила режимов присылает сервер в matchStart
 const MODES = {
-  classic: { name: "Классика" },
-  speed: { name: "Скорость" },
+  classic: { name: "Классика", icon: "bar", color: "var(--a1)", desc: "Держи стрелку, пока ползунок не заполнится" },
+  speed: { name: "Скорость", icon: "bolt", color: "var(--a2)", desc: "Одно нажатие — один ползунок, их 20–30. Ошибка — пауза" },
+  mirror: { name: "Зеркало", icon: "mirror", color: "var(--a0)", desc: "Держи стрелку, противоположную нарисованной: ← значит →, ↑ значит ↓" },
+  blind: { name: "Вслепую", icon: "eye", color: "var(--a3)", desc: "Нажатия, как в «Скорости», но видна только текущая стрелка" },
+  hardcore: { name: "Хардкор", icon: "heart", color: "var(--bad)", desc: "Нажатия без пауз за ошибку, но три ошибки — и ты выбыл" },
 };
+
+const SKIN_SLOTS = ["slider", "win", "streak"];
+const UNLOCK_TEXT = {
+  games: (n) => `Сыграй ${n} ${plural(n, "матч", "матча", "матчей")}`,
+  wins: (n) => `Выиграй ${n} ${plural(n, "матч", "матча", "матчей")}`,
+  sliders: (n) => `Заполни ${n} ползунков`,
+  streak: (n) => `Выиграй ${n} ${plural(n, "раз", "раза", "раз")} подряд`,
+};
+// превью эффектов на экране скинов: значок (символ или #id из <svg> в index.html) и цвет плитки
+const FX_PREVIEW = {
+  confetti: ["▰", "var(--a2)"], stars: ["★", "var(--gold)"], snow: ["❄", "var(--a0)"], fireworks: ["✺", "var(--a3)"],
+  flame: ["#flame", "#ff7a1a"], electric: ["#bolt", "#7a5cff"], rainbow: ["◉", "var(--a1)"],
+};
+
+function plural(n, one, few, many) {
+  const d = n % 10, h = n % 100;
+  if (d === 1 && h !== 11) return one;
+  return d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many;
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -29,14 +52,25 @@ let profile = null;      // ответ /api/account/me
 let gameMode = "classic";
 try { if (MODES[localStorage.getItem("arrowrush.mode")]) gameMode = localStorage.getItem("arrowrush.mode"); } catch { /* приватный режим */ }
 
-// «Скорость»: свой прогресс считаем сразу по нажатию, не дожидаясь сервера
-let pred = { idx: 0, stunUntil: 0, lastPress: 0 };
-let combo = 0;           // «Скорость»: ползунков подряд без ошибки
+// режимы с нажатиями: свой прогресс считаем сразу по нажатию, не дожидаясь сервера
+let pred = newPrediction();
+let combo = 0;           // режимы с нажатиями: ползунков подряд без ошибки
+let lastPractice = false; // «Ещё матч» повторяет тот же вид игры
+let skinSlot = "slider"; // открытая вкладка на экране скинов
+
+function newPrediction() {
+  return { idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false };
+}
+
+/** Какую стрелку надо нажать для нарисованной: в «Зеркале» — противоположную. */
+function targetOf(arrow) {
+  return match && match.mirror ? (arrow + 2) % 4 : arrow;
+}
 
 // ---------- Экраны ----------
 
 function show(name) {
-  for (const s of ["auth", "menu", "search", "game", "results"]) {
+  for (const s of ["auth", "menu", "skins", "search", "game", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
   screen = name;
@@ -50,6 +84,12 @@ function setConn(text, kind) {
   el.className = "conn " + (kind || "");
 }
 
+/** Кнопки, которым нужна связь с сервером. */
+function setPlayable(ok) {
+  $("btn-find").disabled = !ok;
+  $("btn-practice").disabled = !ok;
+}
+
 // ---------- Подключение к серверу ----------
 
 const conn = new signalR.HubConnectionBuilder()
@@ -59,11 +99,11 @@ const conn = new signalR.HubConnectionBuilder()
 
 conn.onreconnecting(() => {
   setConn("Связь потеряна, переподключаюсь…", "bad");
-  $("btn-find").disabled = true;
+  setPlayable(false);
 });
 
 conn.onreconnected(() => {
-  $("btn-find").disabled = false;
+  setPlayable(true);
   if (screen === "game" || screen === "search") {
     // после переподключения сервер считает, что мы вышли
     abortToMenu("Соединение прерывалось — матч отменён");
@@ -73,7 +113,7 @@ conn.onreconnected(() => {
 });
 
 conn.onclose(() => {
-  $("btn-find").disabled = true;
+  setPlayable(false);
   if (!online) return; // сами отключились при выходе из аккаунта
   setConn("Нет связи с сервером. Обнови страницу.", "bad");
 });
@@ -84,7 +124,7 @@ async function connect() {
   try {
     await conn.start();
     setConn("Подключено", "ok");
-    $("btn-find").disabled = false;
+    setPlayable(true);
   } catch {
     // хаб пускает только вошедших — возможно, сессия истекла
     const me = await api("GET", "me").catch(() => null);
@@ -188,6 +228,29 @@ async function refreshProfile() {
   } catch { /* покажем то, что уже есть */ }
 }
 
+function modeIcon(m) {
+  return m.icon === "bar"
+    ? `<span class="mc-bar"><i></i></span>`
+    : `<svg viewBox="0 0 24 24"><use href="#${m.icon}"/></svg>`;
+}
+
+for (const [id, m] of Object.entries(MODES)) {
+  const t = document.createElement("button");
+  t.type = "button";
+  t.className = "mode-card";
+  t.dataset.gameMode = id;
+  t.setAttribute("role", "radio");
+  t.style.setProperty("--c", m.color);
+  t.innerHTML = `<span class="mc-icon" aria-hidden="true">${modeIcon(m)}</span><span class="mc-title">${m.name}</span>`;
+  t.addEventListener("click", () => {
+    if (id === gameMode) return;
+    setGameMode(id);
+    const [x, y] = fx.anchor(t);
+    fx.ring(x, y, getComputedStyle(t).getPropertyValue("--c").trim(), 110);
+  });
+  $("mode-tabs").appendChild(t);
+}
+
 function setGameMode(mode) {
   gameMode = mode;
   try { localStorage.setItem("arrowrush.mode", mode); } catch { /* ничего */ }
@@ -196,20 +259,13 @@ function setGameMode(mode) {
     t.classList.toggle("active", on);
     t.setAttribute("aria-checked", on);
   }
+  $("mode-desc").textContent = MODES[mode].desc;
+  document.querySelector(".play-card").style.setProperty("--c", MODES[mode].color);
   renderStats();
-}
-
-for (const t of document.querySelectorAll("#mode-tabs [data-game-mode]")) {
-  t.addEventListener("click", () => {
-    if (t.dataset.gameMode === gameMode) return;
-    setGameMode(t.dataset.gameMode);
-    const [x, y] = fx.anchor(t);
-    fx.ring(x, y, getComputedStyle(t).getPropertyValue("--c").trim(), 110);
-  });
 }
 setGameMode(gameMode);
 
-/** Статистика выбранного режима (числа докручиваются) + подписи на карточках режимов. */
+/** Статистика выбранного режима (числа докручиваются) + подпись под описанием режима. */
 function renderStats() {
   if (!profile) return;
   const s = profile.stats[gameMode];
@@ -218,11 +274,16 @@ function renderStats() {
   if (s.games) fx.countUp($("st-rate"), Math.round((s.wins / s.games) * 100));
   else $("st-rate").textContent = "—";
   fx.countUp($("st-sliders"), s.sliders);
+  $("mode-meta").textContent = s.games ? `Побед: ${s.wins} из ${s.games}` : "Ещё не играл";
+}
 
-  for (const t of document.querySelectorAll("#mode-tabs [data-game-mode]")) {
-    const m = profile.stats[t.dataset.gameMode];
-    t.querySelector(".mc-meta").textContent = m.games ? `Побед: ${m.wins} из ${m.games}` : "Ещё не играл";
-  }
+/** Значок серии побед у ника: виден с двух побед подряд, оформлен надетым скином серии. */
+function renderStreak() {
+  const n = profile.streak.current;
+  const badge = $("streak-badge");
+  badge.hidden = n < 2;
+  badge.className = `streak-badge streak-${profile.equipped.streak}`;
+  $("streak-num").textContent = n;
 }
 
 function applyProfile(p) {
@@ -230,6 +291,10 @@ function applyProfile(p) {
   $("profile-name").textContent = p.userName;
   $("profile-avatar").textContent = p.userName.slice(0, 1).toUpperCase();
   renderStats();
+  renderStreak();
+  const open = p.skins.filter((s) => s.unlocked).length;
+  $("skins-count").textContent = `открыто ${open} из ${p.skins.length}`;
+  if (screen === "skins") renderSkins();
 
   const list = $("history-list");
   list.innerHTML = "";
@@ -265,6 +330,132 @@ function applyProfile(p) {
   $("history").hidden = p.recent.length === 0;
 }
 
+// ---------- Скины ----------
+
+$("btn-skins").addEventListener("click", () => {
+  show("skins");
+  renderSkins();
+});
+$("btn-skins-back").addEventListener("click", () => show("menu"));
+
+for (const t of document.querySelectorAll("#skin-tabs .tab")) {
+  t.addEventListener("click", () => {
+    skinSlot = t.dataset.slot;
+    for (const o of document.querySelectorAll("#skin-tabs .tab")) o.classList.toggle("active", o === t);
+    $("skin-tabs").dataset.active = SKIN_SLOTS.indexOf(skinSlot);
+    renderSkins();
+  });
+}
+
+/** Мини-дорожка из четырёх ползунков, которые сами заполняются, — превью скина ползунков. */
+function sliderPreview(skin) {
+  const track = document.createElement("div");
+  track.className = `track mini skin-${skin}`;
+  [1, 3, 0, 2].forEach((arrow, k) => {
+    const el = document.createElement("div");
+    el.className = "slider current";
+    el.style.setProperty("--c", `var(--a${arrow})`);
+    el.style.setProperty("--k", k);
+    el.innerHTML = `<div class="bar"><div class="fill"></div></div><div class="key">${arrowSvg(arrow)}</div>`;
+    track.appendChild(el);
+  });
+  return track;
+}
+
+function fxPreview(skin) {
+  const [icon, color] = FX_PREVIEW[skin.id] || ["?", "var(--muted)"];
+  const tile = document.createElement("div");
+  tile.className = "fx-tile";
+  tile.style.setProperty("--c", color);
+  if (icon.startsWith("#")) tile.innerHTML = `<svg viewBox="0 0 24 24"><use href="${icon}"/></svg>`;
+  else tile.textContent = icon;
+  return tile;
+}
+
+/** Проигрывает эффект скина над элементом. */
+function playSkinFx(slot, id, el, power = 1) {
+  const [x, y] = fx.anchor(el);
+  if (slot === "win") fx.win(id, x, y);
+  else if (slot === "streak") fx.streak(id, x, y, power);
+}
+
+function renderSkins() {
+  if (!profile) return;
+  const grid = $("skin-grid");
+  grid.innerHTML = "";
+  $("skin-error").textContent = "";
+
+  profile.skins.filter((s) => s.slot === skinSlot).forEach((s, i) => {
+    const on = profile.equipped[s.slot] === s.id;
+    const card = document.createElement("div");
+    card.className = "skin-card glass" + (on ? " equipped" : "") + (s.unlocked ? "" : " locked");
+    card.style.setProperty("--i", i);
+
+    const preview = document.createElement("div");
+    preview.className = "skin-preview";
+    preview.appendChild(s.slot === "slider" ? sliderPreview(s.id) : fxPreview(s));
+    if (!s.unlocked) preview.insertAdjacentHTML("beforeend", `<span class="skin-lock"><svg viewBox="0 0 24 24"><use href="#lock"/></svg></span>`);
+
+    const name = document.createElement("div");
+    name.className = "skin-name";
+    name.textContent = s.name;
+
+    const req = document.createElement("div");
+    req.className = "skin-req";
+    if (s.by === "free") {
+      req.textContent = "Есть у всех";
+    } else if (s.unlocked) {
+      req.textContent = UNLOCK_TEXT[s.by](s.need);
+    } else {
+      req.innerHTML = `<span></span><span class="skin-progress"><i></i></span><b></b>`;
+      req.firstChild.textContent = UNLOCK_TEXT[s.by](s.need);
+      req.querySelector("i").style.width = `${Math.min(100, (s.have / s.need) * 100)}%`;
+      req.querySelector("b").textContent = `${Math.min(s.have, s.need)} / ${s.need}`;
+    }
+
+    const buttons = document.createElement("div");
+    buttons.className = "skin-buttons";
+    if (s.slot !== "slider") {
+      const look = document.createElement("button");
+      look.className = "btn ghost small";
+      look.textContent = "Посмотреть";
+      look.addEventListener("click", () => playSkinFx(s.slot, s.id, preview, 1.5));
+      buttons.appendChild(look);
+    }
+    if (s.unlocked) {
+      const wear = document.createElement("button");
+      wear.className = on ? "btn ghost small" : "btn primary small";
+      wear.textContent = on ? "Надето" : "Надеть";
+      wear.disabled = on;
+      wear.addEventListener("click", () => equipSkin(s, wear, preview));
+      buttons.appendChild(wear);
+    }
+
+    card.append(preview, name, req, buttons);
+    grid.appendChild(card);
+  });
+}
+
+async function equipSkin(skin, btn, preview) {
+  btn.disabled = true;
+  try {
+    const r = await api("POST", "skin", { slot: skin.slot, id: skin.id });
+    if (!r.ok) {
+      $("skin-error").textContent = (r.data && r.data.error) || "Не получилось надеть скин";
+      btn.disabled = false;
+      return;
+    }
+    profile.equipped[skin.slot] = skin.id;
+    renderStreak();
+    renderSkins();
+    const [x, y] = fx.anchor(preview);
+    fx.ring(x, y, fx.colors[1], 120, 4);
+  } catch {
+    $("skin-error").textContent = "Сервер недоступен";
+    btn.disabled = false;
+  }
+}
+
 function formatDate(d) {
   const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
   const today = new Date().toDateString() === d.toDateString();
@@ -290,8 +481,9 @@ conn.on("matchEnd", showResults);
 
 // ---------- Меню и поиск ----------
 
-$("btn-find").addEventListener("click", findMatch);
-$("btn-again").addEventListener("click", findMatch);
+$("btn-find").addEventListener("click", () => findMatch(false));
+$("btn-practice").addEventListener("click", () => findMatch(true));
+$("btn-again").addEventListener("click", () => findMatch(lastPractice));
 $("btn-menu").addEventListener("click", () => show("menu"));
 
 $("btn-cancel").addEventListener("click", () => {
@@ -306,17 +498,21 @@ $("btn-leave").addEventListener("click", () => {
   show("menu");
 });
 
-async function findMatch() {
+/** practice — тренировка: сервер сразу стартует матч с ботом, экран поиска не нужен. */
+async function findMatch(practice) {
   if (conn.state !== signalR.HubConnectionState.Connected) return;
+  lastPractice = practice;
 
-  search = { startedAt: performance.now(), inQueue: 1, botAfter: 12, timer: null };
-  search.timer = setInterval(updateSearch, 250);
-  updateSearch();
-  $("search-mode").textContent = `Режим: ${MODES[gameMode].name}`;
-  show("search");
+  if (!practice) {
+    search = { startedAt: performance.now(), inQueue: 1, botAfter: 12, timer: null };
+    search.timer = setInterval(updateSearch, 250);
+    updateSearch();
+    $("search-mode").textContent = `Режим: ${MODES[gameMode].name}`;
+    show("search");
+  }
 
   try {
-    await conn.invoke("FindMatch", gameMode);
+    await conn.invoke("FindMatch", gameMode, practice);
   } catch (e) {
     // текст HubException с сервера приходит после "HubException: "
     const msg = String((e && e.message) || "").split("HubException: ")[1];
@@ -352,6 +548,12 @@ function abortToMenu(message) {
 
 function arrowSvg(arrow) {
   return `<svg viewBox="0 0 24 24" style="rotate:${ROTATION[arrow]}deg"><use href="#arrow"/></svg>`;
+}
+
+/** Классы дорожки: плотная для режимов с нажатиями, «вслепую», скин ползунков. */
+function trackClass(skin) {
+  return ["track", match.press && "speed", match.blind && "blind", match.mirror && "mirror", `skin-${skin}`]
+    .filter(Boolean).join(" ");
 }
 
 function buildTrack(container, level) {
@@ -390,6 +592,11 @@ function startMatch(d) {
 
   match = {
     mode: d.mode,
+    practice: d.practice,
+    press: d.press,
+    mirror: d.mirror,
+    blind: d.blind,
+    lives: d.lives,
     you: d.you,
     level: d.level,
     players: d.players,
@@ -398,16 +605,20 @@ function startMatch(d) {
     stun: d.stun,
     tracks: new Map(),
   };
-  pred = { idx: 0, stunUntil: 0, lastPress: 0 };
+  pred = newPrediction();
   combo = 0;
   $("combo").hidden = true;
-  const speed = d.mode === "speed";
+
+  $("hud-lives-box").hidden = !d.lives;
+  $("hud-tag").textContent = MODES[d.mode].name + (d.practice ? " · тренировка" : "");
+  $("hud-tag").style.setProperty("--c", MODES[d.mode].color);
 
   // моя дорожка
   const me = d.players.find((p) => p.slot === d.you);
-  $("my-track").classList.toggle("speed", speed);
+  $("my-track").className = trackClass(me.skin);
   const myTrack = buildTrack($("my-track"), d.level);
   myTrack.mine = true;
+  myTrack.skin = me.skin;
   myTrack.badge = nameRow($("my-name"), { ...me, name: me.name + " (ты)" });
   match.tracks.set(d.you, myTrack);
 
@@ -420,7 +631,7 @@ function startMatch(d) {
     const nameEl = document.createElement("div");
     nameEl.className = "track-name";
     const trackEl = document.createElement("div");
-    trackEl.className = speed ? "track speed" : "track";
+    trackEl.className = trackClass(p.skin);
     box.append(nameEl, trackEl);
     opps.appendChild(box);
 
@@ -433,7 +644,7 @@ function startMatch(d) {
   // стартовый снимок, пока сервер не прислал первый
   lastState = {
     t: -d.countdown,
-    players: d.players.map((p) => ({ slot: p.slot, idx: 0, p: 0, held: 0, stun: false, done: false, place: 0, left: false })),
+    players: d.players.map((p) => ({ slot: p.slot, idx: 0, p: 0, held: 0, stun: false, miss: 0, out: false, done: false, place: 0, left: false })),
   };
   stateAt = performance.now();
   sentHeld = -1;
@@ -455,9 +666,23 @@ function showResults(r) {
   title.classList.toggle("win", win);
   $("screen-results").classList.toggle("win", win);
 
-  $("res-sub").textContent = me && me.done
+  $("res-sub").textContent = (me && me.done
     ? `Твоё время: ${me.time.toFixed(2)} с`
-    : me ? `Заполнено ${me.sliders} из ${r.total} ползунков` : "";
+    : me && me.out ? `Выбыл на ${me.sliders + 1}-м ползунке из ${r.total}`
+    : me ? `Заполнено ${me.sliders} из ${r.total} ползунков` : "") + (r.practice ? " · тренировка" : "");
+
+  // серия побед: тренировка не считается; профиль обновим сразу, не дожидаясь сервера
+  let streak = 0;
+  if (!r.practice && profile && me) {
+    streak = win ? profile.streak.current + 1 : 0;
+    profile.streak.current = streak;
+    profile.streak.best = Math.max(profile.streak.best, streak);
+    renderStreak();
+  }
+  const banner = $("res-streak");
+  banner.hidden = streak < 2;
+  banner.className = `streak-banner streak-${profile ? profile.equipped.streak : "flame"}`;
+  banner.textContent = `Серия побед: ${streak}`;
 
   const list = $("res-list");
   list.innerHTML = "";
@@ -486,7 +711,7 @@ function showResults(r) {
 
     const time = document.createElement("span");
     time.className = "res-time";
-    time.textContent = x.done ? `${x.time.toFixed(2)} с` : x.left ? "вышел" : `${x.sliders}/${r.total}`;
+    time.textContent = x.done ? `${x.time.toFixed(2)} с` : x.left ? "вышел" : x.out ? "выбыл" : `${x.sliders}/${r.total}`;
 
     li.append(place, name, time);
     list.appendChild(li);
@@ -494,11 +719,8 @@ function showResults(r) {
 
   show("results");
 
-  if (win) {
-    fx.confetti(180);
-    const [x, y] = fx.anchor(title);
-    fx.arrowsFrom(x, y, 28);
-  }
+  if (win) playSkinFx("win", profile ? profile.equipped.win : "confetti", title);
+  if (streak >= 2) setTimeout(() => playSkinFx("streak", profile.equipped.streak, banner, streak / 3), 450);
 }
 
 // ---------- Отрисовка (60 fps) ----------
@@ -534,10 +756,10 @@ function celebrate(track, from, to, level) {
   const finished = to >= level.length;
 
   if (track.mine) {
-    const speed = match.mode === "speed";
+    const speed = match.press;
     for (let i = from; i < Math.min(to, level.length); i++) {
       const [x, y] = fx.anchor(track.sliders[i].el.querySelector(".bar"), true);
-      fx.burst(x, y, fx.colors[level[i].arrow], speed ? 10 : 24, speed ? 0.7 : 1);
+      fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
     }
     if (finished) {
       const [x, y] = fx.anchor(track.root);
@@ -551,7 +773,14 @@ function celebrate(track, from, to, level) {
   }
 }
 
-/** «Скорость»: счётчик серии без ошибок. */
+/** Цвет искр над заполненным ползунком — под скин ползунков. */
+function burstColor(skin, arrow, i) {
+  if (skin === "gold") return "#f2ad16";
+  if (skin === "rainbow") return fx.colors[i % 4];
+  return fx.colors[arrow];
+}
+
+/** Режимы с нажатиями: счётчик серии без ошибок; каждые 10 — эффект серии побед. */
 function showCombo() {
   const el = $("combo");
   if (combo < 3) { el.hidden = true; return; }
@@ -559,13 +788,21 @@ function showCombo() {
   el.textContent = `x${combo}`;
   el.classList.toggle("hot", combo >= 10);
   fx.retrigger(el, "pop");
+  if (combo % 10 === 0) playSkinFx("streak", profile ? profile.equipped.streak : "flame", el, 0.5);
 }
 
-/** «Скорость»: сверяем своё предсказание с сервером. */
+/** Режимы с нажатиями: сверяем своё предсказание с сервером. */
 function syncPrediction(server, now) {
   if (server.done) pred.idx = match.level.length;
   // сервер впереди — догоняем сразу; расходимся в другую сторону — ждём, пока дойдут последние нажатия
   else if (server.idx > pred.idx || (server.idx !== pred.idx && now - pred.lastPress > 400)) pred.idx = server.idx;
+  if (server.miss > pred.miss) pred.miss = server.miss;
+  if (server.out) pred.out = true;
+}
+
+function renderLives() {
+  const left = Math.max(0, match.lives - pred.miss);
+  $("hud-lives").textContent = "♥".repeat(left) + "♡".repeat(match.lives - left);
 }
 
 function render(now) {
@@ -590,7 +827,7 @@ function render(now) {
 
   $("hud-time").textContent = Math.max(0, t).toFixed(1);
 
-  const speed = match.mode === "speed";
+  const speed = match.press;
 
   for (const p of st.players) {
     const track = match.tracks.get(p.slot);
@@ -607,7 +844,7 @@ function render(now) {
       if (isMe) {
         syncPrediction(p, now);
         idx = pred.idx;
-        wrong = now < pred.stunUntil;
+        wrong = now < Math.max(pred.stunUntil, pred.hitUntil);
       } else {
         wrong = p.stun;
       }
@@ -616,7 +853,7 @@ function render(now) {
 
       // предсказание своего ползунка между снимками сервера — чтобы было плавно
       if (isMe && t >= 0 && !p.done && !p.left && p.idx < level.length) {
-        const target = 1 << level[p.idx].arrow;
+        const target = 1 << targetOf(level[p.idx].arrow);
         if (held === 0) progress -= match.idleDrain * elapsed;
         else if ((held & ~target) !== 0) progress -= match.wrongDrain * elapsed;
         else progress += elapsed / level[p.idx].fill;
@@ -624,7 +861,7 @@ function render(now) {
       }
 
       if (idx < level.length) {
-        const target = 1 << level[idx].arrow;
+        const target = 1 << targetOf(level[idx].arrow);
         wrong = (mask & ~target) !== 0;
         holding = mask === target;
       }
@@ -632,16 +869,18 @@ function render(now) {
 
     renderTrack(track, idx, progress, wrong, holding, level);
 
-    if (p.done) {
+    if (p.done || p.out) {
       track.badge.hidden = false;
-      track.badge.textContent = `${p.place} место`;
+      track.badge.textContent = p.done ? `${p.place} место` : "выбыл";
+      track.badge.classList.toggle("out", !p.done);
     }
-    if (track.box) track.box.classList.toggle("left", p.left);
+    if (track.box) track.box.classList.toggle("left", p.left || p.out);
   }
 
   // подсказки для меня
   const mine = st.players.find((p) => p.slot === match.you);
   if (!mine) return;
+  if (match.lives) renderLives();
 
   const myIdx = speed ? pred.idx : mine.idx;
   const myDone = mine.done || myIdx >= level.length;
@@ -651,22 +890,29 @@ function render(now) {
   need.classList.remove("bad");
   if (myDone) {
     need.textContent = `Финиш! Ждём остальных…`;
+  } else if (pred.out || mine.out) {
+    need.textContent = "Ошибки кончились — ты выбыл. Ждём остальных…";
+    need.classList.add("bad");
   } else if (t < 0) {
-    need.textContent = `Первая стрелка: ${ARROW_CHAR[level[0].arrow]}`;
+    need.textContent = match.mirror ? "Зеркало: жми наоборот!" : `Первая стрелка: ${ARROW_CHAR[level[0].arrow]}`;
   } else if (speed) {
     if (now < pred.stunUntil) {
       need.textContent = "Не та стрелка! Пауза…";
+      need.classList.add("bad");
+    } else if (now < pred.hitUntil) {
+      need.textContent = `Мимо! Осталось ошибок: ${Math.max(0, match.lives - pred.miss)}`;
       need.classList.add("bad");
     } else {
       need.textContent = `Жми ${ARROW_CHAR[level[myIdx].arrow]}`;
     }
   } else {
-    const target = 1 << level[mine.idx].arrow;
+    const target = 1 << targetOf(level[mine.idx].arrow);
     if ((held & ~target) !== 0) {
       need.textContent = "Не та стрелка!";
       need.classList.add("bad");
     } else if (held === 0) {
-      need.textContent = `Держи ${ARROW_CHAR[level[mine.idx].arrow]}`;
+      // в «Зеркале» не подсказываем ответ, иначе режим теряет смысл
+      need.textContent = match.mirror ? "Держи противоположную стрелку" : `Держи ${ARROW_CHAR[level[mine.idx].arrow]}`;
     } else {
       need.textContent = "";
     }
@@ -699,20 +945,22 @@ window.addEventListener("keydown", (e) => {
   pushInput();
 });
 
-/** «Скорость»: те же правила, что на сервере (Match.Press), — чтобы ползунок заполнялся мгновенно. */
+/** Режимы с нажатиями: те же правила, что на сервере (Match.Press), — чтобы ползунок заполнялся мгновенно. */
 function predictPress(bit) {
-  if (!match || match.mode !== "speed" || !lastState) return;
+  if (!match || !match.press || !lastState) return;
   const now = performance.now();
   const t = lastState.t + Math.min((now - stateAt) / 1000, 0.2);
-  if (t < 0 || pred.idx >= match.level.length || now < pred.stunUntil) return;
+  if (t < 0 || pred.out || pred.idx >= match.level.length || now < pred.stunUntil) return;
 
   pred.lastPress = now;
-  if (bit === 1 << match.level[pred.idx].arrow) {
+  if (bit === 1 << targetOf(match.level[pred.idx].arrow)) {
     pred.idx++;
     combo++;
   } else {
-    pred.stunUntil = now + match.stun * 1000;
     combo = 0;
+    pred.hitUntil = now + 300;
+    if (!match.lives) pred.stunUntil = now + match.stun * 1000;
+    else if (++pred.miss >= match.lives) pred.out = true;
   }
   showCombo();
 }

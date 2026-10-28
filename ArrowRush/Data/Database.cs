@@ -35,6 +35,9 @@ public static class Database
         // EnsureCreated не трогает уже существующие таблицы — новые колонки добавляем сами.
         // SQL подходит и для SQLite, и для PostgreSQL.
         AddColumnIfMissing(db, "Matches", "Mode", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(db, "AspNetUsers", "SliderSkin", "TEXT NULL");
+        AddColumnIfMissing(db, "AspNetUsers", "WinSkin", "TEXT NULL");
+        AddColumnIfMissing(db, "AspNetUsers", "StreakSkin", "TEXT NULL");
     }
 
     /// <remarks>Имена — константы из кода, не пользовательский ввод.</remarks>

@@ -16,6 +16,8 @@ public sealed class Player
     public string? ConnectionId { get; init; }
     /// <summary>Id аккаунта, у бота — null.</summary>
     public string? UserId { get; init; }
+    /// <summary>Скин ползунков — его видят и соперники.</summary>
+    public string Skin { get; init; } = "classic";
     public bool IsBot => ConnectionId is null;
 
     /// <summary>Номер текущего ползунка. Равен длине уровня, когда игрок финишировал.</summary>
@@ -30,10 +32,16 @@ public sealed class Player
     /// <summary>«Скорость»: до этого игрового времени нажатия не засчитываются (штраф за ошибку).</summary>
     public double StunUntil { get; set; } = double.NegativeInfinity;
 
+    /// <summary>«Хардкор»: сколько раз нажал не ту стрелку; Out — ошибки кончились, игрок выбыл.</summary>
+    public int Mistakes { get; set; }
+    public bool Out { get; set; }
+
     public double? FinishTime { get; set; }
     public int Place { get; set; }
     public bool Left { get; set; }
     public bool Done => FinishTime.HasValue;
+    /// <summary>Ещё играет: не финишировал, не вышел и не выбыл.</summary>
+    public bool Active => !Done && !Left && !Out;
 
     // Состояние бота
     internal int BotSeenIndex = -1;
@@ -48,19 +56,24 @@ public sealed class Player
 public sealed class Match
 {
     private readonly Random _rnd;
+    private readonly ModeRules _rules;
     private int _finishedCount;
     private double? _firstFinishAt;
 
-    public Match(string id, GameMode mode, Random rnd)
+    public Match(string id, GameMode mode, Random rnd, bool practice = false)
     {
         Id = id;
         Mode = mode;
+        Practice = practice;
         _rnd = rnd;
+        _rules = mode.Rules();
         Level = LevelGenerator.Generate(mode, rnd);
     }
 
     public string Id { get; }
     public GameMode Mode { get; }
+    /// <summary>Тренировка с ботом: в базу не сохраняется.</summary>
+    public bool Practice { get; }
     public Slider[] Level { get; }
     public List<Player> Players { get; } = [];
     public MatchPhase Phase { get; private set; } = MatchPhase.Countdown;
@@ -99,11 +112,18 @@ public sealed class Match
         CheckEnd();
     }
 
+    /// <summary>Какую стрелку надо держать или нажать на ползунке index. В «Зеркале» — противоположную нарисованной.</summary>
+    private int TargetOf(int index)
+    {
+        var arrow = (int)Level[index].Arrow;
+        return _rules.Mirror ? (arrow + 2) % 4 : arrow;
+    }
+
     private void Step(Player p, double dt)
     {
-        if (p.Done || p.Left) return;
+        if (!p.Active) return;
 
-        if (Mode == GameMode.Speed)
+        if (_rules.Press)
         {
             // люди продвигаются в SetInput, по нажатиям; здесь думает только бот
             if (p.IsBot) BotThinkSpeed(p, dt);
@@ -113,7 +133,7 @@ public sealed class Match
         if (p.IsBot) BotThink(p, dt);
 
         var slider = Level[p.Index];
-        var target = 1 << (int)slider.Arrow;
+        var target = 1 << TargetOf(p.Index);
         var held = p.HeldMask & 0b1111;
 
         if (held == 0)
@@ -148,29 +168,40 @@ public sealed class Match
     }
 
     /// <summary>
-    /// «Скорость»: только что нажатые стрелки. Правильная — ползунок заполнен сразу,
+    /// Режимы с нажатиями: только что нажатые стрелки. Правильная — ползунок заполнен сразу,
     /// любая другая — оглушение, и пока оно идёт, нажатия не считаются.
+    /// В «Хардкоре» оглушения нет, зато ошибки считаются, и последняя выбивает из матча.
     /// </summary>
     private void Press(Player p, int pressed)
     {
-        if (Phase != MatchPhase.Running || p.Done || p.Left || GameTime < p.StunUntil) return;
+        if (Phase != MatchPhase.Running || !p.Active || GameTime < p.StunUntil) return;
 
-        var target = 1 << (int)Level[p.Index].Arrow;
-        if (pressed == target) Advance(p);
-        else p.StunUntil = GameTime + GameRules.SpeedWrongStunSeconds;
+        if (pressed == 1 << TargetOf(p.Index))
+        {
+            Advance(p);
+        }
+        else if (_rules.Lives > 0)
+        {
+            if (++p.Mistakes >= _rules.Lives) p.Out = true;
+        }
+        else
+        {
+            p.StunUntil = GameTime + GameRules.SpeedWrongStunSeconds;
+        }
     }
 
     private void BotThinkSpeed(Player bot, double dt)
     {
         if (GameTime < bot.StunUntil) return;
 
-        var target = (int)Level[bot.Index].Arrow;
+        var target = TargetOf(bot.Index);
 
         if (bot.BotSeenIndex != bot.Index)
         {
             bot.BotSeenIndex = bot.Index;
             bot.BotWait = 0.2 + _rnd.NextDouble() * 0.2;
-            bot.BotWrong = _rnd.NextDouble() < 0.08 ? 1 : 0;
+            // в «Хардкоре» бот осторожнее, иначе почти всегда выбывает
+            bot.BotWrong = _rnd.NextDouble() < (_rules.Lives > 0 ? 0.03 : 0.08) ? 1 : 0;
         }
 
         if (bot.BotWait > 0)
@@ -190,7 +221,7 @@ public sealed class Match
 
     private void BotThink(Player bot, double dt)
     {
-        var target = (int)Level[bot.Index].Arrow;
+        var target = TargetOf(bot.Index);
 
         if (bot.BotSeenIndex != bot.Index)
         {
@@ -220,7 +251,7 @@ public sealed class Match
     private void CheckEnd()
     {
         var humansLeft = Players.Where(p => !p.IsBot).All(p => p.Left);
-        var everyoneDone = Players.All(p => p.Done || p.Left);
+        var everyoneDone = Players.All(p => !p.Active);
 
         if (humansLeft) Finish("abandoned");
         else if (everyoneDone) Finish("all_finished");
@@ -243,7 +274,7 @@ public sealed class Match
         var pressed = mask & ~p.HeldMask;
         p.HeldMask = mask;
 
-        if (Mode == GameMode.Speed && pressed != 0) Press(p, pressed);
+        if (_rules.Press && pressed != 0) Press(p, pressed);
     }
 
     public void MarkLeft(string connectionId)
@@ -260,13 +291,18 @@ public sealed class Match
     {
         matchId = Id,
         mode = Mode.ToWire(),
+        practice = Practice,
+        press = _rules.Press,
+        mirror = _rules.Mirror,
+        blind = _rules.Blind,
+        lives = _rules.Lives,
         you = yourSlot,
         countdown = GameRules.CountdownSeconds,
         stun = GameRules.SpeedWrongStunSeconds,
         idleDrain = GameRules.IdleDrainPerSecond,
         wrongDrain = GameRules.WrongDrainPerSecond,
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds }),
-        players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot }),
+        players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin }),
     };
 
     public object StatePayload() => new
@@ -279,23 +315,26 @@ public sealed class Match
             p = Math.Round(p.Progress, 3),
             held = p.HeldMask,
             stun = GameTime < p.StunUntil,
+            miss = p.Mistakes,
+            @out = p.Out,
             done = p.Done,
             place = p.Place,
             left = p.Left,
         }),
     };
 
-    /// <summary>Итоговый порядок: финишировавшие по месту, потом по прогрессу, вышедшие — в конце.</summary>
+    /// <summary>Итоговый порядок: финишировавшие по месту, потом по прогрессу, за ними выбывшие, вышедшие — в конце.</summary>
     public List<Player> Standings() => Players
         .OrderBy(p => p.Done ? 0 : 1)
         .ThenBy(p => p.Done ? p.Place : 0)
-        .ThenBy(p => p.Left ? 1 : 0)
+        .ThenBy(p => p.Left ? 2 : p.Out ? 1 : 0)
         .ThenByDescending(p => p.Index + p.Progress)
         .ToList();
 
     public object ResultPayload() => new
     {
         mode = Mode.ToWire(),
+        practice = Practice,
         reason = EndReason,
         results = Standings()
             .Select((p, i) => new
@@ -307,6 +346,7 @@ public sealed class Match
                 time = p.FinishTime,
                 done = p.Done,
                 left = p.Left,
+                @out = p.Out,
                 sliders = Math.Min(p.Index, Level.Length),
             }),
         total = Level.Length,

@@ -232,6 +232,9 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
   transition: transform .4s var(--ease-back);
 }
 .tabs[data-active="1"]::before { transform: translateX(calc(100% + 4px)); }
+.tabs[data-active="2"]::before { transform: translateX(calc(200% + 8px)); }
+.tabs.three { grid-template-columns: repeat(3, 1fr); width: min(480px, 100%); }
+.tabs.three::before { width: calc((100% - 16px) / 3); }
 .tab {
   position: relative;
   z-index: 1;
@@ -280,6 +283,32 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
   min-width: 0;
 }
 .chip .btn { border-radius: 99px; padding: 7px 14px; }
+.topbar.start { justify-content: flex-start; }
+
+/* серия побед: значок у ника и плашка на экране результатов, цвет — по скину серии */
+.streak-badge, .streak-banner {
+  --s1: #ff7a1a;
+  --s2: #e83250;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--s1), var(--s2));
+  border: 2px solid var(--text);
+  border-radius: 99px;
+  font: 400 14px var(--font-display);
+}
+.streak-badge { padding: 2px 9px 2px 6px; animation: pop-in .5s var(--ease-back) both; }
+.streak-badge svg { width: 15px; height: 15px; animation: flicker 1.2s ease-in-out infinite; }
+.streak-electric { --s1: #12bfe8; --s2: #7a5cff; }
+.streak-rainbow { --s1: var(--a1); --s2: var(--a2); background: linear-gradient(90deg, var(--a0), var(--a1), var(--a3), var(--a2), var(--a0)); background-size: 300% 100%; animation: pop-in .5s var(--ease-back) both, logo-flow 3s linear infinite; }
+@keyframes flicker { 50% { transform: scale(1.15) rotate(-6deg); } }
+.streak-banner {
+  margin: 14px 0 0;
+  padding: 8px 18px;
+  font-size: 20px;
+  box-shadow: 0 4px 0 rgba(24, 34, 64, .25);
+}
 
 .menu-actions {
   display: grid;
@@ -302,6 +331,7 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
   margin-top: 20px;
 }
 .menu-lower .side { display: contents; }
+/* боковые кнопки у «Играть»: скины и тренировка */
 .menu-feature {
   min-height: 210px;
   padding: 18px 12px;
@@ -315,10 +345,15 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
   color: var(--text);
   font: inherit;
   box-shadow: 0 7px 0 rgba(24, 34, 64, .22);
-  cursor: default;
+  cursor: pointer;
+  transition: transform .2s var(--ease-back), box-shadow .2s, opacity .2s;
 }
-.future-card { background: #9deafa; }
-.workshop-card { background: #ffc4e1; }
+.menu-feature:hover:not(:disabled) { transform: translateY(-4px) rotate(-1deg); box-shadow: 0 11px 0 rgba(24, 34, 64, .22); }
+.menu-feature:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 3px 0 rgba(24, 34, 64, .22); }
+.menu-feature:disabled { opacity: .55; cursor: default; }
+.menu-feature:focus-visible { outline: 2px solid var(--a0); outline-offset: 3px; }
+.skins-card { background: #ffc4e1; }
+.practice-card { background: #9deafa; }
 .feature-icon {
   display: grid;
   place-items: center;
@@ -327,18 +362,14 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
   border: 3px solid var(--text);
   border-radius: 10px;
   background: #fff;
-  font: 800 34px var(--font-display);
 }
+.feature-icon svg { width: 34px; height: 34px; }
+.skins-card .feature-icon { color: var(--a2); }
+.practice-card .feature-icon { color: var(--a0); }
+.menu-feature:hover:not(:disabled) .feature-icon svg { animation: wiggle .5s var(--ease-back); }
+@keyframes wiggle { 30% { transform: rotate(-14deg) scale(1.1); } 60% { transform: rotate(10deg); } }
 .feature-title { font: 400 20px var(--font-display); text-align: center; }
-.feature-soon {
-  border: 2px solid var(--text);
-  border-radius: 6px;
-  background: #fff;
-  padding: 3px 9px;
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
+.feature-sub { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.35; max-width: 150px; }
 .play-eyebrow {
   color: var(--muted);
   font-size: 12px;
@@ -349,15 +380,15 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
 }
 
 /* выбор режима */
-.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.modes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .mode-card {
   --c: var(--a1);
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  padding: 14px;
+  align-items: center;
+  text-align: center;
+  padding: 10px 2px 9px;
   border-radius: 14px;
   background: #fff;
   border: 2px solid var(--line);
@@ -367,7 +398,6 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
   overflow: hidden;
   transition: transform .25s var(--ease-back), border-color .25s, box-shadow .3s, background-color .3s;
 }
-.mode-card[data-game-mode="speed"] { --c: var(--a2); }
 .mode-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--c) 45%, var(--line)); }
 .mode-card.active {
   border-color: var(--c);
@@ -376,27 +406,12 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
 .mode-card.active { background: color-mix(in srgb, var(--c) 18%, white); }
 .mode-card > * { position: relative; }
 
-.check {
-  position: absolute !important;
-  top: 12px; right: 12px;
-  width: 18px; height: 18px;
-  border-radius: 50%;
-  border: 2px solid var(--line-strong);
-  transition: all .3s var(--ease-back);
-}
-.mode-card.active .check {
-  border-color: var(--c);
-  background: var(--c);
-  box-shadow: inset 0 0 0 4px white;
-  transform: scale(1.1);
-}
-
 .mc-icon {
-  width: 42px; height: 42px;
+  width: 38px; height: 38px;
   border-radius: 12px;
   display: grid;
   place-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   color: var(--c);
   background: color-mix(in srgb, var(--c) 14%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 30%, transparent);
@@ -426,9 +441,19 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
 .mode-card.active .mc-bar i { animation: fill-loop 1.8s var(--ease-out) infinite; }
 @keyframes fill-loop { 0% { height: 0; } 80%, 100% { height: 100%; } }
 
-.mc-title { font: 400 18px var(--font-display); }
-.mc-desc { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
-.mc-meta { font-size: 11px; font-weight: 800; color: var(--c); margin-top: 8px; min-height: 15px; letter-spacing: .04em; }
+.mc-title { font: 400 12px var(--font-display); white-space: nowrap; }
+
+/* описание выбранного режима; --c ставит app.js на .play-card */
+.mode-info {
+  min-height: 62px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--c, var(--a1)) 12%, white);
+  border: 1px dashed color-mix(in srgb, var(--c, var(--a1)) 55%, transparent);
+  transition: background-color .3s, border-color .3s;
+}
+.mode-desc { margin: 0; font-size: 13px; line-height: 1.45; }
+.mc-meta { display: block; font-size: 11px; font-weight: 800; color: color-mix(in srgb, var(--c, var(--a1)) 75%, var(--text)); margin-top: 6px; min-height: 15px; letter-spacing: .04em; }
 
 /* статистика */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
@@ -863,6 +888,146 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
 .res-time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .res-buttons { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 
+/* ---------- Режимы в игре ---------- */
+
+#hud-tag { --c: var(--a0); margin: 0; color: color-mix(in srgb, var(--c) 70%, var(--text)); background: color-mix(in srgb, var(--c) 14%, white); border-color: var(--c); }
+.lives { color: var(--bad); letter-spacing: .08em; }
+.place-badge.out { background: var(--bad); color: #fff; box-shadow: none; }
+
+/* «Вслепую»: у будущих ползунков вместо стрелки — знак вопроса */
+.track.blind .slider:not(.done):not(.current) .key svg { display: none; }
+.track.blind .slider:not(.done):not(.current) .key::after { content: "?"; font: 400 18px var(--font-display); color: var(--muted); }
+.opp .track.blind .slider:not(.done):not(.current) .key::after { font-size: 10px; }
+/* «Зеркало»: стрелки подсвечены пунктиром — напоминание, что всё наоборот */
+.track.mirror .slider.current .key { outline: 2px dashed var(--c); outline-offset: -2px; border-radius: 8px; }
+
+/* ---------- Скины ползунков ---------- */
+
+/* Неон: тёмная колба, яркое свечение */
+.skin-neon .slider .bar { background: #121a33; border-color: color-mix(in srgb, var(--c) 50%, #121a33); }
+.skin-neon .slider .fill { background: color-mix(in srgb, var(--c) 85%, white); box-shadow: 0 0 18px 2px var(--c), inset 0 0 8px rgba(255, 255, 255, .7); }
+
+/* Карамель: бегущие полоски */
+.skin-candy .slider .fill {
+  background: repeating-linear-gradient(-45deg, var(--c) 0 8px, color-mix(in srgb, var(--c) 35%, white) 8px 16px);
+  background-size: 22.6px 22.6px;
+  animation: candy 0.8s linear infinite;
+}
+.skin-candy .slider .bar { border-radius: 99px; }
+@keyframes candy { to { background-position: 22.6px 0; } }
+
+/* Пиксели: заполнение квадратными ступеньками */
+.skin-pixel .slider .bar { border-radius: 3px; border-width: 2px; border-color: var(--text); }
+.skin-pixel .slider .fill {
+  box-shadow: none;
+  -webkit-mask: repeating-linear-gradient(to top, #000 0 9px, transparent 9px 12px);
+  mask: repeating-linear-gradient(to top, #000 0 9px, transparent 9px 12px);
+}
+.skin-pixel .slider .fill::before { display: none; }
+
+/* Золото: все ползунки золотые с бликом */
+.skin-gold .slider .bar { background: #fff6d6; border-color: #e0b44a; }
+.skin-gold .slider .fill {
+  background: linear-gradient(90deg, #c98a0c, #ffd54a 40%, #fff2b0 50%, #ffd54a 60%, #c98a0c);
+  box-shadow: 0 0 20px rgba(242, 173, 22, .6);
+}
+
+/* Радуга: переливается по кругу */
+.skin-rainbow .slider .fill {
+  background: linear-gradient(0deg, var(--a0), var(--a1), var(--a3), var(--a2), var(--a0));
+  background-size: 100% 300%;
+  animation: rainbow 2s linear infinite;
+  box-shadow: 0 0 18px var(--a2);
+}
+@keyframes rainbow { to { background-position: 0 300%; } }
+
+/* у соперников дорожки мелкие — анимации полосок и переливов не нужны */
+.opp .slider .fill { animation: none !important; }
+
+/* ---------- Экран скинов ---------- */
+
+#screen-skins .topbar { margin-bottom: 4px; }
+#skin-tabs { margin: 14px 0 20px; }
+.skin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+.skin-card {
+  --i: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  animation: rise .5s var(--ease-out) both;
+  animation-delay: calc(var(--i) * 50ms);
+  transition: transform .2s var(--ease-back), border-color .2s;
+}
+.skin-card:hover { transform: translateY(-3px); }
+.skin-card.equipped { border-color: var(--a1); box-shadow: 0 5px 0 #439b20; }
+.skin-preview {
+  position: relative;
+  height: 112px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.skin-card.locked .skin-preview > :first-child { filter: grayscale(.85) opacity(.5); }
+.skin-lock {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 28px; height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--text);
+  color: #fff;
+}
+.skin-lock svg { width: 16px; height: 16px; }
+.skin-name { font: 400 18px var(--font-display); }
+.skin-req { font-size: 12px; color: var(--muted); font-weight: 600; display: flex; flex-direction: column; gap: 5px; min-height: 32px; }
+.skin-req b { font-size: 11px; color: var(--text); }
+.skin-progress { height: 6px; border-radius: 99px; background: var(--panel-2); overflow: hidden; border: 1px solid var(--line); }
+.skin-progress i { display: block; height: 100%; background: var(--a3); border-radius: inherit; }
+.skin-buttons { display: flex; gap: 8px; margin-top: auto; }
+.skin-buttons .btn { flex: 1; padding: 8px 6px; font-size: 13px; white-space: nowrap; }
+
+/* мини-дорожка в превью: ползунки сами заполняются по очереди */
+.track.mini { height: 92px; width: 140px; gap: 6px; }
+.track.mini .slider { opacity: 1; transform: none; gap: 4px; }
+.track.mini .slider .bar { animation: none; box-shadow: none; }
+.track.mini .slider .key { height: 18px; }
+.track.mini .slider .key svg { width: 15px; height: 15px; animation: none; filter: none; }
+.track.mini .slider .fill { height: 0; }
+.track.mini .slider .fill, .skin-candy.mini .slider .fill, .skin-rainbow.mini .slider .fill {
+  animation-name: fill-loop, var(--skin-anim, none);
+  animation-duration: 2.4s, 1s;
+  animation-timing-function: var(--ease-out), linear;
+  animation-iteration-count: infinite;
+  animation-delay: calc(var(--k) * .3s), 0s;
+}
+.skin-candy.mini { --skin-anim: candy; }
+.skin-rainbow.mini { --skin-anim: rainbow; }
+
+.fx-tile {
+  --c: var(--a2);
+  width: 72px; height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  font: 400 40px var(--font-display);
+  color: #fff;
+  background: var(--c);
+  border: 3px solid var(--text);
+  box-shadow: 0 5px 0 rgba(24, 34, 64, .25);
+  animation: float 3s ease-in-out infinite;
+}
+.fx-tile svg { width: 40px; height: 40px; }
+
 /* ---------- Адаптив ---------- */
 
 @media (max-width: 760px) {
@@ -888,7 +1053,7 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
   #cd-num { font-size: 96px; }
   .countdown.go #cd-num { font-size: 64px; }
   .menu-card { padding: 16px; }
-  .mc-desc { font-size: 11px; }
+  .modes { grid-template-columns: repeat(3, 1fr); }
   .res-title { font-size: 42px; }
 }
 

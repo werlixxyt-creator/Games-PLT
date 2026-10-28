@@ -40,4 +40,10 @@ public static class GameRules
     public const int SpeedMaxSliders = 30;
     /// <summary>Нажал не ту стрелку — столько секунд нажатия не засчитываются.</summary>
     public const double SpeedWrongStunSeconds = 0.5;
+
+    // Режим «Хардкор»: нажатия без пауз, но ошибки ограничены
+    public const int HardcoreMinSliders = 25;
+    public const int HardcoreMaxSliders = 35;
+    /// <summary>Столько ошибок — и игрок выбывает.</summary>
+    public const int HardcoreLives = 3;
 }
