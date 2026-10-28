@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arrow Rush</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Яркие плоские цвета и декоративные стрелки на canvas. -->
+  <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="bg-grid" aria-hidden="true"></div>
+  <canvas id="bg" aria-hidden="true"></canvas>
+
+  <main id="app">
+
+    <!-- ВХОД / РЕГИСТРАЦИЯ -->
+    <section id="screen-auth" class="screen active">
+      <h1 class="logo"><span class="w1">ARROW</span><span class="w2">RUSH</span></h1>
+      <p class="tagline">Зажимай нужную стрелку и заполняй ползунки быстрее соперников</p>
+
+      <form id="auth-form" class="menu-card glass" novalidate>
+        <div class="tabs" role="tablist" data-active="0">
+          <button type="button" class="tab active" data-mode="login" role="tab">Вход</button>
+          <button type="button" class="tab" data-mode="register" role="tab">Регистрация</button>
+        </div>
+        <label class="field">
+          <span>Ник</span>
+          <input id="auth-name" maxlength="16" autocomplete="username" spellcheck="false" placeholder="Например, Dmitry">
+        </label>
+        <label class="field">
+          <span>Пароль</span>
+          <input id="auth-pass" type="password" maxlength="64" autocomplete="current-password">
+        </label>
+        <label id="auth-pass2-field" class="field" hidden>
+          <span>Повтори пароль</span>
+          <input id="auth-pass2" type="password" maxlength="64" autocomplete="new-password">
+        </label>
+        <p id="auth-hint" class="muted small" hidden>Ник — 3–16 символов, пароль — от 6 символов</p>
+        <div id="auth-error" class="conn bad" role="alert"></div>
+        <button id="auth-submit" class="btn primary" type="submit">Войти</button>
+      </form>
+    </section>
+
+    <!-- МЕНЮ -->
+    <section id="screen-menu" class="screen">
+      <div class="topbar">
+        <div class="chip">
+          <span id="profile-avatar" class="avatar" aria-hidden="true"></span>
+          <span id="profile-name" class="profile-name"></span>
+          <button id="btn-logout" class="btn ghost small">Выйти</button>
+        </div>
+      </div>
+
+      <h1 class="logo"><span class="w1">ARROW</span><span class="w2">RUSH</span></h1>
+      <p class="tagline">Зажимай нужную стрелку и заполняй ползунки быстрее соперников</p>
+
+      <div class="menu-actions">
+        <button class="menu-feature future-card" type="button" disabled aria-label="Уровни — скоро">
+          <span class="feature-icon" aria-hidden="true">▦</span>
+          <span class="feature-title">Уровни</span>
+          <span class="feature-soon">Скоро</span>
+        </button>
+
+        <div class="menu-card glass play-card">
+          <div class="play-eyebrow">Готов к забегу?</div>
+          <div id="mode-tabs" class="modes" role="radiogroup" aria-label="Режим">
+            <button type="button" class="mode-card active" data-game-mode="classic" role="radio">
+              <span class="check" aria-hidden="true"></span>
+              <span class="mc-icon" aria-hidden="true"><span class="mc-bar"><i></i></span></span>
+              <span class="mc-title">Классика</span>
+              <span class="mc-desc">Держи стрелку, пока ползунок не заполнится</span>
+              <span class="mc-meta"></span>
+            </button>
+            <button type="button" class="mode-card" data-game-mode="speed" role="radio">
+              <span class="check" aria-hidden="true"></span>
+              <span class="mc-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#bolt"/></svg></span>
+              <span class="mc-title">Скорость</span>
+              <span class="mc-desc">Одно нажатие — один ползунок, их 20–30. Ошибка — пауза</span>
+              <span class="mc-meta"></span>
+            </button>
+          </div>
+
+          <button id="btn-find" class="btn primary big" disabled>
+            <span>Играть</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#arrow"/></svg>
+          </button>
+          <div id="conn-status" class="conn">Подключение к серверу…</div>
+
+          <div class="stats">
+            <div class="stat"><b id="st-games">0</b><span>матчей</span></div>
+            <div class="stat"><b id="st-wins">0</b><span>побед</span></div>
+            <div class="stat"><b id="st-rate">—</b><span>% побед</span></div>
+            <div class="stat"><b id="st-sliders">0</b><span>ползунков</span></div>
+          </div>
+        </div>
+
+        <button class="menu-feature future-card workshop-card" type="button" disabled aria-label="Мастерская — скоро">
+          <span class="feature-icon" aria-hidden="true">✦</span>
+          <span class="feature-title">Мастерская</span>
+          <span class="feature-soon">Скоро</span>
+        </button>
+      </div>
+
+      <div class="menu-lower">
+        <div class="side">
+          <div class="howto glass">
+            <h3>Как играть</h3>
+            <div class="howto-body">
+              <div class="keys" aria-hidden="true">
+                <div class="keycap" style="--c: var(--a1); --k: 0"><svg viewBox="0 0 24 24"><use href="#arrow"/></svg></div>
+                <div class="keycap" style="--c: var(--a0); --k: 1"><svg viewBox="0 0 24 24" style="rotate:-90deg"><use href="#arrow"/></svg></div>
+                <div class="keycap" style="--c: var(--a3); --k: 2"><svg viewBox="0 0 24 24" style="rotate:180deg"><use href="#arrow"/></svg></div>
+                <div class="keycap" style="--c: var(--a2); --k: 3"><svg viewBox="0 0 24 24" style="rotate:90deg"><use href="#arrow"/></svg></div>
+              </div>
+              <ul class="rules">
+                <li><b>Держи</b> стрелку под ползунком — он заполняется</li>
+                <li><b class="bad">Не та стрелка</b> — прогресс тает</li>
+                <li><b>«Скорость»</b>: нажатие — ползунок, ошибка — пауза</li>
+                <li>Можно играть на <b>WASD</b></li>
+              </ul>
+            </div>
+          </div>
+
+          <div id="history" class="history glass" hidden>
+            <h3>Последние матчи</h3>
+            <ol id="history-list" class="res-list"></ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ПОИСК -->
+    <section id="screen-search" class="screen">
+      <div class="radar" aria-hidden="true">
+        <div class="spinner">
+          <svg viewBox="0 0 24 24" style="--c: var(--a1)"><use href="#arrow"/></svg>
+          <svg viewBox="0 0 24 24" style="--c: var(--a2); rotate:90deg"><use href="#arrow"/></svg>
+          <svg viewBox="0 0 24 24" style="--c: var(--a3); rotate:180deg"><use href="#arrow"/></svg>
+          <svg viewBox="0 0 24 24" style="--c: var(--a0); rotate:-90deg"><use href="#arrow"/></svg>
+        </div>
+      </div>
+      <h2>Ищем соперников<span class="dots"><i>.</i><i>.</i><i>.</i></span></h2>
+      <p id="search-mode" class="mode-pill"></p>
+      <div id="search-timer" class="big-num">0:00</div>
+      <p id="search-info" class="muted">В очереди: 1</p>
+      <p id="search-bot" class="muted small"></p>
+      <button id="btn-cancel" class="btn ghost">Отмена</button>
+    </section>
+
+    <!-- ИГРА -->
+    <section id="screen-game" class="screen">
+      <header class="hud glass">
+        <div class="hud-item">
+          <span class="hud-label">Время</span>
+          <span id="hud-time" class="hud-value">0.0</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">Ползунок</span>
+          <span id="hud-count" class="hud-value">0 / 0</span>
+        </div>
+        <button id="btn-leave" class="btn ghost small">Выйти</button>
+      </header>
+
+      <div id="stage" class="stage glass">
+        <div id="countdown" class="countdown"><span id="cd-num"></span></div>
+        <div id="combo" class="combo" hidden></div>
+        <div id="my-name" class="track-name"></div>
+        <div id="my-track" class="track"></div>
+        <div id="need" class="need"></div>
+      </div>
+
+      <div id="opponents" class="opponents"></div>
+    </section>
+
+    <!-- РЕЗУЛЬТАТЫ -->
+    <section id="screen-results" class="screen">
+      <div class="trophy" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><use href="#arrow"/></svg>
+      </div>
+      <h2 id="res-title" class="res-title">Победа!</h2>
+      <p id="res-sub" class="muted"></p>
+      <ol id="res-list" class="res-list"></ol>
+      <div class="res-buttons">
+        <button id="btn-again" class="btn primary">Ещё матч</button>
+        <button id="btn-menu" class="btn ghost">В меню</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- эффекты поверх всего: искры, кольца, конфетти -->
+  <canvas id="fx" aria-hidden="true"></canvas>
+
+  <svg width="0" height="0" style="position:absolute">
+    <symbol id="arrow" viewBox="0 0 24 24">
+      <path d="M12 3 L21 13 H15.5 V21 H8.5 V13 H3 Z" fill="currentColor"/>
+    </symbol>
+    <symbol id="bolt" viewBox="0 0 24 24">
+      <path d="M13.5 2 L4 13.5 H11 L9.5 22 L20 9.5 H13 Z" fill="currentColor"/>
+    </symbol>
+  </svg>
+
+  <script src="lib/signalr.min.js"></script>
+  <script src="fx.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
