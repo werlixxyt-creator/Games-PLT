@@ -375,6 +375,10 @@ h3 {
 
 /* ---------- Главное меню: большая «Играть» и две кнопки по бокам ---------- */
 
+/* меню — во всю высоту окна, содержимое ровно посередине; плашка с ником — в углу поверх */
+#screen-menu.active { min-height: calc(100svh - 76px); justify-content: center; }
+#screen-menu .topbar { position: absolute; top: 20px; left: 16px; right: 16px; }
+
 .hub {
   display: flex;
   align-items: center;
@@ -397,7 +401,7 @@ h3 {
   animation: breathe 2.4s ease-in-out infinite;
   transition: box-shadow .12s, filter .2s;
 }
-.play-btn svg { width: 46%; height: 46%; margin-left: 8%; transition: transform .3s var(--ease-back); }
+.play-btn svg { width: 46%; height: 46%; transition: transform .3s var(--ease-back); }
 .play-btn:hover { filter: brightness(1.07); }
 .play-btn:hover svg { transform: scale(1.12); }
 .play-btn:active { box-shadow: 0 3px 0 var(--outline), inset 0 -4px 0 rgba(0, 0, 0, .12); translate: 0 7px; }
