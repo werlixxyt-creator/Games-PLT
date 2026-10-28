@@ -6,20 +6,19 @@
   <title>Arrow Rush</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Яркие плоские цвета и декоративные стрелки на canvas. -->
-  <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
-  <div class="bg-grid" aria-hidden="true"></div>
+  <!-- Медленно плывущие стрелки тушью на canvas; занавес закрывает смену экранов. -->
   <canvas id="bg" aria-hidden="true"></canvas>
+  <div id="curtain" class="curtain" aria-hidden="true"><span>Arrow <i>Rush</i></span></div>
 
   <main id="app">
 
     <!-- ВХОД / РЕГИСТРАЦИЯ -->
     <section id="screen-auth" class="screen active">
-      <h1 class="logo"><span class="w1">ARROW</span><span class="w2">RUSH</span></h1>
+      <h1 class="logo"><span class="w1">Arrow</span><span class="w2">Rush</span></h1>
       <p class="tagline">Зажимай нужную стрелку и заполняй ползунки быстрее соперников</p>
 
       <form id="auth-form" class="menu-card glass" novalidate>
@@ -58,7 +57,7 @@
         </div>
       </div>
 
-      <h1 class="logo"><span class="w1">ARROW</span><span class="w2">RUSH</span></h1>
+      <h1 class="logo"><span class="w1">Arrow</span><span class="w2">Rush</span></h1>
       <p class="tagline">Зажимай нужную стрелку и заполняй ползунки быстрее соперников</p>
 
       <div class="menu-actions">

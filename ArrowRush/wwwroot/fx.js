@@ -1,11 +1,15 @@
 "use strict";
 
-// Визуальные эффекты: фон с летящими стрелками и частицы поверх всего (искры, кольца, конфетти).
+// Визуальные эффекты: фон с плывущими стрелками и частицы поверх всего (штрихи, капли, конфетти).
+// Без свечения: всё рисуется обычным смешиванием, как тушь и бумага на светлом холсте.
 // Без зависимостей, всё на двух <canvas>. При «уменьшить движение» в системе — почти всё выключено.
 const fx = (() => {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const css = getComputedStyle(document.documentElement);
   const COLORS = [0, 1, 2, 3].map((i) => css.getPropertyValue("--a" + i).trim());
+  const INK = "#000";
+  // обрезки бумаги для конфетти: цвета стрелок, тушь и кость
+  const SCRAPS = [...COLORS, INK, "#e7e5e4"];
 
   // стрелки: 0 ← 1 ↑ 2 → 3 ↓; символ в index.html смотрит вверх
   const ROT = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
@@ -38,19 +42,19 @@ const fx = (() => {
   addEventListener("pointermove", (e) => { mx = e.clientX / W - 0.5; my = e.clientY / H - 0.5; });
 
   function drifter() {
-    const z = 0.25 + Math.random() * 0.75; // глубина: ближе — крупнее, ярче, быстрее
+    const z = 0.25 + Math.random() * 0.75; // глубина: ближе — крупнее, темнее, быстрее
     return {
       d: Math.floor(Math.random() * 4),
       z,
       x: Math.random() * W,
       y: Math.random() * H,
-      size: 10 + z * 30,
-      speed: 10 + z * 40,
-      alpha: 0.04 + z * 0.12,
+      size: 12 + z * 34,
+      speed: 6 + z * 22,
+      alpha: 0.025 + z * 0.055,
       wob: Math.random() * Math.PI * 2,
     };
   }
-  const drifters = reduce ? [] : Array.from({ length: Math.round(Math.min(46, (W * H) / 32000)) }, drifter);
+  const drifters = reduce ? [] : Array.from({ length: Math.round(Math.min(30, (W * H) / 45000)) }, drifter);
 
   function drawArrow(ctx, x, y, size, rot, color, alpha) {
     ctx.globalAlpha = alpha;
@@ -89,7 +93,7 @@ const fx = (() => {
       const wob = Math.sin(t * 1.3 + a.wob) * 4 * a.z;
       const px = a.x + dy * wob - mx * 40 * a.z;
       const py = a.y + dx * wob - my * 40 * a.z;
-      drawArrow(bctx, px, py, a.size, ROT[a.d], COLORS[a.d], a.alpha * alphaK);
+      drawArrow(bctx, px, py, a.size, ROT[a.d], INK, a.alpha * alphaK);
     }
   }
 
@@ -102,26 +106,27 @@ const fx = (() => {
     if (parts.length < MAX_PARTS) parts.push(p);
   }
 
-  /** Искры во все стороны (заполнили ползунок). */
+  /** Штрихи пером во все стороны и расплывающаяся капля (заполнили ползунок). */
   function burst(x, y, color, n = 18, power = 1) {
     if (reduce) return;
     for (let i = 0; i < n; i++) {
       const ang = Math.random() * Math.PI * 2;
-      const sp = (120 + Math.random() * 260) * power;
+      const sp = (120 + Math.random() * 240) * power;
       add({
         kind: "spark", x, y, color,
-        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 80 * power,
+        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 60 * power,
         life: 0, max: 0.45 + Math.random() * 0.45,
-        size: 1.5 + Math.random() * 2.5,
+        size: 1 + Math.random() * 1.6,
       });
     }
-    ring(x, y, color, 60 * power);
+    add({ kind: "bloom", x, y, color, life: 0, max: 0.6, radius: 26 * power });
+    ring(x, y, color, 60 * power, 1.5);
   }
 
-  /** Расходящееся кольцо. */
-  function ring(x, y, color, radius = 70, width = 3) {
+  /** Расходящееся тонкое кольцо. */
+  function ring(x, y, color, radius = 70, width = 1.5) {
     if (reduce) return;
-    add({ kind: "ring", x, y, color, life: 0, max: 0.5, radius, width });
+    add({ kind: "ring", x, y, color, life: 0, max: 0.6, radius, width });
   }
 
   /** Конфетти сверху (победа, финиш). */
@@ -134,7 +139,7 @@ const fx = (() => {
         vx: (Math.random() - 0.5) * 120, vy: 120 + Math.random() * 220,
         rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 12,
         w: 6 + Math.random() * 6, h: 3 + Math.random() * 4,
-        color: COLORS[i % 4], life: 0, max: 3 + Math.random() * 1.5,
+        color: SCRAPS[i % SCRAPS.length], life: 0, max: 3 + Math.random() * 1.5,
         sway: Math.random() * Math.PI * 2,
       });
     }
@@ -168,10 +173,11 @@ const fx = (() => {
     path.closePath();
     return path;
   })();
-  const GOLD = ["#f2ad16", "#ffd54a", "#ff9f1c"];
-  const ICE = ["#7cc8ff", "#4aa3f0", "#a9dcff"];
-  const FIRE = ["#ff7a1a", "#ffb020", "#e83250"];
-  const VOLT = ["#12bfe8", "#7a5cff", "#ffd400"];
+  // приглушённые палитры под бумажный фон
+  const GOLD = ["#b8862f", "#d9b36a", "#8a6420"];
+  const ICE = ["#ffffff", "#f1efe9", "#9fb6c4"];
+  const FIRE = ["#b0503f", "#c4923a", "#7a2e24"];
+  const VOLT = ["#4f7f9e", "#1f3d52", "#ffffff"];
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
   /** Звёзды падают сверху, крутясь. */
@@ -281,9 +287,6 @@ const fx = (() => {
         continue;
       }
 
-      // искры, кольца и стрелки светятся («lighter»); остальное на светлом фоне так выцветает — рисуем обычным смешиванием
-      fctx.globalCompositeOperation = p.kind === "spark" || p.kind === "ring" || p.kind === "arrow" ? "lighter" : "source-over";
-
       if (p.kind === "star" || p.kind === "flake") {
         p.x += (p.vx + (p.sway !== undefined ? Math.sin((p.sway += dt * 2)) * 30 : 0)) * dt;
         p.y += p.vy * dt;
@@ -318,7 +321,7 @@ const fx = (() => {
         p.x += p.vx * dt + Math.sin(p.life * 8 + p.flick) * 0.6;
         p.y += p.vy * dt;
         fctx.globalAlpha = (1 - k) * (0.6 + 0.4 * Math.sin(p.life * 30 + p.flick));
-        fctx.fillStyle = p.color || `hsl(${(p.hue + p.life * 400) % 360} 95% 55%)`;
+        fctx.fillStyle = p.color || `hsl(${(p.hue + p.life * 400) % 360} 45% 48%)`;
         fctx.beginPath();
         fctx.arc(p.x, p.y, p.size * (1 - k * 0.5), 0, Math.PI * 2);
         fctx.fill();
@@ -343,10 +346,22 @@ const fx = (() => {
         p.vy = p.vy * (1 - dt * 2.5) + 600 * dt;
         p.x += p.vx * dt;
         p.y += p.vy * dt;
+        // штрих пером вдоль полёта: длинный в начале, к концу сходит на нет
         fctx.globalAlpha = 1 - k;
+        fctx.strokeStyle = p.color;
+        fctx.lineWidth = p.size * (1 - k * 0.5);
+        fctx.lineCap = "round";
+        fctx.beginPath();
+        fctx.moveTo(p.x, p.y);
+        fctx.lineTo(p.x - p.vx * 0.035, p.y - p.vy * 0.035);
+        fctx.stroke();
+      } else if (p.kind === "bloom") {
+        // капля краски расплывается и бледнеет
+        const e = 1 - (1 - k) ** 2;
+        fctx.globalAlpha = (1 - k) * 0.28;
         fctx.fillStyle = p.color;
         fctx.beginPath();
-        fctx.arc(p.x, p.y, p.size * (1 - k * 0.6), 0, Math.PI * 2);
+        fctx.arc(p.x, p.y, 4 + p.radius * e, 0, Math.PI * 2);
         fctx.fill();
       } else if (p.kind === "ring") {
         const e = 1 - (1 - k) ** 3;

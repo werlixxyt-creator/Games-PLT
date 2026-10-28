@@ -31,7 +31,7 @@ const UNLOCK_TEXT = {
 // превью эффектов на экране скинов: значок (символ или #id из <svg> в index.html) и цвет плитки
 const FX_PREVIEW = {
   confetti: ["▰", "var(--a2)"], stars: ["★", "var(--gold)"], snow: ["❄", "var(--a0)"], fireworks: ["✺", "var(--a3)"],
-  flame: ["#flame", "#ff7a1a"], electric: ["#bolt", "#7a5cff"], rainbow: ["◉", "var(--a1)"],
+  flame: ["#flame", "var(--a2)"], electric: ["#bolt", "var(--a0)"], rainbow: ["◉", "var(--a1)"],
 };
 
 function plural(n, one, few, many) {
@@ -44,7 +44,7 @@ const $ = (id) => document.getElementById(id);
 
 // ---------- Состояние клиента ----------
 
-let screen = "menu";
+let screen = "";          // пусто до первого show() — тогда и при загрузке поднимается занавес
 let match = null;        // данные текущего матча + DOM дорожек
 let lastState = null;    // последний снимок от сервера
 let stateAt = 0;         // когда он пришёл (performance.now)
@@ -87,6 +87,8 @@ function show(name) {
   for (const s of ["auth", "menu", "skins", "search", "game", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
+  // новый экран уже на месте (его можно измерять), занавес поверх него уезжает вверх
+  if (name !== screen) fx.retrigger($("curtain"), "lift");
   screen = name;
   fx.setCalm(name === "game");
   if (name === "menu") refreshProfile();
