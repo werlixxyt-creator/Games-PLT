@@ -1,15 +1,15 @@
 "use strict";
 
 // Визуальные эффекты: фон с плывущими стрелками и частицы поверх всего (штрихи, капли, конфетти).
-// Без свечения: всё рисуется обычным смешиванием, как тушь и бумага на светлом холсте.
+// Без свечения: всё рисуется обычным смешиванием, яркость дают сами цвета.
 // Без зависимостей, всё на двух <canvas>. При «уменьшить движение» в системе — почти всё выключено.
 const fx = (() => {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const css = getComputedStyle(document.documentElement);
   const COLORS = [0, 1, 2, 3].map((i) => css.getPropertyValue("--a" + i).trim());
-  const INK = "#000";
-  // обрезки бумаги для конфетти: цвета стрелок, тушь и кость
-  const SCRAPS = [...COLORS, INK, "#e7e5e4"];
+  const DRIFT = "#fff"; // стрелки фона — полупрозрачные белые
+  // конфетти: цвета стрелок, белый и тёмная обводка
+  const SCRAPS = [...COLORS, "#ffffff", "#1d1340"];
 
   // стрелки: 0 ← 1 ↑ 2 → 3 ↓; символ в index.html смотрит вверх
   const ROT = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
@@ -49,8 +49,8 @@ const fx = (() => {
       x: Math.random() * W,
       y: Math.random() * H,
       size: 12 + z * 34,
-      speed: 6 + z * 22,
-      alpha: 0.025 + z * 0.055,
+      speed: 10 + z * 34,
+      alpha: 0.05 + z * 0.12,
       wob: Math.random() * Math.PI * 2,
     };
   }
@@ -93,7 +93,7 @@ const fx = (() => {
       const wob = Math.sin(t * 1.3 + a.wob) * 4 * a.z;
       const px = a.x + dy * wob - mx * 40 * a.z;
       const py = a.y + dx * wob - my * 40 * a.z;
-      drawArrow(bctx, px, py, a.size, ROT[a.d], INK, a.alpha * alphaK);
+      drawArrow(bctx, px, py, a.size, ROT[a.d], DRIFT, a.alpha * alphaK);
     }
   }
 
@@ -173,11 +173,10 @@ const fx = (() => {
     path.closePath();
     return path;
   })();
-  // приглушённые палитры под бумажный фон
-  const GOLD = ["#b8862f", "#d9b36a", "#8a6420"];
-  const ICE = ["#ffffff", "#f1efe9", "#9fb6c4"];
-  const FIRE = ["#b0503f", "#c4923a", "#7a2e24"];
-  const VOLT = ["#4f7f9e", "#1f3d52", "#ffffff"];
+  const GOLD = ["#ffc93c", "#ffe27a", "#ff9f1c"];
+  const ICE = ["#ffffff", "#d8f3ff", "#9fe3ff"];
+  const FIRE = ["#ff7a1a", "#ffb31f", "#ff3b5c"];
+  const VOLT = ["#22c7f0", "#9b7bff", "#ffffff"];
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
   /** Звёзды падают сверху, крутясь. */
@@ -321,7 +320,7 @@ const fx = (() => {
         p.x += p.vx * dt + Math.sin(p.life * 8 + p.flick) * 0.6;
         p.y += p.vy * dt;
         fctx.globalAlpha = (1 - k) * (0.6 + 0.4 * Math.sin(p.life * 30 + p.flick));
-        fctx.fillStyle = p.color || `hsl(${(p.hue + p.life * 400) % 360} 45% 48%)`;
+        fctx.fillStyle = p.color || `hsl(${(p.hue + p.life * 400) % 360} 90% 62%)`;
         fctx.beginPath();
         fctx.arc(p.x, p.y, p.size * (1 - k * 0.5), 0, Math.PI * 2);
         fctx.fill();

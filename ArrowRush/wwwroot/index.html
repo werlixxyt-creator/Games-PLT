@@ -6,19 +6,19 @@
   <title>Arrow Rush</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Медленно плывущие стрелки тушью на canvas; занавес закрывает смену экранов. -->
+  <!-- Летящие стрелки на canvas; занавес закрывает смену экранов. -->
   <canvas id="bg" aria-hidden="true"></canvas>
-  <div id="curtain" class="curtain" aria-hidden="true"><span>Arrow <i>Rush</i></span></div>
+  <div id="curtain" class="curtain" aria-hidden="true"><span>ARROW <i>RUSH</i></span></div>
 
   <main id="app">
 
     <!-- ВХОД / РЕГИСТРАЦИЯ -->
     <section id="screen-auth" class="screen active">
-      <h1 class="logo"><span class="w1">Arrow</span><span class="w2">Rush</span></h1>
+      <h1 class="logo"><span class="w1">ARROW</span><span class="w2">RUSH</span></h1>
       <p class="tagline">Зажимай нужную стрелку и заполняй ползунки быстрее соперников</p>
 
       <form id="auth-form" class="menu-card glass" novalidate>
@@ -57,51 +57,87 @@
         </div>
       </div>
 
-      <h1 class="logo"><span class="w1">Arrow</span><span class="w2">Rush</span></h1>
+      <h1 class="logo"><span class="w1">ARROW</span><span class="w2">RUSH</span></h1>
       <p class="tagline">Зажимай нужную стрелку и заполняй ползунки быстрее соперников</p>
 
-      <div class="menu-actions">
-        <button id="btn-skins" class="menu-feature skins-card" type="button">
-          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#palette"/></svg></span>
-          <span class="feature-title">Скины</span>
-          <span id="skins-count" class="feature-sub">ползунки и эффекты</span>
+      <!-- как в аркадах: большая «Играть» по центру, по бокам — скины и статистика -->
+      <div class="hub">
+        <button id="btn-skins" class="hub-side skins" type="button">
+          <span class="hub-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#palette"/></svg></span>
+          <span class="hub-label">Скины</span>
+          <span id="skins-count" class="hub-sub">ползунки и эффекты</span>
         </button>
 
-        <div class="menu-card glass play-card">
-          <div class="play-eyebrow">Готов к забегу?</div>
-          <!-- карточки режимов строит app.js из MODES -->
-          <div id="mode-tabs" class="modes" role="radiogroup" aria-label="Режим"></div>
-          <div id="pace-tabs" class="tabs pace" role="radiogroup" aria-label="Темп" data-active="0">
-            <button type="button" class="tab active" data-pace="normal" role="radio">Обычный</button>
-            <button type="button" class="tab" data-pace="fast" role="radio">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#bolt"/></svg>Быстрый
-            </button>
-          </div>
-          <div class="mode-info">
-            <p id="mode-desc" class="mode-desc"></p>
-            <span id="mode-meta" class="mc-meta"></span>
-          </div>
+        <button id="btn-play" class="play-btn" type="button" aria-label="Играть">
+          <span class="play-ring" aria-hidden="true"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#play"/></svg>
+          <span class="play-label">Играть</span>
+        </button>
 
-          <button id="btn-find" class="btn primary big" disabled>
-            <span>Играть</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#arrow"/></svg>
-          </button>
-          <div id="conn-status" class="conn">Подключение к серверу…</div>
-
-          <div class="stats">
-            <div class="stat"><b id="st-games">0</b><span>матчей</span></div>
-            <div class="stat"><b id="st-wins">0</b><span>побед</span></div>
-            <div class="stat"><b id="st-rate">—</b><span>% побед</span></div>
-            <div class="stat"><b id="st-sliders">0</b><span>ползунков</span></div>
-          </div>
-        </div>
-
-        <button id="btn-practice" class="menu-feature practice-card" type="button" disabled>
-          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#target"/></svg></span>
-          <span class="feature-title">Тренировка</span>
-          <span class="feature-sub">сразу с ботом, без статистики</span>
+        <button id="btn-stats" class="hub-side charts" type="button">
+          <span class="hub-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#chart"/></svg></span>
+          <span class="hub-label">Статистика</span>
+          <span class="hub-sub">история и правила</span>
         </button>
       </div>
+
+      <div id="conn-status" class="conn" data-conn>Подключение к серверу…</div>
+    </section>
+
+    <!-- ВЫБОР РЕЖИМА: режимы листаются влево-вправо -->
+    <section id="screen-modes" class="screen">
+      <div class="topbar start">
+        <button id="btn-modes-back" class="btn ghost small">← Назад</button>
+      </div>
+      <h2>Выбери режим</h2>
+
+      <div class="carousel">
+        <button id="mode-prev" class="nav-arrow prev" type="button" aria-label="Предыдущий режим">
+          <svg viewBox="0 0 24 24" style="rotate:-90deg" aria-hidden="true"><use href="#arrow"/></svg>
+        </button>
+        <!-- карточки режимов строит app.js из MODES -->
+        <div id="mode-stage" class="mode-stage" role="listbox" aria-label="Режим"></div>
+        <button id="mode-next" class="nav-arrow next" type="button" aria-label="Следующий режим">
+          <svg viewBox="0 0 24 24" style="rotate:90deg" aria-hidden="true"><use href="#arrow"/></svg>
+        </button>
+      </div>
+      <div id="mode-dots" class="mode-dots" aria-hidden="true"></div>
+
+      <div id="pace-tabs" class="tabs pace" role="radiogroup" aria-label="Темп" data-active="0">
+        <button type="button" class="tab active" data-pace="normal" role="radio">Обычный</button>
+        <button type="button" class="tab" data-pace="fast" role="radio">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#bolt"/></svg>Быстрый
+        </button>
+      </div>
+
+      <div class="mode-actions">
+        <button id="btn-find" class="btn primary big" disabled>
+          <span>Найти матч</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#arrow"/></svg>
+        </button>
+        <button id="btn-practice" class="btn ghost" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#target"/></svg>Тренировка с ботом
+        </button>
+      </div>
+      <div class="conn" data-conn></div>
+      <p class="muted small keys-hint">← → — листать режимы, Enter — найти матч</p>
+    </section>
+
+    <!-- СТАТИСТИКА -->
+    <section id="screen-stats" class="screen">
+      <div class="topbar start">
+        <button id="btn-stats-back" class="btn ghost small">← В меню</button>
+      </div>
+      <h2>Статистика</h2>
+
+      <div class="stats">
+        <div class="stat"><b id="st-games">0</b><span>матчей</span></div>
+        <div class="stat"><b id="st-wins">0</b><span>побед</span></div>
+        <div class="stat"><b id="st-rate">—</b><span>% побед</span></div>
+        <div class="stat"><b id="st-best">0</b><span>лучшая серия</span></div>
+      </div>
+
+      <div id="mode-table" class="mode-table glass"></div>
 
       <div class="menu-lower">
         <div class="side">
@@ -221,7 +257,12 @@
     <symbol id="arrow" viewBox="0 0 24 24">
       <path d="M12 3 L21 13 H15.5 V21 H8.5 V13 H3 Z" fill="currentColor"/>
     </symbol>
-    <symbol id="bolt" viewBox="0 0 24 24">
+    <symbol id="play" viewBox="0 0 24 24">
+      <path d="M8 4.5 C8 3.7 8.9 3.2 9.6 3.6 L20 10.9 C20.6 11.3 20.6 12.7 20 13.1 L9.6 20.4 C8.9 20.8 8 20.3 8 19.5 Z" fill="currentColor"/>
+    </symbol>
+    <symbol id="chart" viewBox="0 0 24 24">
+      <path d="M3 21 V19 H21 V21 Z M5 17 V11 H9 V17 Z M10.5 17 V5 H14.5 V17 Z M16 17 V8.5 H20 V17 Z" fill="currentColor"/>
+    </symbol>    <symbol id="bolt" viewBox="0 0 24 24">
       <path d="M13.5 2 L4 13.5 H11 L9.5 22 L20 9.5 H13 Z" fill="currentColor"/>
     </symbol>
     <symbol id="mirror" viewBox="0 0 24 24">

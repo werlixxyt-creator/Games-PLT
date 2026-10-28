@@ -84,7 +84,7 @@ function targetOf(arrow) {
 // ---------- Экраны ----------
 
 function show(name) {
-  for (const s of ["auth", "menu", "skins", "search", "game", "results"]) {
+  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "game", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
   // новый экран уже на месте (его можно измерять), занавес поверх него уезжает вверх
@@ -94,10 +94,12 @@ function show(name) {
   if (name === "menu") refreshProfile();
 }
 
+/** Строка о связи с сервером — в меню и на экране выбора режима. */
 function setConn(text, kind) {
-  const el = $("conn-status");
-  el.textContent = text;
-  el.className = "conn " + (kind || "");
+  for (const el of document.querySelectorAll("[data-conn]")) {
+    el.textContent = text;
+    el.className = "conn " + (kind || "");
+  }
 }
 
 /** Кнопки, которым нужна связь с сервером. */
@@ -250,32 +252,89 @@ function modeIcon(m) {
     : `<svg viewBox="0 0 24 24"><use href="#${m.icon}"/></svg>`;
 }
 
+// ---------- Выбор режима: карусель ----------
+
+const MODE_IDS = Object.keys(MODES);
+let swiped = false;
+
+// карточка на каждый режим; видны текущая и соседние, остальные спрятаны за краем
 for (const [id, m] of Object.entries(MODES)) {
-  const t = document.createElement("button");
-  t.type = "button";
-  t.className = "mode-card";
-  t.dataset.gameMode = id;
-  t.setAttribute("role", "radio");
-  t.style.setProperty("--c", m.color);
-  t.innerHTML = `<span class="mc-icon" aria-hidden="true">${modeIcon(m)}</span><span class="mc-title">${m.name}</span>`;
-  t.addEventListener("click", () => {
-    if (id === gameMode) return;
-    setGameMode(id);
-    const [x, y] = fx.anchor(t);
-    fx.ring(x, y, getComputedStyle(t).getPropertyValue("--c").trim(), 110);
+  const slide = document.createElement("button");
+  slide.type = "button";
+  slide.className = "mode-slide";
+  slide.dataset.gameMode = id;
+  slide.setAttribute("role", "option");
+  slide.style.setProperty("--c", m.color);
+  slide.innerHTML = `
+    <span class="slide-icon" aria-hidden="true">${modeIcon(m)}</span>
+    <span class="slide-name">${m.name}</span>
+    <span class="slide-desc"></span>
+    <span class="slide-meta"></span>`;
+  // соседняя карточка по клику становится текущей
+  slide.addEventListener("click", () => {
+    if (swiped) { swiped = false; return; } // свайп уже пролистал — клик в конце жеста не считаем
+    if (id !== gameMode) setGameMode(id, true);
   });
-  $("mode-tabs").appendChild(t);
+  $("mode-stage").appendChild(slide);
+
+  const dot = document.createElement("i");
+  dot.dataset.gameMode = id;
+  dot.style.setProperty("--c", m.color);
+  $("mode-dots").appendChild(dot);
 }
 
-function setGameMode(mode) {
+/** Листает режимы по кругу: dir = -1 влево, 1 вправо. */
+function stepMode(dir) {
+  const i = MODE_IDS.indexOf(gameMode);
+  setGameMode(MODE_IDS[(i + dir + MODE_IDS.length) % MODE_IDS.length], true);
+}
+
+$("mode-prev").addEventListener("click", () => stepMode(-1));
+$("mode-next").addEventListener("click", () => stepMode(1));
+
+// свайп пальцем или мышью
+{
+  let startX = null;
+  const stage = $("mode-stage");
+  stage.addEventListener("pointerdown", (e) => { startX = e.clientX; swiped = false; });
+  stage.addEventListener("pointerup", (e) => {
+    if (startX === null) return;
+    const dx = e.clientX - startX;
+    startX = null;
+    if (Math.abs(dx) > 40) {
+      swiped = true;
+      stepMode(dx < 0 ? 1 : -1);
+    }
+  });
+  stage.addEventListener("pointercancel", () => { startX = null; });
+}
+
+/** animate — сменили режим руками: кольцо вокруг новой карточки. */
+function setGameMode(mode, animate = false) {
   gameMode = mode;
   try { localStorage.setItem("arrowrush.mode", mode); } catch { /* ничего */ }
-  for (const t of document.querySelectorAll("#mode-tabs [data-game-mode]")) {
-    const on = t.dataset.gameMode === mode;
-    t.classList.toggle("active", on);
-    t.setAttribute("aria-checked", on);
+
+  const i = MODE_IDS.indexOf(mode);
+  const n = MODE_IDS.length;
+  for (const slide of document.querySelectorAll("#mode-stage .mode-slide")) {
+    // смещение по кругу: -1 — слева, 0 — в центре, 1 — справа
+    let off = MODE_IDS.indexOf(slide.dataset.gameMode) - i;
+    if (off > n / 2) off -= n;
+    if (off < -n / 2) off += n;
+    slide.style.setProperty("--off", off);
+    slide.classList.toggle("active", off === 0);
+    slide.classList.toggle("side", Math.abs(off) === 1);
+    slide.setAttribute("aria-selected", off === 0);
+    slide.tabIndex = off === 0 ? 0 : -1;
   }
-  document.querySelector(".play-card").style.setProperty("--c", MODES[mode].color);
+  for (const dot of document.querySelectorAll("#mode-dots i")) dot.classList.toggle("on", dot.dataset.gameMode === mode);
+  $("screen-modes").style.setProperty("--c", MODES[mode].color);
+
+  if (animate) {
+    const cur = document.querySelector(`#mode-stage [data-game-mode="${mode}"] .slide-icon`);
+    const [x, y] = fx.anchor(cur);
+    fx.ring(x, y, getComputedStyle(cur).getPropertyValue("--c").trim(), 120, 4);
+  }
   renderModeInfo();
 }
 
@@ -295,26 +354,45 @@ for (const t of document.querySelectorAll("#pace-tabs .tab")) {
   t.addEventListener("click", () => { if (t.dataset.pace !== pace) setPace(t.dataset.pace); });
 }
 
-/** Описание выбранных режима и темпа. В «Хардкоре» паузы за ошибку нет — о ней не пишем. */
+/** Описания и итоги на карточках режимов — под выбранный темп. В «Хардкоре» паузы за ошибку нет. */
 function renderModeInfo() {
-  const paceDesc = pace === "fast" && gameMode !== "hardcore" ? PACES.fast.desc + " Ошибка — пауза." : PACES[pace].desc;
-  $("mode-desc").textContent = `${MODES[gameMode].desc} ${paceDesc}`;
-  renderStats();
+  for (const slide of document.querySelectorAll("#mode-stage .mode-slide")) {
+    const mode = slide.dataset.gameMode;
+    const paceDesc = pace === "fast" && mode !== "hardcore" ? PACES.fast.desc + " Ошибка — пауза." : PACES[pace].desc;
+    slide.querySelector(".slide-desc").textContent = `${MODES[mode].desc} ${paceDesc}`;
+    const s = profile && profile.stats[mode][pace];
+    slide.querySelector(".slide-meta").textContent = !s ? "" : s.games ? `Побед: ${s.wins} из ${s.games}` : "Ещё не играл";
+  }
 }
 
 setGameMode(gameMode);
 setPace(pace);
 
-/** Статистика выбранных режима и темпа (числа докручиваются) + подпись под описанием. */
+/** Экран статистики: итоги по всем режимам и таблица «режим × темп». */
 function renderStats() {
   if (!profile) return;
-  const s = profile.stats[gameMode][pace];
-  fx.countUp($("st-games"), s.games);
-  fx.countUp($("st-wins"), s.wins);
-  if (s.games) fx.countUp($("st-rate"), Math.round((s.wins / s.games) * 100));
+  let games = 0, wins = 0;
+  for (const mode of MODE_IDS) for (const p of Object.keys(PACES)) {
+    games += profile.stats[mode][p].games;
+    wins += profile.stats[mode][p].wins;
+  }
+  fx.countUp($("st-games"), games);
+  fx.countUp($("st-wins"), wins);
+  if (games) fx.countUp($("st-rate"), Math.round((wins / games) * 100));
   else $("st-rate").textContent = "—";
-  fx.countUp($("st-sliders"), s.sliders);
-  $("mode-meta").textContent = s.games ? `Побед: ${s.wins} из ${s.games}` : "Ещё не играл";
+  fx.countUp($("st-best"), profile.streak.best);
+
+  const table = $("mode-table");
+  table.innerHTML = `<div class="mt-row mt-head"><span>Режим</span><span>Обычный</span><span>Быстрый</span></div>`;
+  for (const mode of MODE_IDS) {
+    const row = document.createElement("div");
+    row.className = "mt-row";
+    row.style.setProperty("--c", MODES[mode].color);
+    const cell = (s) => s.games ? `<b>${s.wins}</b> из ${s.games}` : `<span class="muted">—</span>`;
+    row.innerHTML = `<span class="mt-mode"><i></i>${MODES[mode].name}</span><span>${cell(profile.stats[mode].normal)}</span><span>${cell(profile.stats[mode].fast)}</span>`;
+    table.appendChild(row);
+  }
+  renderModeInfo();
 }
 
 /** Значок серии побед у ника: виден с двух побед подряд, оформлен надетым скином серии. */
@@ -377,6 +455,17 @@ $("btn-skins").addEventListener("click", () => {
   renderSkins();
 });
 $("btn-skins-back").addEventListener("click", () => show("menu"));
+
+$("btn-play").addEventListener("click", () => {
+  show("modes");
+  setGameMode(gameMode); // карусель могла измениться, пока экран был скрыт
+});
+$("btn-modes-back").addEventListener("click", () => show("menu"));
+$("btn-stats").addEventListener("click", () => {
+  show("stats");
+  renderStats();
+});
+$("btn-stats-back").addEventListener("click", () => show("menu"));
 
 for (const t of document.querySelectorAll("#skin-tabs .tab")) {
   t.addEventListener("click", () => {
@@ -529,7 +618,7 @@ $("btn-menu").addEventListener("click", () => show("menu"));
 $("btn-cancel").addEventListener("click", () => {
   conn.invoke("CancelSearch").catch(() => {});
   stopSearch();
-  show("menu");
+  show("modes");
 });
 
 $("btn-leave").addEventListener("click", () => {
@@ -975,6 +1064,19 @@ function pushInput() {
   sentHeld = held;
   conn.send("Input", held).catch(() => {});
 }
+
+// выбор режима: ←/→ (или A/D) листают, Enter — найти матч
+window.addEventListener("keydown", (e) => {
+  if (screen !== "modes" || e.repeat) return;
+  const a = KEY_TO_ARROW[e.code];
+  if (a === 0 || a === 2) {
+    e.preventDefault();
+    stepMode(a === 0 ? -1 : 1);
+  } else if (e.code === "Enter" && !$("btn-find").disabled && document.activeElement?.tagName !== "BUTTON") {
+    e.preventDefault();
+    findMatch(false);
+  }
+});
 
 window.addEventListener("keydown", (e) => {
   if (screen !== "game") return;
