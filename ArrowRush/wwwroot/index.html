@@ -231,6 +231,14 @@
       </div>
 
       <div id="opponents" class="opponents"></div>
+
+      <!-- экранные стрелки — только на сенсорных экранах; раскладка как на клавиатуре -->
+      <div id="touchpad" class="touchpad" aria-hidden="true">
+        <button type="button" class="tkey" data-arrow="1" style="--c: var(--a1)"><svg viewBox="0 0 24 24"><use href="#arrow"/></svg></button>
+        <button type="button" class="tkey" data-arrow="0" style="--c: var(--a0)"><svg viewBox="0 0 24 24" style="rotate:-90deg"><use href="#arrow"/></svg></button>
+        <button type="button" class="tkey" data-arrow="3" style="--c: var(--a3)"><svg viewBox="0 0 24 24" style="rotate:180deg"><use href="#arrow"/></svg></button>
+        <button type="button" class="tkey" data-arrow="2" style="--c: var(--a2)"><svg viewBox="0 0 24 24" style="rotate:90deg"><use href="#arrow"/></svg></button>
+      </div>
     </section>
 
     <!-- РЕЗУЛЬТАТЫ -->

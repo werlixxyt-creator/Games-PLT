@@ -30,6 +30,10 @@ public static class Database
     {
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDb>().Database;
+
+        // на хостинге файл SQLite живёт внутри контейнера и пропадает при каждом деплое — вместе с аккаунтами
+        if (!db.IsNpgsql() && !app.Environment.IsDevelopment())
+            app.Logger.LogWarning("DATABASE_URL не задан: данные хранятся в SQLite внутри контейнера и сотрутся при следующем деплое. Подключи PostgreSQL.");
         db.EnsureCreated();
 
         // EnsureCreated не трогает уже существующие таблицы — новые колонки добавляем сами.
@@ -58,7 +62,10 @@ public static class Database
         }
     }
 
-    /// <summary>postgresql://user:pass@host:port/db → строка подключения Npgsql.</summary>
+    /// <summary>
+    /// postgresql://user:pass@host:port/db?sslmode=require → строка подключения Npgsql.
+    /// sslmode из адреса учитывается: внешние базы (Neon, Supabase) без SSL не пускают.
+    /// </summary>
     private static string ToNpgsql(string url)
     {
         if (!url.StartsWith("postgres", StringComparison.OrdinalIgnoreCase) || !url.Contains("://"))
@@ -66,13 +73,21 @@ public static class Database
 
         var uri = new Uri(url);
         var user = uri.UserInfo.Split(':', 2);
-        return new NpgsqlConnectionStringBuilder
+        var builder = new NpgsqlConnectionStringBuilder
         {
             Host = uri.Host,
             Port = uri.Port > 0 ? uri.Port : 5432,
             Database = uri.AbsolutePath.Trim('/'),
             Username = Uri.UnescapeDataString(user[0]),
             Password = user.Length > 1 ? Uri.UnescapeDataString(user[1]) : null,
-        }.ConnectionString;
+        };
+
+        var sslMode = uri.Query.TrimStart('?').Split('&')
+            .Select(p => p.Split('=', 2))
+            .FirstOrDefault(p => p.Length == 2 && p[0].Equals("sslmode", StringComparison.OrdinalIgnoreCase))?[1];
+        if (sslMode is not null && Enum.TryParse<SslMode>(sslMode.Replace("-", ""), ignoreCase: true, out var mode))
+            builder.SslMode = mode;
+
+        return builder.ConnectionString;
     }
 }

@@ -1081,16 +1081,47 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+/** Стрелку зажали — с клавиатуры или экранной кнопкой. */
+function pressArrow(a) {
+  const bit = 1 << a;
+  if (!(held & bit)) predictPress(bit); // автоповтор зажатой клавиши — не новое нажатие
+  held |= bit;
+  pushInput();
+}
+
+function releaseArrow(a) {
+  held &= ~(1 << a);
+  pushInput();
+}
+
 window.addEventListener("keydown", (e) => {
   if (screen !== "game") return;
   const a = KEY_TO_ARROW[e.code];
   if (a === undefined) return;
   e.preventDefault();
-  const bit = 1 << a;
-  if (!(held & bit)) predictPress(bit); // автоповтор зажатой клавиши — не новое нажатие
-  held |= bit;
-  pushInput();
+  pressArrow(a);
 });
+
+// экранные стрелки для телефона: каждая кнопка держится своим пальцем, можно зажать несколько сразу
+for (const key of document.querySelectorAll("#touchpad [data-arrow]")) {
+  const a = Number(key.dataset.arrow);
+  key.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    key.setPointerCapture(e.pointerId); // палец съехал с кнопки — она всё равно держится, пока его не отпустят
+    key.classList.add("down");
+    if (navigator.vibrate) navigator.vibrate(8);
+    if (screen === "game") pressArrow(a);
+  });
+  const up = () => {
+    if (!key.classList.contains("down")) return;
+    key.classList.remove("down");
+    releaseArrow(a);
+  };
+  key.addEventListener("pointerup", up);
+  key.addEventListener("pointercancel", up);
+  key.addEventListener("lostpointercapture", up);
+  key.addEventListener("contextmenu", (e) => e.preventDefault()); // долгое нажатие не открывает меню
+}
 
 /** Режимы с нажатиями: те же правила, что на сервере (Match.Press), — чтобы ползунок заполнялся мгновенно. */
 function predictPress(bit) {
@@ -1115,13 +1146,13 @@ function predictPress(bit) {
 window.addEventListener("keyup", (e) => {
   const a = KEY_TO_ARROW[e.code];
   if (a === undefined) return;
-  held &= ~(1 << a);
-  pushInput();
+  releaseArrow(a);
 });
 
 // переключился на другое окно — считаем, что всё отпущено
 window.addEventListener("blur", () => {
   held = 0;
+  for (const key of document.querySelectorAll("#touchpad .down")) key.classList.remove("down");
   pushInput();
 });
 
