@@ -1101,21 +1101,169 @@ h3 {
 }
 .stage .tag-bot { color: var(--muted-room); border-color: rgba(255, 255, 255, .2); }
 
+/* ---------- Свой трек (ритм-режим) ---------- */
+
+.rhythm-btn { --face: var(--a2); }
+.rhythm-btn svg { width: 18px; height: 18px; }
+
+#screen-rhythm { align-items: stretch; }
+#rh-leave { margin-left: auto; }
+#rh-title { margin: 0; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rh-stage {
+  height: clamp(420px, calc(100svh - 150px), 720px);
+  padding: 0;
+  overflow: hidden;
+}
+#rh-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* оценка удара над линией */
+.rh-judge {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  translate: -50% 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font: 900 30px/1 var(--font-display);
+  color: var(--on-bg);
+  -webkit-text-stroke: 5px #0e0a26;
+  paint-order: stroke fill;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.rh-judge small { font: 800 14px var(--font-body); -webkit-text-stroke: 0; color: var(--muted-room); margin-top: 6px; }
+.rh-judge.perfect { color: var(--a3); }
+.rh-judge.good { color: var(--a1); }
+.rh-judge.ok { color: var(--a0); }
+.rh-judge.miss { color: var(--bad); }
+.rh-judge.pop { animation: judge-pop .35s var(--ease-back); }
+@keyframes judge-pop { from { transform: scale(1.6) rotate(-4deg); opacity: .4; } }
+
+.rh-progress { position: absolute; left: 0; right: 0; top: 0; height: 6px; background: rgba(255, 255, 255, .08); z-index: 1; }
+.rh-progress i { display: block; height: 100%; width: 0; background: var(--a3); }
+
+/* панель поверх поля: загрузка, настройка, итоги */
+.rh-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(29, 20, 70, .9);
+  overflow-y: auto;
+}
+.rh-card {
+  width: min(460px, 100%);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--text);
+  background: var(--panel);
+  border: 4px solid var(--outline);
+  border-radius: 24px;
+  box-shadow: 0 8px 0 #0e0a26;
+  animation: pop-up .5s var(--ease-back) both;
+}
+.rh-icon {
+  width: 64px; height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font: 900 30px var(--font-display);
+  color: var(--outline);
+  background: var(--a2);
+  border: 4px solid var(--outline);
+  box-shadow: 0 5px 0 var(--outline);
+}
+.rh-icon.bad { background: var(--bad); color: var(--on-bg); }
+.rh-track { font: 900 20px/1.2 var(--font-display); color: var(--text); text-transform: none; letter-spacing: 0; margin: 4px 0 0; word-break: break-word; }
+.rh-meta { margin: 0; color: var(--muted); font-size: 14px; }
+.rh-error { margin: 4px 0; font-size: 15px; }
+.rh-best { margin: 0; font-size: 13px; color: var(--muted); }
+.rh-record { margin: 0; font: 900 16px var(--font-display); color: #e0840c; animation: pulse 1s ease-in-out infinite; }
+
+.rh-diffs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+.rh-diff {
+  font: 800 13px var(--font-body);
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 3px solid var(--outline);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.rh-diff.on { background: var(--a0); }
+.rh-diff[data-diff="easy"].on { background: var(--a1); }
+.rh-diff[data-diff="hard"].on { background: var(--bad); color: var(--on-bg); }
+
+.rh-offset { display: flex; flex-direction: column; gap: 4px; width: 100%; font-size: 13px; margin-top: 4px; }
+.rh-offset input { width: 100%; accent-color: var(--a2); }
+.rh-offset small { color: var(--muted); font-size: 11px; }
+
+.rh-buttons { display: flex; flex-direction: column; align-items: stretch; gap: 10px; width: min(300px, 100%); margin-top: 8px; }
+
+/* итоги: большая буква-оценка */
+.rh-grade {
+  width: 96px; height: 96px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font: 900 52px var(--font-display);
+  color: var(--outline);
+  background: var(--panel-2);
+  border: 5px solid var(--outline);
+  box-shadow: 0 7px 0 var(--outline);
+  animation: icon-bounce .7s var(--ease-back) both;
+}
+.rh-grade.g-S { background: var(--gold); }
+.rh-grade.g-A { background: var(--a1); }
+.rh-grade.g-B { background: var(--a0); }
+.rh-grade.g-C { background: var(--a3); }
+.rh-grade.g-D { background: var(--bad); color: var(--on-bg); }
+.rh-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; margin-top: 4px; }
+.rh-sum div { display: flex; flex-direction: column; padding: 8px 4px; background: var(--panel-2); border: 3px solid var(--outline); border-radius: 14px; }
+.rh-sum b { font: 900 18px var(--font-display); }
+.rh-sum span { font-size: 11px; color: var(--muted); }
+.rh-counts { display: flex; flex-wrap: wrap; gap: 6px 12px; justify-content: center; font-size: 13px; font-weight: 800; }
+.rh-counts .perfect b { color: #e0840c; }
+.rh-counts .good b { color: #45a315; }
+.rh-counts .ok b { color: #0d93b8; }
+.rh-counts .miss b { color: var(--bad); }
+
+/* «слушаем трек»: четыре стрелки подпрыгивают по очереди */
+.rh-spin { display: flex; gap: 8px; }
+.rh-spin i { width: 18px; height: 34px; border-radius: 6px; border: 3px solid var(--outline); animation: eq .9s ease-in-out infinite; }
+.rh-spin i:nth-child(1) { background: var(--a0); }
+.rh-spin i:nth-child(2) { background: var(--a1); animation-delay: .15s; }
+.rh-spin i:nth-child(3) { background: var(--a3); animation-delay: .3s; }
+.rh-spin i:nth-child(4) { background: var(--a2); animation-delay: .45s; }
+@keyframes eq { 50% { transform: scaleY(.45); } }
+
 /* ---------- Экранные стрелки (телефон) ---------- */
 
 .touchpad { display: none; }
 
 @media (hover: none) and (pointer: coarse) {
   /* место под кнопки, чтобы они не закрывали соперников */
-  #screen-game.active { padding-bottom: calc(190px + env(safe-area-inset-bottom)); }
+  #screen-game.active, #screen-rhythm.active { padding-bottom: calc(190px + env(safe-area-inset-bottom)); }
+  .rh-stage { height: clamp(300px, calc(100svh - 300px), 640px); }
+
+  /* кнопки видны только во время игры: в матче и в «Своём треке» */
+  body[data-screen="game"] .touchpad, body[data-screen="rhythm"] .touchpad { display: grid; }
 
   .touchpad {
+    display: none;
     position: fixed;
     left: 50%;
     bottom: calc(14px + env(safe-area-inset-bottom));
     z-index: 30;
     translate: -50% 0;
-    display: grid;
     grid-template-columns: repeat(3, var(--tk));
     grid-template-rows: repeat(2, var(--tk));
     gap: 10px;
@@ -1277,7 +1425,7 @@ h3 {
   .slider .key svg { width: 20px; height: 20px; }
   /* шапка игры в одну строку: плашку режима прячем, кнопку «Выйти» сжимаем */
   .hud { gap: 14px; padding: 8px 12px; }
-  #hud-tag { display: none; }
+  #hud-tag, #rh-title { display: none; }
   .hud-value { font-size: 22px; }
   #btn-leave { padding: 6px 12px; flex: none; }
   #cd-num { font-size: 100px; }

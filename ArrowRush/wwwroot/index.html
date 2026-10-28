@@ -125,6 +125,9 @@
         <button id="btn-practice" class="btn ghost" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#target"/></svg>Тренировка с ботом
         </button>
+        <button id="btn-rhythm" class="btn rhythm-btn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#note"/></svg>Свой трек: уровень под бит
+        </button>
       </div>
       <div class="conn" data-conn></div>
       <p class="muted small keys-hint">← → — листать режимы, Enter — найти матч</p>
@@ -239,16 +242,26 @@
 
       <div id="opponents" class="opponents"></div>
 
-      <!-- экранные стрелки — только на сенсорных экранах; раскладка как на клавиатуре -->
-      <div id="touchpad" class="touchpad" aria-hidden="true">
-        <button type="button" class="tkey" data-arrow="1" style="--c: var(--a1)"><svg viewBox="0 0 24 24"><use href="#arrow"/></svg></button>
-        <button type="button" class="tkey" data-arrow="0" style="--c: var(--a0)"><svg viewBox="0 0 24 24" style="rotate:-90deg"><use href="#arrow"/></svg></button>
-        <button type="button" class="tkey" data-arrow="3" style="--c: var(--a3)"><svg viewBox="0 0 24 24" style="rotate:180deg"><use href="#arrow"/></svg></button>
-        <button type="button" class="tkey" data-arrow="2" style="--c: var(--a2)"><svg viewBox="0 0 24 24" style="rotate:90deg"><use href="#arrow"/></svg></button>
-      </div>
     </section>
 
     <!-- РЕЗУЛЬТАТЫ -->
+    <!-- СВОЙ ТРЕК: ритм-уровень из файла игрока (rhythm.js) -->
+    <section id="screen-rhythm" class="screen">
+      <header class="hud glass">
+        <div class="hud-item"><span class="hud-label">Счёт</span><span id="rh-score" class="hud-value">0</span></div>
+        <div class="hud-item"><span class="hud-label">Комбо</span><span id="rh-combo" class="hud-value">0</span></div>
+        <div class="hud-item"><span class="hud-label">Точность</span><span id="rh-acc" class="hud-value">100%</span></div>
+        <span id="rh-title" class="mode-pill"></span>
+        <button id="rh-leave" class="btn ghost small">Выйти</button>
+      </header>
+      <div class="stage glass rh-stage">
+        <canvas id="rh-canvas"></canvas>
+        <div id="rh-judge" class="rh-judge"></div>
+        <div id="rh-progress" class="rh-progress"><i></i></div>
+        <!-- загрузка, настройка уровня и итоги -->
+        <div id="rh-panel" class="rh-panel" hidden></div>
+      </div>
+    </section>
     <section id="screen-results" class="screen">
       <div class="trophy" aria-hidden="true">
         <svg viewBox="0 0 24 24"><use href="#arrow"/></svg>
@@ -265,6 +278,15 @@
 
   </main>
 
+  <!-- экранные стрелки — на сенсорных экранах во время игры; раскладка как на клавиатуре -->
+  <div id="touchpad" class="touchpad" aria-hidden="true">
+    <button type="button" class="tkey" data-arrow="1" style="--c: var(--a1)"><svg viewBox="0 0 24 24"><use href="#arrow"/></svg></button>
+    <button type="button" class="tkey" data-arrow="0" style="--c: var(--a0)"><svg viewBox="0 0 24 24" style="rotate:-90deg"><use href="#arrow"/></svg></button>
+    <button type="button" class="tkey" data-arrow="3" style="--c: var(--a3)"><svg viewBox="0 0 24 24" style="rotate:180deg"><use href="#arrow"/></svg></button>
+    <button type="button" class="tkey" data-arrow="2" style="--c: var(--a2)"><svg viewBox="0 0 24 24" style="rotate:90deg"><use href="#arrow"/></svg></button>
+  </div>
+  <input id="rh-file" type="file" accept="audio/*" hidden>
+
   <!-- эффекты поверх всего: искры, кольца, конфетти -->
   <canvas id="fx" aria-hidden="true"></canvas>
 
@@ -277,7 +299,11 @@
     </symbol>
     <symbol id="chart" viewBox="0 0 24 24">
       <path d="M3 21 V19 H21 V21 Z M5 17 V11 H9 V17 Z M10.5 17 V5 H14.5 V17 Z M16 17 V8.5 H20 V17 Z" fill="currentColor"/>
-    </symbol>    <symbol id="bolt" viewBox="0 0 24 24">
+    </symbol>
+    <symbol id="note" viewBox="0 0 24 24">
+      <path d="M9 18.5 A3.2 3.2 0 1 1 7 15.6 V5 L20 2.5 V15.5 A3.2 3.2 0 1 1 18 12.6 V7.2 L9 9 Z" fill="currentColor"/>
+    </symbol>
+    <symbol id="bolt" viewBox="0 0 24 24">
       <path d="M13.5 2 L4 13.5 H11 L9.5 22 L20 9.5 H13 Z" fill="currentColor"/>
     </symbol>
     <symbol id="mirror" viewBox="0 0 24 24">
@@ -305,6 +331,7 @@
 
   <script src="lib/signalr.min.js"></script>
   <script src="fx.js"></script>
+  <script src="rhythm.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

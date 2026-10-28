@@ -93,13 +93,16 @@ function targetOf(arrow) {
 // ---------- Экраны ----------
 
 function show(name) {
-  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "game", "results"]) {
+  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "game", "rhythm", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
+  // ушли из «Своего трека» — музыку останавливаем
+  if (screen === "rhythm" && name !== "rhythm") rhythm.stop();
   // новый экран уже на месте (его можно измерять), занавес поверх него уезжает вверх
   if (name !== screen) fx.retrigger($("curtain"), "lift");
   screen = name;
-  fx.setCalm(name === "game");
+  document.body.dataset.screen = name; // по нему CSS показывает экранные стрелки
+  fx.setCalm(name === "game" || name === "rhythm");
   if (name === "menu") refreshProfile();
 }
 
@@ -492,6 +495,15 @@ $("btn-play").addEventListener("click", () => {
   setGameMode(gameMode); // карусель могла измениться, пока экран был скрыт
 });
 $("btn-modes-back").addEventListener("click", () => show("menu"));
+
+// «Свой трек»: выбор файла → rhythm.js делает уровень под бит
+rhythm.init({ show, difficulty: () => difficulty, back: () => show("modes") });
+$("btn-rhythm").addEventListener("click", () => $("rh-file").click());
+$("rh-file").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  e.target.value = ""; // чтобы тот же файл можно было выбрать ещё раз
+  if (file) rhythm.open(file);
+});
 $("btn-stats").addEventListener("click", () => {
   show("stats");
   renderStats();
@@ -1123,10 +1135,14 @@ function releaseArrow(a) {
 }
 
 window.addEventListener("keydown", (e) => {
-  if (screen !== "game") return;
+  if (screen !== "game" && screen !== "rhythm") return;
   const a = KEY_TO_ARROW[e.code];
   if (a === undefined) return;
   e.preventDefault();
+  if (screen === "rhythm") {
+    if (!e.repeat) rhythm.press(a); // в ритм-режиме считается только само нажатие
+    return;
+  }
   pressArrow(a);
 });
 
@@ -1139,11 +1155,13 @@ for (const key of document.querySelectorAll("#touchpad [data-arrow]")) {
     key.classList.add("down");
     if (navigator.vibrate) navigator.vibrate(8);
     if (screen === "game") pressArrow(a);
+    else if (screen === "rhythm") rhythm.press(a);
   });
   const up = () => {
     if (!key.classList.contains("down")) return;
     key.classList.remove("down");
     releaseArrow(a);
+    rhythm.release(a);
   };
   key.addEventListener("pointerup", up);
   key.addEventListener("pointercancel", up);
@@ -1175,6 +1193,7 @@ window.addEventListener("keyup", (e) => {
   const a = KEY_TO_ARROW[e.code];
   if (a === undefined) return;
   releaseArrow(a);
+  rhythm.release(a);
 });
 
 // переключился на другое окно — считаем, что всё отпущено
