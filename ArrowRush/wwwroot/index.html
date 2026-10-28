@@ -72,6 +72,12 @@
           <div class="play-eyebrow">Готов к забегу?</div>
           <!-- карточки режимов строит app.js из MODES -->
           <div id="mode-tabs" class="modes" role="radiogroup" aria-label="Режим"></div>
+          <div id="pace-tabs" class="tabs pace" role="radiogroup" aria-label="Темп" data-active="0">
+            <button type="button" class="tab active" data-pace="normal" role="radio">Обычный</button>
+            <button type="button" class="tab" data-pace="fast" role="radio">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#bolt"/></svg>Быстрый
+            </button>
+          </div>
           <div class="mode-info">
             <p id="mode-desc" class="mode-desc"></p>
             <span id="mode-meta" class="mc-meta"></span>
@@ -112,7 +118,7 @@
               <ul class="rules">
                 <li><b>Держи</b> стрелку под ползунком — он заполняется</li>
                 <li><b class="bad">Не та стрелка</b> — прогресс тает</li>
-                <li><b>«Скорость»</b>: нажатие — ползунок, ошибка — пауза</li>
+                <li><b>Быстрый темп</b>: нажатие — ползунок, ошибка — пауза</li>
                 <li><b>«Зеркало»</b>: держи стрелку наоборот</li>
                 <li><b>«Хардкор»</b>: три ошибки — и ты выбыл</li>
                 <li>Можно играть на <b>WASD</b></li>

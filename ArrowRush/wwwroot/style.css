@@ -380,7 +380,13 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
 }
 
 /* выбор режима */
-.modes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+
+/* темп: обычный или быстрый */
+.tabs.pace .tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; }
+.tabs.pace .tab svg { width: 14px; height: 14px; color: var(--a3); transition: color .25s; }
+.tabs.pace .tab.active svg { color: var(--text); }
+.tabs.pace[data-active="1"]::before { background: var(--a3); box-shadow: 0 2px 0 #b8740b; }
 .mode-card {
   --c: var(--a1);
   position: relative;
@@ -737,7 +743,7 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
 .track.finished .slider:nth-child(odd) { animation-delay: .05s; }
 @keyframes wave { 40% { transform: translateY(-10px); } }
 
-/* «Скорость»: ползунков много — делаем их плотнее */
+/* быстрый темп: ползунков много — делаем их плотнее */
 .track.speed { gap: 4px; }
 .track.speed .slider .key svg { width: 20px; height: 20px; }
 .opp .track.speed { gap: 2px; }
@@ -753,7 +759,7 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
 }
 .need.bad { color: var(--bad); text-shadow: 0 0 14px rgba(255, 77, 109, .6); }
 
-/* серия без ошибок в «Скорости» */
+/* серия без ошибок в быстром темпе */
 .combo {
   position: absolute;
   top: 14px;
@@ -1053,7 +1059,6 @@ h3 { font-size: 12px; color: var(--muted); font-weight: 800; margin: 0 0 12px; t
   #cd-num { font-size: 96px; }
   .countdown.go #cd-num { font-size: 64px; }
   .menu-card { padding: 16px; }
-  .modes { grid-template-columns: repeat(3, 1fr); }
   .res-title { font-size: 42px; }
 }
 

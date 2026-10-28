@@ -75,10 +75,11 @@ public static class AccountEndpoints
         var mine = db.MatchParticipants.Where(p => p.UserId == userId);
 
         var byMode = await mine
-            .GroupBy(p => p.Match.Mode)
+            .GroupBy(p => new { p.Match.Mode, p.Match.Fast })
             .Select(g => new
             {
-                Mode = g.Key,
+                g.Key.Mode,
+                g.Key.Fast,
                 Games = g.Count(),
                 Wins = g.Count(p => p.Place == 1 && p.FinishTime != null),
                 Sliders = g.Sum(p => p.Sliders),
@@ -91,6 +92,7 @@ public static class AccountEndpoints
             .Select(p => new
             {
                 p.Match.Mode,
+                p.Match.Fast,
                 p.Match.PlayedAt,
                 p.Place,
                 Players = p.Match.Participants.Count,
@@ -123,15 +125,18 @@ public static class AccountEndpoints
                 [Skins.Win] = Skins.Equipped(Skins.Win, user.WinSkin),
                 [Skins.StreakSlot] = Skins.Equipped(Skins.StreakSlot, user.StreakSkin),
             },
-            // { classic: {games, wins, sliders}, speed: {...} } — нули, если в режиме ещё не играл
+            // { classic: { normal: {games, wins, sliders}, fast: {...} }, mirror: {...} } — нули, если ещё не играл
             stats = Enum.GetValues<GameMode>().ToDictionary(
                 m => m.ToWire(),
-                m => byMode.FirstOrDefault(s => s.Mode == m) is { } s
-                    ? new { games = s.Games, wins = s.Wins, sliders = s.Sliders }
-                    : new { games = 0, wins = 0, sliders = 0 }),
+                m => new[] { false, true }.ToDictionary(
+                    fast => fast ? "fast" : "normal",
+                    fast => byMode.FirstOrDefault(s => s.Mode == m && s.Fast == fast) is { } s
+                        ? new { games = s.Games, wins = s.Wins, sliders = s.Sliders }
+                        : new { games = 0, wins = 0, sliders = 0 })),
             recent = recent.Select(r => new
             {
                 mode = r.Mode.ToWire(),
+                fast = r.Fast,
                 // SQLite теряет пометку UTC — возвращаем её, чтобы браузер показал местное время
                 playedAt = DateTime.SpecifyKind(r.PlayedAt, DateTimeKind.Utc),
                 place = r.Place,

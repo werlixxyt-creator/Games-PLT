@@ -35,15 +35,13 @@ public static class GameRules
     /// <summary>Зажата неправильная стрелка — ползунок быстро теряет прогресс.</summary>
     public const double WrongDrainPerSecond = 1.2;
 
-    // Режим «Скорость»: одно нажатие — один ползунок
-    public const int SpeedMinSliders = 20;
-    public const int SpeedMaxSliders = 30;
+    // Быстрый темп (в любом режиме): одно нажатие — один ползунок
+    public const int FastMinSliders = 20;
+    public const int FastMaxSliders = 30;
     /// <summary>Нажал не ту стрелку — столько секунд нажатия не засчитываются.</summary>
-    public const double SpeedWrongStunSeconds = 0.5;
+    public const double FastWrongStunSeconds = 0.5;
 
-    // Режим «Хардкор»: нажатия без пауз, но ошибки ограничены
-    public const int HardcoreMinSliders = 25;
-    public const int HardcoreMaxSliders = 35;
+    // Режим «Хардкор»: без пауз за ошибку, но ошибки ограничены
     /// <summary>Столько ошибок — и игрок выбывает.</summary>
     public const int HardcoreLives = 3;
 }

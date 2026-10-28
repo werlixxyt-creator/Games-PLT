@@ -9,37 +9,37 @@ public enum Arrow
     Down = 3,
 }
 
-/// <summary>Режим игры. В базе хранится числом, клиенту передаётся строкой (см. <see cref="GameModes"/>).</summary>
+/// <summary>
+/// Режим игры. В базе хранится числом, клиенту передаётся строкой (см. <see cref="GameModes"/>).
+/// Темп (обычный — держать стрелку, быстрый — нажимать) выбирается отдельно для любого режима.
+/// </summary>
 public enum GameMode
 {
-    /// <summary>Держи стрелку, пока ползунок не заполнится.</summary>
+    /// <summary>Без особых правил.</summary>
     Classic = 0,
-    /// <summary>Одно нажатие — один ползунок, но их больше.</summary>
-    Speed = 1,
-    /// <summary>Как «Классика», но держать надо противоположную стрелку.</summary>
+    // 1 — бывшая «Скорость», теперь это «Классика» в быстром темпе (старые записи переносит Database.EnsureDatabase)
+    /// <summary>Правильная стрелка — противоположная нарисованной.</summary>
     Mirror = 2,
-    /// <summary>Как «Скорость», но видна только текущая стрелка.</summary>
+    /// <summary>Видна только текущая стрелка.</summary>
     Blind = 3,
-    /// <summary>Нажатия без пауз за ошибку, но после нескольких ошибок игрок выбывает.</summary>
+    /// <summary>После нескольких ошибок игрок выбывает (зато без пауз за ошибку).</summary>
     Hardcore = 4,
 }
 
 /// <summary>
-/// Правила режима. Press — ползунок заполняется одним нажатием, иначе его надо держать.
-/// Mirror — правильная стрелка противоположна нарисованной. Blind — клиент прячет следующие стрелки.
+/// Правила режима. Mirror — правильная стрелка противоположна нарисованной. Blind — клиент прячет следующие стрелки.
 /// Lives &gt; 0 — столько ошибок можно сделать до выбывания (и пауз за ошибку нет).
 /// </summary>
-public sealed record ModeRules(string Wire, bool Press, int MinSliders, int MaxSliders, bool Mirror = false, bool Blind = false, int Lives = 0);
+public sealed record ModeRules(string Wire, bool Mirror = false, bool Blind = false, int Lives = 0);
 
 public static class GameModes
 {
     private static readonly Dictionary<GameMode, ModeRules> All = new()
     {
-        [GameMode.Classic] = new("classic", Press: false, GameRules.MinSliders, GameRules.MaxSliders),
-        [GameMode.Speed] = new("speed", Press: true, GameRules.SpeedMinSliders, GameRules.SpeedMaxSliders),
-        [GameMode.Mirror] = new("mirror", Press: false, GameRules.MinSliders, GameRules.MaxSliders, Mirror: true),
-        [GameMode.Blind] = new("blind", Press: true, GameRules.SpeedMinSliders, GameRules.SpeedMaxSliders, Blind: true),
-        [GameMode.Hardcore] = new("hardcore", Press: true, GameRules.HardcoreMinSliders, GameRules.HardcoreMaxSliders, Lives: GameRules.HardcoreLives),
+        [GameMode.Classic] = new("classic"),
+        [GameMode.Mirror] = new("mirror", Mirror: true),
+        [GameMode.Blind] = new("blind", Blind: true),
+        [GameMode.Hardcore] = new("hardcore", Lives: GameRules.HardcoreLives),
     };
 
     public static ModeRules Rules(this GameMode mode) => All[mode];
@@ -50,15 +50,17 @@ public static class GameModes
     public static GameMode Parse(string? mode) => All.FirstOrDefault(kv => kv.Value.Wire == mode).Key;
 }
 
-/// <summary>Один ползунок: какая стрелка нарисована и сколько секунд он заполняется (в режимах с нажатиями — 0).</summary>
+/// <summary>Один ползунок: какая стрелка нарисована и сколько секунд он заполняется (в быстром темпе — 0).</summary>
 public sealed record Slider(Arrow Arrow, double FillSeconds);
 
 public static class LevelGenerator
 {
-    public static Slider[] Generate(GameMode mode, Random rnd)
+    /// <param name="fast">Быстрый темп: ползунок — одно нажатие, зато их больше.</param>
+    public static Slider[] Generate(bool fast, Random rnd)
     {
-        var rules = mode.Rules();
-        var count = rnd.Next(rules.MinSliders, rules.MaxSliders + 1);
+        var count = fast
+            ? rnd.Next(GameRules.FastMinSliders, GameRules.FastMaxSliders + 1)
+            : rnd.Next(GameRules.MinSliders, GameRules.MaxSliders + 1);
         var sliders = new Slider[count];
 
         for (var i = 0; i < count; i++)
@@ -71,7 +73,7 @@ public static class LevelGenerator
             // не больше двух одинаковых стрелок подряд — иначе скучно
             while (i >= 2 && arrow == sliders[i - 1].Arrow && arrow == sliders[i - 2].Arrow);
 
-            var seconds = rules.Press ? 0 : GameRules.MinFillSeconds
+            var seconds = fast ? 0 : GameRules.MinFillSeconds
                           + rnd.NextDouble() * (GameRules.MaxFillSeconds - GameRules.MinFillSeconds);
 
             sliders[i] = new Slider(arrow, Math.Round(seconds, 2));

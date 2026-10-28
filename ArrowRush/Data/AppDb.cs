@@ -23,6 +23,8 @@ public sealed class MatchRecord
     public int Id { get; set; }
     public required string Code { get; set; }
     public GameMode Mode { get; set; }
+    /// <summary>Быстрый темп (нажатия) или обычный (удержание).</summary>
+    public bool Fast { get; set; }
     public DateTime PlayedAt { get; set; }
     public double Duration { get; set; }
     public int SliderCount { get; set; }

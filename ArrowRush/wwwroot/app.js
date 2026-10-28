@@ -10,11 +10,15 @@ const ARROW_CHAR = ["←", "↑", "→", "↓"];
 
 // порядок здесь — порядок карточек в меню; правила режимов присылает сервер в matchStart
 const MODES = {
-  classic: { name: "Классика", icon: "bar", color: "var(--a1)", desc: "Держи стрелку, пока ползунок не заполнится" },
-  speed: { name: "Скорость", icon: "bolt", color: "var(--a2)", desc: "Одно нажатие — один ползунок, их 20–30. Ошибка — пауза" },
-  mirror: { name: "Зеркало", icon: "mirror", color: "var(--a0)", desc: "Держи стрелку, противоположную нарисованной: ← значит →, ↑ значит ↓" },
-  blind: { name: "Вслепую", icon: "eye", color: "var(--a3)", desc: "Нажатия, как в «Скорости», но видна только текущая стрелка" },
-  hardcore: { name: "Хардкор", icon: "heart", color: "var(--bad)", desc: "Нажатия без пауз за ошибку, но три ошибки — и ты выбыл" },
+  classic: { name: "Классика", icon: "bar", color: "var(--a1)", desc: "Без особых правил." },
+  mirror: { name: "Зеркало", icon: "mirror", color: "var(--a0)", desc: "Жми стрелку, противоположную нарисованной: ← значит →, ↑ значит ↓." },
+  blind: { name: "Вслепую", icon: "eye", color: "var(--a3)", desc: "Видна только текущая стрелка, следующие спрятаны." },
+  hardcore: { name: "Хардкор", icon: "heart", color: "var(--bad)", desc: "Без пауз за ошибку, но три ошибки — и ты выбыл." },
+};
+// темп выбирается для любого режима
+const PACES = {
+  normal: { name: "обычный", desc: "Держи стрелку, пока ползунок не заполнится." },
+  fast: { name: "быстрый", desc: "Одно нажатие — один ползунок, но их 20–30." },
 };
 
 const SKIN_SLOTS = ["slider", "win", "streak"];
@@ -50,7 +54,17 @@ let search = null;       // { startedAt, inQueue, botAfter, timer }
 let online = false;      // хотим ли быть подключены к хабу (false после выхода из аккаунта)
 let profile = null;      // ответ /api/account/me
 let gameMode = "classic";
-try { if (MODES[localStorage.getItem("arrowrush.mode")]) gameMode = localStorage.getItem("arrowrush.mode"); } catch { /* приватный режим */ }
+let pace = "normal";
+try {
+  if (MODES[localStorage.getItem("arrowrush.mode")]) gameMode = localStorage.getItem("arrowrush.mode");
+  else if (localStorage.getItem("arrowrush.mode") === "speed") pace = "fast"; // бывший режим «Скорость»
+  if (PACES[localStorage.getItem("arrowrush.pace")]) pace = localStorage.getItem("arrowrush.pace");
+} catch { /* приватный режим */ }
+
+/** «Зеркало · быстрый» — режим и темп одной строкой. */
+function modeLabel(mode, fast) {
+  return `${MODES[mode].name} · ${PACES[fast ? "fast" : "normal"].name}`;
+}
 
 // режимы с нажатиями: свой прогресс считаем сразу по нажатию, не дожидаясь сервера
 let pred = newPrediction();
@@ -259,16 +273,40 @@ function setGameMode(mode) {
     t.classList.toggle("active", on);
     t.setAttribute("aria-checked", on);
   }
-  $("mode-desc").textContent = MODES[mode].desc;
   document.querySelector(".play-card").style.setProperty("--c", MODES[mode].color);
+  renderModeInfo();
+}
+
+function setPace(p) {
+  pace = p;
+  try { localStorage.setItem("arrowrush.pace", p); } catch { /* ничего */ }
+  for (const t of document.querySelectorAll("#pace-tabs .tab")) {
+    const on = t.dataset.pace === p;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-checked", on);
+  }
+  $("pace-tabs").dataset.active = p === "fast" ? "1" : "0";
+  renderModeInfo();
+}
+
+for (const t of document.querySelectorAll("#pace-tabs .tab")) {
+  t.addEventListener("click", () => { if (t.dataset.pace !== pace) setPace(t.dataset.pace); });
+}
+
+/** Описание выбранных режима и темпа. В «Хардкоре» паузы за ошибку нет — о ней не пишем. */
+function renderModeInfo() {
+  const paceDesc = pace === "fast" && gameMode !== "hardcore" ? PACES.fast.desc + " Ошибка — пауза." : PACES[pace].desc;
+  $("mode-desc").textContent = `${MODES[gameMode].desc} ${paceDesc}`;
   renderStats();
 }
-setGameMode(gameMode);
 
-/** Статистика выбранного режима (числа докручиваются) + подпись под описанием режима. */
+setGameMode(gameMode);
+setPace(pace);
+
+/** Статистика выбранных режима и темпа (числа докручиваются) + подпись под описанием. */
 function renderStats() {
   if (!profile) return;
-  const s = profile.stats[gameMode];
+  const s = profile.stats[gameMode][pace];
   fx.countUp($("st-games"), s.games);
   fx.countUp($("st-wins"), s.wins);
   if (s.games) fx.countUp($("st-rate"), Math.round((s.wins / s.games) * 100));
@@ -317,7 +355,7 @@ function applyProfile(p) {
       : `${m.place} из ${m.players} · ${m.sliders}/${m.total}`;
     const tag = document.createElement("span");
     tag.className = "tag-mode";
-    tag.textContent = MODES[m.mode].name.toLowerCase();
+    tag.textContent = modeLabel(m.mode, m.fast).toLowerCase();
     what.append(text, tag);
 
     const when = document.createElement("span");
@@ -507,12 +545,12 @@ async function findMatch(practice) {
     search = { startedAt: performance.now(), inQueue: 1, botAfter: 12, timer: null };
     search.timer = setInterval(updateSearch, 250);
     updateSearch();
-    $("search-mode").textContent = `Режим: ${MODES[gameMode].name}`;
+    $("search-mode").textContent = `Режим: ${modeLabel(gameMode, pace === "fast")}`;
     show("search");
   }
 
   try {
-    await conn.invoke("FindMatch", gameMode, practice);
+    await conn.invoke("FindMatch", gameMode, pace === "fast", practice);
   } catch (e) {
     // текст HubException с сервера приходит после "HubException: "
     const msg = String((e && e.message) || "").split("HubException: ")[1];
@@ -593,7 +631,7 @@ function startMatch(d) {
   match = {
     mode: d.mode,
     practice: d.practice,
-    press: d.press,
+    press: d.fast, // быстрый темп: ползунок — одно нажатие
     mirror: d.mirror,
     blind: d.blind,
     lives: d.lives,
@@ -610,7 +648,7 @@ function startMatch(d) {
   $("combo").hidden = true;
 
   $("hud-lives-box").hidden = !d.lives;
-  $("hud-tag").textContent = MODES[d.mode].name + (d.practice ? " · тренировка" : "");
+  $("hud-tag").textContent = modeLabel(d.mode, d.fast) + (d.practice ? " · тренировка" : "");
   $("hud-tag").style.setProperty("--c", MODES[d.mode].color);
 
   // моя дорожка
@@ -880,6 +918,8 @@ function render(now) {
   // подсказки для меня
   const mine = st.players.find((p) => p.slot === match.you);
   if (!mine) return;
+  // при удержании ошибки считает только сервер
+  if (!speed) { pred.miss = mine.miss; pred.out = mine.out; }
   if (match.lives) renderLives();
 
   const myIdx = speed ? pred.idx : mine.idx;

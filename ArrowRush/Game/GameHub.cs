@@ -14,16 +14,17 @@ namespace ArrowRush.Game;
 [Authorize]
 public sealed class GameHub(MatchManager manager, AppDb db) : Hub
 {
-    /// <param name="mode">"classic", "speed", "mirror", "blind" или "hardcore".</param>
+    /// <param name="mode">"classic", "mirror", "blind" или "hardcore".</param>
+    /// <param name="fast">Быстрый темп: ползунок — одно нажатие; иначе стрелку надо держать.</param>
     /// <param name="practice">true — сразу матч с ботом, не в статистику.</param>
-    public async Task FindMatch(string? mode, bool practice)
+    public async Task FindMatch(string? mode, bool fast, bool practice)
     {
         var userId = Context.UserIdentifier!;
         // скин ползунков берём из базы: его увидят соперники
         var skin = await db.Users.Where(u => u.Id == userId).Select(u => u.SliderSkin).FirstOrDefaultAsync();
 
         await manager.FindMatchAsync(Context.ConnectionId, userId, Context.User!.FindFirstValue(ClaimTypes.Name)!,
-            Skins.Equipped(Skins.Slider, skin), GameModes.Parse(mode), practice);
+            Skins.Equipped(Skins.Slider, skin), GameModes.Parse(mode), fast, practice);
     }
 
     public Task CancelSearch() => manager.CancelSearchAsync(Context.ConnectionId);

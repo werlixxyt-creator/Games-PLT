@@ -60,18 +60,21 @@ public sealed class Match
     private int _finishedCount;
     private double? _firstFinishAt;
 
-    public Match(string id, GameMode mode, Random rnd, bool practice = false)
+    public Match(string id, GameMode mode, bool fast, Random rnd, bool practice = false)
     {
         Id = id;
         Mode = mode;
+        Fast = fast;
         Practice = practice;
         _rnd = rnd;
         _rules = mode.Rules();
-        Level = LevelGenerator.Generate(mode, rnd);
+        Level = LevelGenerator.Generate(fast, rnd);
     }
 
     public string Id { get; }
     public GameMode Mode { get; }
+    /// <summary>Быстрый темп: ползунок заполняется одним нажатием. Иначе стрелку надо держать.</summary>
+    public bool Fast { get; }
     /// <summary>Тренировка с ботом: в базу не сохраняется.</summary>
     public bool Practice { get; }
     public Slider[] Level { get; }
@@ -123,10 +126,10 @@ public sealed class Match
     {
         if (!p.Active) return;
 
-        if (_rules.Press)
+        if (Fast)
         {
             // люди продвигаются в SetInput, по нажатиям; здесь думает только бот
-            if (p.IsBot) BotThinkSpeed(p, dt);
+            if (p.IsBot) BotThinkFast(p, dt);
             return;
         }
 
@@ -168,9 +171,9 @@ public sealed class Match
     }
 
     /// <summary>
-    /// Режимы с нажатиями: только что нажатые стрелки. Правильная — ползунок заполнен сразу,
+    /// Быстрый темп: только что нажатые стрелки. Правильная — ползунок заполнен сразу,
     /// любая другая — оглушение, и пока оно идёт, нажатия не считаются.
-    /// В «Хардкоре» оглушения нет, зато ошибки считаются, и последняя выбивает из матча.
+    /// В «Хардкоре» оглушения нет, зато ошибка засчитывается (см. <see cref="Miss"/>).
     /// </summary>
     private void Press(Player p, int pressed)
     {
@@ -182,15 +185,38 @@ public sealed class Match
         }
         else if (_rules.Lives > 0)
         {
-            if (++p.Mistakes >= _rules.Lives) p.Out = true;
+            Miss(p);
         }
         else
         {
-            p.StunUntil = GameTime + GameRules.SpeedWrongStunSeconds;
+            p.StunUntil = GameTime + GameRules.FastWrongStunSeconds;
         }
     }
 
-    private void BotThinkSpeed(Player bot, double dt)
+    /// <summary>«Хардкор»: ещё одна ошибка; последняя выбивает из матча.</summary>
+    private void Miss(Player p)
+    {
+        if (++p.Mistakes >= _rules.Lives) p.Out = true;
+    }
+
+    /// <summary>
+    /// Какие стрелки теперь зажаты. В быстром темпе новые нажатия идут в <see cref="Press"/>;
+    /// в обычном «Хардкоре» ошибка — нажать (не просто держать) неправильную стрелку.
+    /// </summary>
+    private void SetHeld(Player p, int mask)
+    {
+        var pressed = mask & ~p.HeldMask;
+        p.HeldMask = mask;
+        if (pressed == 0) return;
+
+        if (Fast) Press(p, pressed);
+        else if (_rules.Lives > 0 && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Miss(p);
+    }
+
+    /// <summary>Как часто бот ошибается: в «Хардкоре» он осторожнее, иначе почти всегда выбывает.</summary>
+    private double BotMistakeChance(double usual) => _rules.Lives > 0 ? 0.03 : usual;
+
+    private void BotThinkFast(Player bot, double dt)
     {
         if (GameTime < bot.StunUntil) return;
 
@@ -200,8 +226,7 @@ public sealed class Match
         {
             bot.BotSeenIndex = bot.Index;
             bot.BotWait = 0.2 + _rnd.NextDouble() * 0.2;
-            // в «Хардкоре» бот осторожнее, иначе почти всегда выбывает
-            bot.BotWrong = _rnd.NextDouble() < (_rules.Lives > 0 ? 0.03 : 0.08) ? 1 : 0;
+            bot.BotWrong = _rnd.NextDouble() < BotMistakeChance(0.08) ? 1 : 0;
         }
 
         if (bot.BotWait > 0)
@@ -228,23 +253,23 @@ public sealed class Match
             // новый ползунок: бот "замечает" стрелку с задержкой и иногда ошибается
             bot.BotSeenIndex = bot.Index;
             bot.BotWait = 0.2 + _rnd.NextDouble() * 0.25;
-            bot.BotWrong = _rnd.NextDouble() < 0.12 ? 0.3 : 0;
-            bot.HeldMask = 0;
+            bot.BotWrong = _rnd.NextDouble() < BotMistakeChance(0.12) ? 0.3 : 0;
+            SetHeld(bot, 0);
         }
 
         if (bot.BotWait > 0)
         {
             bot.BotWait -= dt;
-            bot.HeldMask = 0;
+            SetHeld(bot, 0);
         }
         else if (bot.BotWrong > 0)
         {
             bot.BotWrong -= dt;
-            bot.HeldMask = 1 << ((target + 1) % 4);
+            SetHeld(bot, 1 << ((target + 1) % 4));
         }
         else
         {
-            bot.HeldMask = 1 << target;
+            SetHeld(bot, 1 << target);
         }
     }
 
@@ -270,11 +295,7 @@ public sealed class Match
         var p = FindByConnection(connectionId);
         if (p is null || p.Left) return;
 
-        mask &= 0b1111;
-        var pressed = mask & ~p.HeldMask;
-        p.HeldMask = mask;
-
-        if (_rules.Press && pressed != 0) Press(p, pressed);
+        SetHeld(p, mask & 0b1111);
     }
 
     public void MarkLeft(string connectionId)
@@ -291,14 +312,14 @@ public sealed class Match
     {
         matchId = Id,
         mode = Mode.ToWire(),
+        fast = Fast,
         practice = Practice,
-        press = _rules.Press,
         mirror = _rules.Mirror,
         blind = _rules.Blind,
         lives = _rules.Lives,
         you = yourSlot,
         countdown = GameRules.CountdownSeconds,
-        stun = GameRules.SpeedWrongStunSeconds,
+        stun = GameRules.FastWrongStunSeconds,
         idleDrain = GameRules.IdleDrainPerSecond,
         wrongDrain = GameRules.WrongDrainPerSecond,
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds }),
@@ -334,6 +355,7 @@ public sealed class Match
     public object ResultPayload() => new
     {
         mode = Mode.ToWire(),
+        fast = Fast,
         practice = Practice,
         reason = EndReason,
         results = Standings()
@@ -357,6 +379,7 @@ public sealed class Match
     {
         Code = Id,
         Mode = Mode,
+        Fast = Fast,
         PlayedAt = DateTime.UtcNow,
         Duration = Math.Round(Math.Max(0, GameTime), 2),
         SliderCount = Level.Length,

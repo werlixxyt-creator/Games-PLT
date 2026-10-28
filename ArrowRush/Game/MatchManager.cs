@@ -10,7 +10,7 @@ namespace ArrowRush.Game;
 /// </summary>
 public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory scopes, ILogger<MatchManager> log) : BackgroundService
 {
-    private sealed record QueuedPlayer(string ConnectionId, string UserId, string Name, string Skin, GameMode Mode, double JoinedAt);
+    private sealed record QueuedPlayer(string ConnectionId, string UserId, string Name, string Skin, GameMode Mode, bool Fast, double JoinedAt);
     private sealed record Outgoing(IReadOnlyList<string> To, string Method, object Payload);
 
     private static readonly string[] BotNames = ["Бот Шустрик", "Бот Ракета", "Бот Стрелок"];
@@ -27,7 +27,7 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
     // ---------- Вызовы из GameHub ----------
 
     /// <param name="practice">Тренировка: матч с ботом сразу, без очереди и без записи в статистику.</param>
-    public Task FindMatchAsync(string connectionId, string userId, string name, string skin, GameMode mode, bool practice)
+    public Task FindMatchAsync(string connectionId, string userId, string name, string skin, GameMode mode, bool fast, bool practice)
     {
         List<Outgoing> outbox;
         lock (_lock)
@@ -39,11 +39,11 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
             if (_queue.Any(q => q.UserId == userId) || _matches.Any(m => m.Players.Any(p => p.UserId == userId && !p.Left)))
                 throw new HubException("Ты уже ищешь матч или играешь в другой вкладке");
 
-            var me = new QueuedPlayer(connectionId, userId, name, skin, mode, Now);
+            var me = new QueuedPlayer(connectionId, userId, name, skin, mode, fast, Now);
             if (practice)
             {
                 outbox = [];
-                StartMatch(mode, [me], outbox, practice: true);
+                StartMatch(mode, fast, [me], outbox, practice: true);
             }
             else
             {
@@ -128,12 +128,12 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
     {
         var changed = false;
 
-        // у каждого режима своя очередь
-        foreach (var mode in Enum.GetValues<GameMode>())
+        // у каждого режима и темпа своя очередь
+        foreach (var (mode, fast) in _queue.Select(q => (q.Mode, q.Fast)).Distinct().ToList())
         {
             while (true)
             {
-                var queue = _queue.Where(q => q.Mode == mode).ToList();
+                var queue = _queue.Where(q => q.Mode == mode && q.Fast == fast).ToList();
                 List<QueuedPlayer> group;
 
                 if (queue.Count >= GameRules.MaxPlayers)
@@ -154,7 +154,7 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
                 }
 
                 _queue.RemoveAll(group.Contains);
-                StartMatch(mode, group, outbox);
+                StartMatch(mode, fast, group, outbox);
                 changed = true;
             }
         }
@@ -162,9 +162,9 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
         if (changed) outbox.AddRange(QueueUpdates());
     }
 
-    private void StartMatch(GameMode mode, List<QueuedPlayer> group, List<Outgoing> outbox, bool practice = false)
+    private void StartMatch(GameMode mode, bool fast, List<QueuedPlayer> group, List<Outgoing> outbox, bool practice = false)
     {
-        var match = new Match(Guid.NewGuid().ToString("N")[..8], mode, new Random(_rnd.Next()), practice);
+        var match = new Match(Guid.NewGuid().ToString("N")[..8], mode, fast, new Random(_rnd.Next()), practice);
 
         var slot = 0;
         foreach (var q in group)
@@ -185,7 +185,7 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
         }
 
         _matches.Add(match);
-        log.LogInformation("Матч {Id} ({Mode}{Practice}): {Players}", match.Id, mode, practice ? ", тренировка" : "", string.Join(", ", match.Players.Select(p => p.Name)));
+        log.LogInformation("Матч {Id} ({Mode}{Fast}{Practice}): {Players}", match.Id, mode, fast ? ", быстрый" : "", practice ? ", тренировка" : "", string.Join(", ", match.Players.Select(p => p.Name)));
 
         foreach (var p in match.Players.Where(p => !p.IsBot))
         {
@@ -237,7 +237,7 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
     }
 
     private List<Outgoing> QueueUpdates() => _queue
-        .GroupBy(q => q.Mode)
+        .GroupBy(q => (q.Mode, q.Fast))
         .Select(g =>
         {
             var waiting = g.Select(q => q.ConnectionId).ToList();
