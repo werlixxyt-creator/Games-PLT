@@ -1,8 +1,9 @@
 "use strict";
 
-// Музыка для матчей: энергичный электронный бит, который синтезируется прямо в браузере (Web Audio),
-// без файлов. Каждый матч — своя тональность и последовательность аккордов (от id матча).
-// Во время отсчёта играет вступление без бочки, на «СТАРТ!» вступает полный бит.
+// Музыка игры, синтезируется прямо в браузере (Web Audio), без файлов.
+// Матчи: энергичный электронный бит; каждый матч — своя тональность и аккорды (от id матча),
+// во время отсчёта играет вступление без бочки, на «СТАРТ!» вступает полный бит.
+// Меню: спокойные треки по кругу (или свой файл игрока, он хранится в браузере — IndexedDB).
 const music = (() => {
   let ctx = null;
   let master = null;    // общая громкость (и выключение звука)
@@ -39,6 +40,7 @@ const music = (() => {
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     }
     if (ctx.state === "suspended") ctx.resume();
+    if (menuWanted) startMenu(); // меню ждало первого нажатия, чтобы заиграть
   }
 
   const freq = (midi) => 440 * 2 ** ((midi - 69) / 12);
@@ -67,7 +69,7 @@ const music = (() => {
     duck.gain.linearRampToValueAtTime(1, t + 0.18);
   }
 
-  function noiseHit(t, type, cutoff, peak, decay) {
+  function noiseHit(t, type, cutoff, peak, decay, out = bus) {
     const s = ctx.createBufferSource();
     s.buffer = noise;
     const f = ctx.createBiquadFilter();
@@ -75,7 +77,7 @@ const music = (() => {
     f.frequency.value = cutoff;
     const g = ctx.createGain();
     env(g, t, 0.001, peak, decay);
-    s.connect(f).connect(g).connect(bus);
+    s.connect(f).connect(g).connect(out);
     s.start(t, Math.random() * 0.5);
     s.stop(t + decay + 0.05);
   }
@@ -253,6 +255,260 @@ const music = (() => {
     if (master) master.gain.setTargetAtTime(m ? 0 : VOLUME, ctx.currentTime, 0.05);
   }
 
+  // ---------- Музыка меню ----------
+
+  // спокойные треки: аккорды (MIDI) по тактам, вероятность нот электропиано и колокольчиков, ударные
+  const MENU_TRACKS = {
+    relax: {
+      name: "Релакс", desc: "Мягкие пэды, электропиано и тихий бит", bpm: 84,
+      chords: [[53, 57, 60, 64], [52, 55, 59, 62], [50, 53, 57, 60], [48, 52, 55, 59]], // Fmaj7 Em7 Dm7 Cmaj7
+      keys: 0.55, bells: 0, drums: "soft",
+    },
+    night: {
+      name: "Ночной город", desc: "Лоу-фай: джазовые аккорды и ленивый бит", bpm: 88,
+      chords: [[45, 55, 60, 64, 67], [50, 57, 60, 64, 65], [43, 53, 57, 59, 64], [48, 55, 59, 62, 64]], // Am9 Dm9 G13 Cmaj9
+      keys: 0.4, bells: 0, drums: "lofi",
+    },
+    space: {
+      name: "Космос", desc: "Без ударных: тянущиеся пэды и колокольчики", bpm: 68,
+      chords: [[50, 57, 62, 64], [46, 53, 58, 62], [43, 50, 55, 57], [45, 52, 57, 61]], // Dsus2 Bb G A
+      keys: 0, bells: 0.14, drums: null,
+    },
+  };
+  const MENU_LEVEL = 0.7;
+
+  let menuWanted = false;   // сейчас экран, где должна звучать музыка меню
+  let menuId = "relax";
+  let menuBus = null, menuTimer = 0, menuSong = null, menuSource = null;
+  let customBuffer = null;
+  let customName = null;
+  try {
+    const saved = localStorage.getItem("arrowrush.menuTrack");
+    if (saved && (MENU_TRACKS[saved] || saved === "off" || saved === "custom")) menuId = saved;
+    customName = localStorage.getItem("arrowrush.menuTrackName");
+  } catch { /* приватный режим */ }
+
+  function padChord(t, notes, len, out) {
+    for (const m of notes) {
+      for (const det of [-8, 8]) { // две чуть расстроенные пилы — «широкий» пэд
+        const o = ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.value = freq(m);
+        o.detune.value = det;
+        const f = ctx.createBiquadFilter();
+        f.type = "lowpass";
+        f.frequency.value = 850;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(0.02, t + len * 0.35);
+        g.gain.linearRampToValueAtTime(0.0001, t + len * 1.05);
+        o.connect(f).connect(g).connect(out);
+        o.start(t);
+        o.stop(t + len * 1.1);
+      }
+    }
+  }
+
+  /** Нота «электропиано»: синус с тихим обертоном, мягко затухает. */
+  function keyNote(t, m, out, echo) {
+    const g = ctx.createGain();
+    env(g, t, 0.012, 0.075, 0.9);
+    for (const [type, mul, lvl] of [["sine", 1, 1], ["triangle", 2, 0.22]]) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = freq(m) * mul;
+      const og = ctx.createGain();
+      og.gain.value = lvl;
+      o.connect(og).connect(g);
+      o.start(t);
+      o.stop(t + 1.2);
+    }
+    g.connect(out);
+    g.connect(echo);
+  }
+
+  function bell(t, m, out, echo) {
+    const g = ctx.createGain();
+    env(g, t, 0.005, 0.05, 1.6);
+    for (const [mul, lvl] of [[1, 1], [2.76, 0.3]]) {
+      const o = ctx.createOscillator();
+      o.frequency.value = freq(m) * mul;
+      const og = ctx.createGain();
+      og.gain.value = lvl;
+      o.connect(og).connect(g);
+      o.start(t);
+      o.stop(t + 1.8);
+    }
+    g.connect(out);
+    g.connect(echo);
+  }
+
+  function subBass(t, m, len, out) {
+    const o = ctx.createOscillator();
+    o.frequency.value = freq(m);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.13, t + 0.08);
+    g.gain.setValueAtTime(0.13, t + len * 0.8);
+    g.gain.linearRampToValueAtTime(0.0001, t + len);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + len + 0.05);
+  }
+
+  function softKick(t, out) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.14);
+    env(g, t, 0.004, 0.42, 0.3);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.4);
+  }
+
+  /** Одна шестнадцатая меню-трека. */
+  function menuStep(t, n) {
+    const s = menuSong;
+    const tr = s.track;
+    const inBar = n % 16;
+    const chord = tr.chords[Math.floor(n / 16) % tr.chords.length];
+
+    if (inBar === 0) {
+      padChord(t, chord, s.barLen, s.out);
+      subBass(t, chord[0] - 12, s.barLen, s.out);
+    }
+    if (tr.drums) {
+      if (inBar === 0 || inBar === (tr.drums === "lofi" ? 10 : 8)) softKick(t, s.out);
+      if (tr.drums === "lofi" && (inBar === 4 || inBar === 12)) noiseHit(t, "lowpass", 3200, 0.12, 0.12, s.out);
+      if (inBar % 2 === 0) noiseHit(t, "highpass", 8000, inBar % 4 === 2 ? 0.04 : 0.022, 0.03, s.out);
+    }
+    if (tr.keys && inBar % 2 === 0 && Math.random() < tr.keys) {
+      keyNote(t, chord[1 + Math.floor(Math.random() * (chord.length - 1))] + 12, s.out, s.echo);
+    }
+    if (tr.bells && Math.random() < tr.bells) {
+      const pent = [0, 2, 4, 7, 9];
+      bell(t, chord[0] + 24 + pent[Math.floor(Math.random() * pent.length)], s.out, s.echo);
+    }
+  }
+
+  function menuSchedule() {
+    if (!menuSong) return;
+    while (menuSong.next < ctx.currentTime + 0.15) {
+      menuStep(menuSong.next, menuSong.step);
+      menuSong.step++;
+      menuSong.next += menuSong.stepLen;
+    }
+  }
+
+  function startMenu() {
+    if (!ctx || menuBus || menuId === "off") return;
+    const out = ctx.createGain();
+    menuBus = out;
+    out.gain.setValueAtTime(0.0001, ctx.currentTime);
+    out.gain.exponentialRampToValueAtTime(MENU_LEVEL, ctx.currentTime + 2); // плавно проявляется
+    out.connect(master);
+
+    if (menuId === "custom") { playCustom(out); return; }
+
+    const tr = MENU_TRACKS[menuId] || MENU_TRACKS.relax;
+    const stepLen = 60 / tr.bpm / 4;
+    // тёплое эхо: каждое повторение чуть глуше
+    const echo = ctx.createDelay(1);
+    echo.delayTime.value = stepLen * 3;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.38;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 2400;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.35;
+    echo.connect(lp).connect(fb).connect(echo);
+    echo.connect(wet).connect(out);
+
+    menuSong = { track: tr, out, echo, stepLen, barLen: stepLen * 16, step: 0, next: ctx.currentTime + 0.1 };
+    menuSchedule();
+    menuTimer = setInterval(menuSchedule, 40);
+  }
+
+  function stopMenu(fade = 1) {
+    clearInterval(menuTimer);
+    menuTimer = 0;
+    menuSong = null;
+    if (!menuBus) return;
+    const b = menuBus, src = menuSource;
+    menuBus = null;
+    menuSource = null;
+    b.gain.cancelScheduledValues(ctx.currentTime);
+    b.gain.setTargetAtTime(0, ctx.currentTime, fade / 4);
+    setTimeout(() => {
+      try { if (src) src.stop(); } catch { /* уже */ }
+      b.disconnect();
+    }, (fade + 0.3) * 1000);
+  }
+
+  /** Играть ли музыку меню (зовётся при каждой смене экрана). */
+  function menu(on) {
+    menuWanted = on;
+    if (!ctx) return; // заиграет по первому нажатию — см. unlock()
+    if (on) startMenu();
+    else stopMenu();
+  }
+
+  function setMenuTrack(id) {
+    menuId = id;
+    try { localStorage.setItem("arrowrush.menuTrack", id); } catch { /* ничего */ }
+    stopMenu(0.5);
+    if (menuWanted) startMenu(); // старый трек гаснет, новый проявляется — плавная смена
+  }
+
+  // свой трек хранится в IndexedDB: в localStorage большой файл не поместится
+  function idb() {
+    return new Promise((resolve, reject) => {
+      const r = indexedDB.open("arrowrush", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("files");
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+  }
+
+  async function idbRequest(mode, fn) {
+    const db = await idb();
+    return new Promise((resolve, reject) => {
+      const q = fn(db.transaction("files", mode).objectStore("files"));
+      q.onsuccess = () => resolve(q.result);
+      q.onerror = () => reject(q.error);
+    });
+  }
+
+  async function playCustom(out) {
+    if (!customBuffer) {
+      try {
+        const rec = await idbRequest("readonly", (s) => s.get("menuTrack"));
+        if (rec) customBuffer = await ctx.decodeAudioData(await rec.blob.arrayBuffer());
+      } catch { /* файла нет или браузер не даёт хранилище */ }
+    }
+    if (menuBus !== out || !customBuffer) return; // пока грузили, ушли с экрана меню
+    const s = ctx.createBufferSource();
+    s.buffer = customBuffer;
+    s.loop = true;
+    s.connect(out);
+    s.start();
+    menuSource = s;
+  }
+
+  /** Свой файл для меню: проверяем, что он читается, сохраняем в браузере и включаем. */
+  async function setCustomFile(file) {
+    unlock();
+    customBuffer = await ctx.decodeAudioData(await file.arrayBuffer()); // бросит ошибку, если файл не аудио
+    customName = file.name.replace(/\.[^.]+$/, "") || "Свой трек";
+    try { localStorage.setItem("arrowrush.menuTrackName", customName); } catch { /* ничего */ }
+    let saved = true;
+    try { await idbRequest("readwrite", (s) => s.put({ name: customName, blob: file }, "menuTrack")); } catch { saved = false; }
+    setMenuTrack("custom");
+    return saved;
+  }
+
   /** Подключить анализатор к общему выходу — для проверки громкости. */
   function tap() {
     unlock();
@@ -262,5 +518,10 @@ const music = (() => {
     return a;
   }
 
-  return { unlock, start, stop, jingle, setMuted, tap, isMuted: () => muted, isPlaying: () => !!song };
+  return {
+    unlock, start, stop, jingle, setMuted, tap,
+    isMuted: () => muted, isPlaying: () => !!song,
+    menu, setMenuTrack, setCustomFile,
+    menuTracks: MENU_TRACKS, menuTrack: () => menuId, customName: () => customName, isMenuPlaying: () => !!menuBus,
+  };
 })();

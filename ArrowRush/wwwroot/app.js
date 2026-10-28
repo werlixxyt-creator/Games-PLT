@@ -27,7 +27,9 @@ const DIFFS = {
   hard: { name: "сложная", desc: "Больше ползунков, заполняются быстрее, штрафы и паузы жёстче, бот почти не ошибается." },
 };
 
-const SKIN_SLOTS = ["slider", "win", "streak"];
+const SKIN_SLOTS = ["slider", "win", "streak", "music"];
+// экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
+const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search"]);
 const UNLOCK_TEXT = {
   games: (n) => `Сыграй ${n} ${plural(n, "матч", "матча", "матчей")}`,
   wins: (n) => `Выиграй ${n} ${plural(n, "матч", "матча", "матчей")}`,
@@ -99,6 +101,7 @@ function show(name) {
   // ушли из «Своего трека» или из матча — музыку останавливаем (итоги сами гасят её плавно)
   if (screen === "rhythm" && name !== "rhythm") rhythm.stop();
   if (screen === "game" && name !== "game") music.stop(0.4);
+  music.menu(MENU_SCREENS.has(name));
   // новый экран уже на месте (его можно измерять), занавес поверх него уезжает вверх
   if (name !== screen) fx.retrigger($("curtain"), "lift");
   screen = name;
@@ -535,8 +538,9 @@ function sliderPreview(skin) {
   return track;
 }
 
-function fxPreview(skin) {
-  const [icon, color] = FX_PREVIEW[skin.id] || ["?", "var(--muted)"];
+/** Плитка-превью: значок и цвет из таблицы (по умолчанию — эффекты победы и серии). */
+function fxPreview(skin, table = FX_PREVIEW) {
+  const [icon, color] = table[skin.id] || ["?", "var(--muted)"];
   const tile = document.createElement("div");
   tile.className = "fx-tile";
   tile.style.setProperty("--c", color);
@@ -553,6 +557,7 @@ function playSkinFx(slot, id, el, power = 1) {
 }
 
 function renderSkins() {
+  if (skinSlot === "music") return renderMusicTab();
   if (!profile) return;
   const grid = $("skin-grid");
   grid.innerHTML = "";
@@ -629,6 +634,81 @@ async function equipSkin(skin, btn, preview) {
   }
 }
 
+// ---------- Музыка меню (вкладка в скинах) ----------
+
+const MUSIC_TILE = { relax: ["♪", "var(--a1)"], night: ["☾", "var(--a0)"], space: ["✦", "var(--a3)"], custom: ["#note", "var(--a2)"], off: ["#mute", "var(--muted)"] };
+
+/** Карточки треков меню: встроенные, свой файл и «без музыки». Включённый играет прямо сейчас. */
+function renderMusicTab() {
+  const grid = $("skin-grid");
+  grid.innerHTML = "";
+  $("skin-error").textContent = "";
+  const current = music.menuTrack();
+  const items = [
+    ...Object.entries(music.menuTracks).map(([id, t]) => ({ id, name: t.name, desc: t.desc })),
+    { id: "custom", name: "Свой трек", desc: music.customName() ? `Файл: ${music.customName()}` : "Любой твой файл — играет по кругу" },
+    { id: "off", name: "Без музыки", desc: "Тишина в меню" },
+  ];
+
+  items.forEach((it, i) => {
+    const on = it.id === current;
+    const card = document.createElement("div");
+    card.className = "skin-card glass" + (on ? " equipped" : "") + (on && it.id !== "off" ? " playing" : "");
+    card.style.setProperty("--i", i);
+
+    const preview = document.createElement("div");
+    preview.className = "skin-preview";
+    preview.appendChild(fxPreview({ id: it.id }, MUSIC_TILE));
+    if (on && it.id !== "off") preview.insertAdjacentHTML("beforeend", `<span class="eq-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`);
+
+    const name = document.createElement("div");
+    name.className = "skin-name";
+    name.textContent = it.name;
+    const req = document.createElement("div");
+    req.className = "skin-req";
+    req.textContent = it.desc;
+
+    const buttons = document.createElement("div");
+    buttons.className = "skin-buttons";
+    if (it.id === "custom") {
+      const pick = document.createElement("button");
+      pick.className = music.customName() ? "btn ghost small" : "btn primary small";
+      pick.textContent = music.customName() ? "Другой файл" : "Выбрать файл";
+      pick.addEventListener("click", () => $("menu-file").click());
+      buttons.appendChild(pick);
+    }
+    if (it.id !== "custom" || music.customName()) {
+      const use = document.createElement("button");
+      use.className = on ? "btn ghost small" : "btn primary small";
+      use.textContent = on ? (it.id === "off" ? "Выбрано" : "Играет") : "Включить";
+      use.disabled = on;
+      use.addEventListener("click", () => {
+        music.unlock();
+        music.setMenuTrack(it.id);
+        renderMusicTab();
+      });
+      buttons.appendChild(use);
+    }
+
+    card.append(preview, name, req, buttons);
+    grid.appendChild(card);
+  });
+}
+
+$("menu-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (file.size > 80 * 1024 * 1024) { $("skin-error").textContent = "Файл больше 80 МБ — выбери поменьше"; return; }
+  try {
+    const saved = await music.setCustomFile(file);
+    renderMusicTab();
+    if (!saved) $("skin-error").textContent = "Браузер не дал сохранить файл — он будет играть только до перезагрузки страницы";
+  } catch {
+    $("skin-error").textContent = "Не получилось прочитать файл. Подойдут mp3, ogg, wav или m4a.";
+  }
+});
+
 function formatDate(d) {
   const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
   const today = new Date().toDateString() === d.toDateString();
@@ -666,17 +746,25 @@ $("btn-cancel").addEventListener("click", () => {
 });
 
 // музыка вкл/выкл — запоминается
+// звук вкл/выкл — одна настройка на всю игру: кнопка в меню и кнопка в матче
 function renderMusicBtn() {
   const off = music.isMuted();
-  $("btn-music").classList.toggle("off", off);
-  $("btn-music").setAttribute("aria-pressed", !off);
-  $("btn-music").querySelector("use").setAttribute("href", off ? "#mute" : "#sound");
+  for (const b of document.querySelectorAll(".music-toggle")) {
+    b.classList.toggle("off", off);
+    b.setAttribute("aria-pressed", !off);
+    b.querySelector("use").setAttribute("href", off ? "#mute" : "#sound");
+  }
 }
-$("btn-music").addEventListener("click", () => {
-  music.setMuted(!music.isMuted());
-  renderMusicBtn();
-});
+for (const b of document.querySelectorAll(".music-toggle")) {
+  b.addEventListener("click", () => {
+    music.setMuted(!music.isMuted());
+    renderMusicBtn();
+  });
+}
 renderMusicBtn();
+
+// браузер разрешает звук только после первого действия игрока — тогда и заиграет музыка меню
+for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => music.unlock(), { once: true, capture: true });
 
 $("btn-leave").addEventListener("click", () => {
   conn.invoke("LeaveMatch").catch(() => {});

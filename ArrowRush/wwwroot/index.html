@@ -53,6 +53,9 @@
           <span id="streak-badge" class="streak-badge" title="Серия побед подряд" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#flame"/></svg><b id="streak-num">0</b>
           </span>
+          <button id="btn-menu-music" class="btn ghost small icon-btn music-toggle" type="button" aria-label="Музыка" title="Музыка вкл/выкл">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#sound"/></svg>
+          </button>
           <button id="btn-logout" class="btn ghost small">Выйти</button>
         </div>
       </div>
@@ -186,10 +189,11 @@
       </div>
       <h2>Скины</h2>
       <p class="muted">Открываются за матчи, победы и серии побед</p>
-      <div id="skin-tabs" class="tabs three" role="tablist" data-active="0">
+      <div id="skin-tabs" class="tabs four" role="tablist" data-active="0">
         <button type="button" class="tab active" data-slot="slider" role="tab">Ползунки</button>
         <button type="button" class="tab" data-slot="win" role="tab">Победа</button>
         <button type="button" class="tab" data-slot="streak" role="tab">Серия побед</button>
+        <button type="button" class="tab" data-slot="music" role="tab">Музыка</button>
       </div>
       <div id="skin-grid" class="skin-grid"></div>
       <div id="skin-error" class="conn bad" role="alert"></div>
@@ -229,7 +233,7 @@
           <span id="hud-lives" class="hud-value lives"></span>
         </div>
         <span id="hud-tag" class="mode-pill"></span>
-        <button id="btn-music" class="btn ghost small icon-btn" type="button" aria-label="Музыка" title="Музыка вкл/выкл">
+        <button id="btn-music" class="btn ghost small icon-btn music-toggle" type="button" aria-label="Музыка" title="Музыка вкл/выкл">
           <svg viewBox="0 0 24 24 aria-hidden="true"><use href="#sound"/></svg>
         </button>
         <button id="btn-leave" class="btn ghost small">Выйти</button>
@@ -289,6 +293,7 @@
     <button type="button" class="tkey" data-arrow="2" style="--c: var(--a2)"><svg viewBox="0 0 24 24" style="rotate:90deg"><use href="#arrow"/></svg></button>
   </div>
   <input id="rh-file" type="file" accept="audio/*" hidden>
+  <input id="menu-file" type="file" accept="audio/*" hidden>
 
   <!-- эффекты поверх всего: искры, кольца, конфетти -->
   <canvas id="fx" aria-hidden="true"></canvas>

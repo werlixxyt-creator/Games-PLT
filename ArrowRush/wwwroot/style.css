@@ -38,7 +38,8 @@
   --font-body: "Nunito", system-ui, sans-serif;
 }
 
-* { box-sizing: border-box; }
+/* псевдоэлементы `*` не ловит — без них подложка вкладок шире на свою рамку и съезжает */
+*, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
 html, body {
@@ -288,8 +289,26 @@ h3 {
 }
 .tabs[data-active="1"]::before { transform: translateX(calc(100% + 4px)); }
 .tabs[data-active="2"]::before { transform: translateX(calc(200% + 8px)); }
-.tabs.three { grid-template-columns: repeat(3, 1fr); width: min(500px, 100%); }
+.tabs.three { grid-template-columns: repeat(3, minmax(0, 1fr)); width: min(500px, 100%); }
 .tabs.three::before { width: calc((100% - 16px) / 3); }
+/* minmax(0, 1fr): колонки строго равные, даже если надпись длинная — иначе подложка съезжает */
+.tabs.four { grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(620px, 100%); }
+.tabs.four .tab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-inline: 4px; }
+.skin-card.equipped.playing::after { content: "ИГРАЕТ"; }
+.tabs.four::before { width: calc((100% - 20px) / 4); }
+.tabs[data-active="3"]::before { transform: translateX(calc(300% + 12px)); }
+
+/* «играет сейчас» на карточке музыки — прыгающий эквалайзер */
+.eq-bars { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 3px; align-items: flex-end; height: 22px; }
+.eq-bars i { width: 5px; height: 100%; border-radius: 2px; background: var(--a1); transform-origin: bottom; animation: eq .8s ease-in-out infinite; }
+.eq-bars i:nth-child(2) { animation-delay: .2s; background: var(--a3); }
+.eq-bars i:nth-child(3) { animation-delay: .4s; background: var(--a2); }
+.eq-bars i:nth-child(4) { animation-delay: .1s; background: var(--a0); }
+
+/* кнопка звука в плашке с ником */
+.chip .music-toggle { padding: 5px 9px; }
+.chip .music-toggle svg { width: 16px; height: 16px; }
+.music-toggle.off { color: var(--muted); }
 .tab {
   position: relative;
   z-index: 1;
