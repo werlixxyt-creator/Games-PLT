@@ -229,6 +229,9 @@
           <span id="hud-lives" class="hud-value lives"></span>
         </div>
         <span id="hud-tag" class="mode-pill"></span>
+        <button id="btn-music" class="btn ghost small icon-btn" type="button" aria-label="Музыка" title="Музыка вкл/выкл">
+          <svg viewBox="0 0 24 24 aria-hidden="true"><use href="#sound"/></svg>
+        </button>
         <button id="btn-leave" class="btn ghost small">Выйти</button>
       </header>
 
@@ -300,6 +303,12 @@
     <symbol id="chart" viewBox="0 0 24 24">
       <path d="M3 21 V19 H21 V21 Z M5 17 V11 H9 V17 Z M10.5 17 V5 H14.5 V17 Z M16 17 V8.5 H20 V17 Z" fill="currentColor"/>
     </symbol>
+    <symbol id="sound" viewBox="0 0 24 24">
+      <path d="M3 9 H7 L12 4.5 V19.5 L7 15 H3 Z M15 8.5 A5 5 0 0 1 15 15.5 L16.4 16.9 A7 7 0 0 0 16.4 7.1 Z M17.8 5.7 A9 9 0 0 1 17.8 18.3 L19.2 19.7 A11 11 0 0 0 19.2 4.3 Z" fill="currentColor"/>
+    </symbol>
+    <symbol id="mute" viewBox="0 0 24 24">
+      <path d="M3 9 H7 L12 4.5 V19.5 L7 15 H3 Z M15.3 8.7 L16.7 7.3 L19 9.6 L21.3 7.3 L22.7 8.7 L20.4 11 L22.7 13.3 L21.3 14.7 L19 12.4 L16.7 14.7 L15.3 13.3 L17.6 11 Z" fill="currentColor"/>
+    </symbol>
     <symbol id="note" viewBox="0 0 24 24">
       <path d="M9 18.5 A3.2 3.2 0 1 1 7 15.6 V5 L20 2.5 V15.5 A3.2 3.2 0 1 1 18 12.6 V7.2 L9 9 Z" fill="currentColor"/>
     </symbol>
@@ -332,6 +341,7 @@
   <script src="lib/signalr.min.js"></script>
   <script src="fx.js"></script>
   <script src="rhythm.js"></script>
+  <script src="music.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

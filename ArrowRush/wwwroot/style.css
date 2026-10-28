@@ -896,6 +896,11 @@ h3 {
 .hud-value { font: 900 26px/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
 #hud-count { color: #45a315; }
 #btn-leave { margin-left: auto; }
+/* кнопка музыки стоит перед «Выйти» и забирает отступ на себя */
+#btn-music { margin-left: auto; padding: 6px 10px; }
+#btn-music + #btn-leave { margin-left: 0; }
+#btn-music svg { width: 18px; height: 18px; }
+#btn-music.off { --face: var(--panel-2); color: var(--muted); }
 #hud-tag { --c: var(--a0); margin: 0; background: color-mix(in srgb, var(--c) 30%, white); }
 .lives { color: var(--bad); letter-spacing: .08em; font-family: var(--font-body); font-size: 24px; }
 

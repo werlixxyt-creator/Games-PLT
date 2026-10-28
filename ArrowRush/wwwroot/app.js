@@ -96,8 +96,9 @@ function show(name) {
   for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "game", "rhythm", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
-  // ушли из «Своего трека» — музыку останавливаем
+  // ушли из «Своего трека» или из матча — музыку останавливаем (итоги сами гасят её плавно)
   if (screen === "rhythm" && name !== "rhythm") rhythm.stop();
+  if (screen === "game" && name !== "game") music.stop(0.4);
   // новый экран уже на месте (его можно измерять), занавес поверх него уезжает вверх
   if (name !== screen) fx.retrigger($("curtain"), "lift");
   screen = name;
@@ -664,6 +665,19 @@ $("btn-cancel").addEventListener("click", () => {
   show("modes");
 });
 
+// музыка вкл/выкл — запоминается
+function renderMusicBtn() {
+  const off = music.isMuted();
+  $("btn-music").classList.toggle("off", off);
+  $("btn-music").setAttribute("aria-pressed", !off);
+  $("btn-music").querySelector("use").setAttribute("href", off ? "#mute" : "#sound");
+}
+$("btn-music").addEventListener("click", () => {
+  music.setMuted(!music.isMuted());
+  renderMusicBtn();
+});
+renderMusicBtn();
+
 $("btn-leave").addEventListener("click", () => {
   conn.invoke("LeaveMatch").catch(() => {});
   match = null;
@@ -674,6 +688,7 @@ $("btn-leave").addEventListener("click", () => {
 async function findMatch(practice) {
   if (conn.state !== signalR.HubConnectionState.Connected) return;
   lastPractice = practice;
+  music.unlock(); // звук браузер разрешает только после нажатия игрока — а это оно
 
   if (!practice) {
     search = { startedAt: performance.now(), inQueue: 1, botAfter: 12, timer: null };
@@ -761,6 +776,8 @@ function nameRow(container, player) {
 
 function startMatch(d) {
   stopSearch();
+  // у каждого матча своя мелодия: тональность и аккорды — от его id; бит вступает на «СТАРТ!»
+  music.start({ seed: parseInt(d.matchId.slice(0, 6), 16) || 0, fast: d.fast, introSeconds: d.countdown });
 
   match = {
     mode: d.mode,
@@ -829,6 +846,7 @@ function showResults(r) {
   if (!match) return;
   const you = match.you;
   match = null;
+  music.stop(0.6);
 
   const me = r.results.find((x) => x.slot === you);
   const win = me && me.done && me.place === 1;
@@ -891,6 +909,7 @@ function showResults(r) {
 
   show("results");
 
+  music.jingle(win);
   if (win) playSkinFx("win", profile ? profile.equipped.win : "confetti", title);
   if (streak >= 2) setTimeout(() => playSkinFx("streak", profile.equipped.streak, banner, streak / 3), 450);
 }
