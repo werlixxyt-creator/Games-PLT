@@ -634,32 +634,53 @@ async function equipSkin(skin, btn, preview) {
   }
 }
 
-// ---------- Музыка меню (вкладка в скинах) ----------
+// ---------- Музыка меню и матчей (вкладка в скинах) ----------
 
-const MUSIC_TILE = { relax: ["♪", "var(--a1)"], night: ["☾", "var(--a0)"], space: ["✦", "var(--a3)"], custom: ["#note", "var(--a2)"], off: ["#mute", "var(--muted)"] };
+const MUSIC_TILE = { relax: ["♪", "var(--a1)"], night: ["☾", "var(--a0)"], space: ["✦", "var(--a3)"], custom: ["#note", "var(--a2)"], off: ["#mute", "var(--muted)"], beat: ["#arrow", "var(--a1)"] };
 
-/** Карточки треков меню: встроенные, свой файл и «без музыки». Включённый играет прямо сейчас. */
+/**
+ * Две группы карточек: музыка меню (встроенные треки, свой файл, «без музыки») и музыка в матче
+ * (встроенный бит или свой файл). Включённый трек меню играет прямо сейчас.
+ */
 function renderMusicTab() {
   const grid = $("skin-grid");
   grid.innerHTML = "";
   $("skin-error").textContent = "";
-  const current = music.menuTrack();
-  const items = [
+
+  const menuFile = music.customName("menu");
+  musicGroup("В меню", "menu", [
     ...Object.entries(music.menuTracks).map(([id, t]) => ({ id, name: t.name, desc: t.desc })),
-    { id: "custom", name: "Свой трек", desc: music.customName() ? `Файл: ${music.customName()}` : "Любой твой файл — играет по кругу" },
+    { id: "custom", name: "Свой трек", desc: menuFile ? `Файл: ${menuFile}` : "Любой твой файл — играет по кругу" },
     { id: "off", name: "Без музыки", desc: "Тишина в меню" },
-  ];
+  ], music.menuTrack(), music.setMenuTrack);
+
+  const matchFile = music.customName("match");
+  musicGroup("В матче", "match", [
+    { id: "beat", name: "Встроенный бит", desc: "Электронный бит, у каждого матча своя мелодия" },
+    { id: "custom", name: "Свой трек", desc: matchFile ? `Файл: ${matchFile}` : "Твой файл играет в каждом матче — слышишь его только ты" },
+  ], music.matchTrack(), music.setMatchTrack);
+}
+
+/** Заголовок и карточки одной группы. kind — "menu" или "match": чей свой файл, set — что включает кнопка. */
+function musicGroup(title, kind, items, current, set) {
+  const grid = $("skin-grid");
+  const h = document.createElement("h3");
+  h.className = "skin-group";
+  h.textContent = title;
+  grid.appendChild(h);
+  const fileName = music.customName(kind);
 
   items.forEach((it, i) => {
     const on = it.id === current;
+    const live = on && it.id !== "off" && kind === "menu"; // музыку матча здесь не слышно — без «эквалайзера»
     const card = document.createElement("div");
-    card.className = "skin-card glass" + (on ? " equipped" : "") + (on && it.id !== "off" ? " playing" : "");
-    card.style.setProperty("--i", i);
+    card.className = "skin-card glass" + (on ? " equipped" : "") + (live ? " playing" : "");
+    card.style.setProperty("--i", grid.children.length);
 
     const preview = document.createElement("div");
     preview.className = "skin-preview";
     preview.appendChild(fxPreview({ id: it.id }, MUSIC_TILE));
-    if (on && it.id !== "off") preview.insertAdjacentHTML("beforeend", `<span class="eq-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`);
+    if (live) preview.insertAdjacentHTML("beforeend", `<span class="eq-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`);
 
     const name = document.createElement("div");
     name.className = "skin-name";
@@ -672,19 +693,19 @@ function renderMusicTab() {
     buttons.className = "skin-buttons";
     if (it.id === "custom") {
       const pick = document.createElement("button");
-      pick.className = music.customName() ? "btn ghost small" : "btn primary small";
-      pick.textContent = music.customName() ? "Другой файл" : "Выбрать файл";
-      pick.addEventListener("click", () => $("menu-file").click());
+      pick.className = fileName ? "btn ghost small" : "btn primary small";
+      pick.textContent = fileName ? "Другой файл" : "Выбрать файл";
+      pick.addEventListener("click", () => $(kind + "-file").click());
       buttons.appendChild(pick);
     }
-    if (it.id !== "custom" || music.customName()) {
+    if (it.id !== "custom" || fileName) {
       const use = document.createElement("button");
       use.className = on ? "btn ghost small" : "btn primary small";
-      use.textContent = on ? (it.id === "off" ? "Выбрано" : "Играет") : "Включить";
+      use.textContent = on ? (live ? "Играет" : "Выбрано") : "Включить";
       use.disabled = on;
       use.addEventListener("click", () => {
         music.unlock();
-        music.setMenuTrack(it.id);
+        set(it.id);
         renderMusicTab();
       });
       buttons.appendChild(use);
@@ -695,19 +716,21 @@ function renderMusicTab() {
   });
 }
 
-$("menu-file").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  if (file.size > 80 * 1024 * 1024) { $("skin-error").textContent = "Файл больше 80 МБ — выбери поменьше"; return; }
-  try {
-    const saved = await music.setCustomFile(file);
-    renderMusicTab();
-    if (!saved) $("skin-error").textContent = "Браузер не дал сохранить файл — он будет играть только до перезагрузки страницы";
-  } catch {
-    $("skin-error").textContent = "Не получилось прочитать файл. Подойдут mp3, ogg, wav или m4a.";
-  }
-});
+for (const kind of ["menu", "match"]) {
+  $(kind + "-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 80 * 1024 * 1024) { $("skin-error").textContent = "Файл больше 80 МБ — выбери поменьше"; return; }
+    try {
+      const saved = await music.setCustomFile(file, kind);
+      renderMusicTab();
+      if (!saved) $("skin-error").textContent = "Браузер не дал сохранить файл — он будет играть только до перезагрузки страницы";
+    } catch {
+      $("skin-error").textContent = "Не получилось прочитать файл. Подойдут mp3, ogg, wav или m4a.";
+    }
+  });
+}
 
 function formatDate(d) {
   const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });

@@ -3,7 +3,8 @@
 // Музыка игры, синтезируется прямо в браузере (Web Audio), без файлов.
 // Матчи: энергичный электронный бит; каждый матч — своя тональность и аккорды (от id матча),
 // во время отсчёта играет вступление без бочки, на «СТАРТ!» вступает полный бит.
-// Меню: спокойные треки по кругу (или свой файл игрока, он хранится в браузере — IndexedDB).
+// Меню: спокойные треки по кругу. И в меню, и в матчах можно поставить свой файл игрока
+// (он хранится в браузере — IndexedDB).
 const music = (() => {
   let ctx = null;
   let master = null;    // общая громкость (и выключение звука)
@@ -38,6 +39,9 @@ const music = (() => {
       noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const d = noise.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+
+      // свой трек матча раскодируем заранее — иначе в первом матче музыка заиграет с опозданием
+      if (matchId === "custom") loadFile("match");
     }
     if (ctx.state === "suspended") ctx.resume();
     if (menuWanted) startMenu(); // меню ждало первого нажатия, чтобы заиграть
@@ -187,6 +191,43 @@ const music = (() => {
 
     bus = ctx.createGain();
     bus.connect(master);
+    if (matchId === "custom" && files.match.name) {
+      // свой трек; если файл не загрузился — встроенный бит, чтобы матч не прошёл в тишине
+      const out = bus;
+      playMatchCustom(out, introSeconds).then((ok) => { if (!ok && bus === out) startBeat(seed, fast, introSeconds); });
+      return;
+    }
+    startBeat(seed, fast, introSeconds);
+  }
+
+  /** Свой трек в матче: во время отсчёта звучит глухо, как из-за стены, на «СТАРТ!» раскрывается. */
+  async function playMatchCustom(out, introSeconds) {
+    const buf = await loadFile("match");
+    if (bus !== out) return true; // пока грузили, матч уже кончился
+    if (!buf) return false;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    const g = ctx.createGain();
+    g.gain.value = CUSTOM_LEVEL;
+    const t = ctx.currentTime + 0.05;
+    lp.frequency.value = 20000;
+    if (introSeconds > 0.6) {
+      const drop = t + introSeconds;
+      lp.frequency.setValueAtTime(700, t);
+      lp.frequency.setValueAtTime(700, drop - 0.3);
+      lp.frequency.exponentialRampToValueAtTime(20000, drop);
+    }
+    const s = ctx.createBufferSource();
+    s.buffer = buf;
+    s.loop = true;
+    s.connect(lp).connect(g).connect(out);
+    s.start(t);
+    matchSource = s;
+    return true;
+  }
+
+  /** Встроенный бит матча: тональность и аккорды — от seed. */
+  function startBeat(seed, fast, introSeconds) {
     duck = ctx.createGain();
     duck.connect(bus);
     delay = ctx.createDelay(1);
@@ -222,10 +263,14 @@ const music = (() => {
     timer = 0;
     song = null;
     if (!bus) return;
-    const b = bus;
+    const b = bus, src = matchSource;
     bus = null;
+    matchSource = null;
     b.gain.setTargetAtTime(0, ctx.currentTime, Math.max(0.01, fade / 4));
-    setTimeout(() => b.disconnect(), (fade + 0.3) * 1000);
+    setTimeout(() => {
+      try { if (src) src.stop(); } catch { /* уже */ }
+      b.disconnect();
+    }, (fade + 0.3) * 1000);
   }
 
   /** Короткий джингл в конце матча: взлёт на победу, спуск на поражение. */
@@ -280,12 +325,17 @@ const music = (() => {
   let menuWanted = false;   // сейчас экран, где должна звучать музыка меню
   let menuId = "relax";
   let menuBus = null, menuTimer = 0, menuSong = null, menuSource = null;
-  let customBuffer = null;
-  let customName = null;
+  let matchId = "beat";     // музыка матча: "beat" — встроенный бит, "custom" — свой файл
+  let matchSource = null;
+  const CUSTOM_LEVEL = 0.7; // готовые треки громче нашего синтезатора — чуть приглушаем
+  // свои файлы: для меню и для матчей отдельно; buffer — раскодированный звук, name — для подписи
+  const files = { menu: { buffer: null, name: null }, match: { buffer: null, name: null } };
   try {
     const saved = localStorage.getItem("arrowrush.menuTrack");
     if (saved && (MENU_TRACKS[saved] || saved === "off" || saved === "custom")) menuId = saved;
-    customName = localStorage.getItem("arrowrush.menuTrackName");
+    if (localStorage.getItem("arrowrush.matchTrack") === "custom") matchId = "custom";
+    files.menu.name = localStorage.getItem("arrowrush.menuTrackName");
+    files.match.name = localStorage.getItem("arrowrush.matchTrackName");
   } catch { /* приватный режим */ }
 
   function padChord(t, notes, len, out) {
@@ -481,32 +531,46 @@ const music = (() => {
     });
   }
 
-  async function playCustom(out) {
-    if (!customBuffer) {
+  /** Свой файл (kind — "menu" или "match"): из памяти, а если его там нет — из IndexedDB. null — файла нет. */
+  async function loadFile(kind) {
+    const f = files[kind];
+    if (!f.buffer) {
       try {
-        const rec = await idbRequest("readonly", (s) => s.get("menuTrack"));
-        if (rec) customBuffer = await ctx.decodeAudioData(await rec.blob.arrayBuffer());
+        const rec = await idbRequest("readonly", (s) => s.get(kind + "Track"));
+        if (rec) f.buffer = await ctx.decodeAudioData(await rec.blob.arrayBuffer());
       } catch { /* файла нет или браузер не даёт хранилище */ }
     }
-    if (menuBus !== out || !customBuffer) return; // пока грузили, ушли с экрана меню
+    return f.buffer;
+  }
+
+  async function playCustom(out) {
+    const buf = await loadFile("menu");
+    if (menuBus !== out || !buf) return; // пока грузили, ушли с экрана меню
     const s = ctx.createBufferSource();
-    s.buffer = customBuffer;
+    s.buffer = buf;
     s.loop = true;
     s.connect(out);
     s.start();
     menuSource = s;
   }
 
-  /** Свой файл для меню: проверяем, что он читается, сохраняем в браузере и включаем. */
-  async function setCustomFile(file) {
+  /** Свой файл для меню или матчей: проверяем, что он читается, сохраняем в браузере и включаем. */
+  async function setCustomFile(file, kind = "menu") {
     unlock();
-    customBuffer = await ctx.decodeAudioData(await file.arrayBuffer()); // бросит ошибку, если файл не аудио
-    customName = file.name.replace(/\.[^.]+$/, "") || "Свой трек";
-    try { localStorage.setItem("arrowrush.menuTrackName", customName); } catch { /* ничего */ }
+    const f = files[kind];
+    f.buffer = await ctx.decodeAudioData(await file.arrayBuffer()); // бросит ошибку, если файл не аудио
+    f.name = file.name.replace(/\.[^.]+$/, "") || "Свой трек";
+    try { localStorage.setItem(`arrowrush.${kind}TrackName`, f.name); } catch { /* ничего */ }
     let saved = true;
-    try { await idbRequest("readwrite", (s) => s.put({ name: customName, blob: file }, "menuTrack")); } catch { saved = false; }
-    setMenuTrack("custom");
+    try { await idbRequest("readwrite", (s) => s.put({ name: f.name, blob: file }, kind + "Track")); } catch { saved = false; }
+    if (kind === "menu") setMenuTrack("custom");
+    else setMatchTrack("custom");
     return saved;
+  }
+
+  function setMatchTrack(id) {
+    matchId = id;
+    try { localStorage.setItem("arrowrush.matchTrack", id); } catch { /* ничего */ }
   }
 
   /** Подключить анализатор к общему выходу — для проверки громкости. */
@@ -521,7 +585,8 @@ const music = (() => {
   return {
     unlock, start, stop, jingle, setMuted, tap,
     isMuted: () => muted, isPlaying: () => !!song,
-    menu, setMenuTrack, setCustomFile,
-    menuTracks: MENU_TRACKS, menuTrack: () => menuId, customName: () => customName, isMenuPlaying: () => !!menuBus,
+    menu, setMenuTrack, setMatchTrack, setCustomFile,
+    menuTracks: MENU_TRACKS, menuTrack: () => menuId, matchTrack: () => matchId,
+    customName: (kind = "menu") => files[kind].name, isMenuPlaying: () => !!menuBus,
   };
 })();

@@ -744,6 +744,15 @@ h3 {
   gap: 16px;
   width: 100%;
 }
+/* заголовок группы во вкладке «Музыка»: «В меню», «В матче» — на всю ширину сетки */
+.skin-group {
+  grid-column: 1 / -1;
+  margin: 8px 0 -4px;
+  font-size: 15px;
+  text-align: left;
+  color: var(--muted);
+}
+.skin-group:first-child { margin-top: 0; }
 .skin-card {
   --i: 0;
   display: flex;
