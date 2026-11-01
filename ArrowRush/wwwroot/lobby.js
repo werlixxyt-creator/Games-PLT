@@ -1,17 +1,17 @@
 "use strict";
 
-// Лобби: лидер настраивает матч, зовёт друзей и ставит ботов, игроки стоят в ряд своими персонажами.
+// Лобби: лидер настраивает матч, зовёт друзей и ставит ботов, скины игроков стоят в ряд на подставках.
 // Всё состояние присылает сервер (MatchManager.Lobby.cs), здесь только показ и вызовы хаба.
 // Приглашения — вывеска сверху на несколько секунд и список в панели друзей.
 const lobby = (() => {
   const $ = (id) => document.getElementById(id);
   const BANNER_MS = 15000;
 
-  // игроки стоят рядами друг за другом: сколько людей в ряду, по числу игроков
+  // скины стоят рядами: сколько в ряду, по числу игроков
   const ROWS = [{ upTo: 7, perRow: 7 }, { upTo: 21, perRow: 7 }, { upTo: 40, perRow: 10 }];
-  const FIG_WIDTH = 0.6;    // ширина бойца к его росту, как в .fig
-  const FIG_TALL = 1.16;    // полная высота с головой и ником к росту тела
-  const ROW_STEP = 0.61;    // следующий ряд стоит выше на такую долю роста: 1,16 минус наезд из .fig
+  const FIG_MAX = 300;      // самый крупный скин, пикселей
+  const FIG_TALL = 1.3;     // высота с подставкой и ником к размеру скина
+  const FIG_WIDE = 1.15;    // ширина с промежутком к размеру скина
 
   const THEMES = [
     ["auto", "Случайный", "conic-gradient(#ff4f9a, #ffb31f, #7ee03a, #22c7f0, #ff4f9a)"],
@@ -85,10 +85,10 @@ const lobby = (() => {
 
   // ---------- Игроки ----------
 
-  function figure(p, height) {
+  function figure(p, size) {
     const fig = document.createElement("div");
     fig.className = "fig" + (p.you ? " you" : "");
-    fig.style.setProperty("--h", `${height}px`);
+    fig.style.setProperty("--h", `${size}px`);
     fig.style.setProperty("--c", p.color);
 
     const name = document.createElement("div");
@@ -100,8 +100,10 @@ const lobby = (() => {
     head.width = head.height = 168;
     course.paintHero(head, p.hero);
 
-    fig.append(name, head);
-    fig.insertAdjacentHTML("beforeend", `<svg class="fig-body" viewBox="0 0 120 220" aria-hidden="true"><use href="#fighter"/></svg>`);
+    const stand = document.createElement("div");
+    stand.className = "fig-stand";
+
+    fig.append(head, stand, name);
 
     if (cur.leader && !p.you && !cur.inMatch) {
       const kick = document.createElement("button");
@@ -121,15 +123,14 @@ const lobby = (() => {
     const { perRow } = ROWS.find((r) => players.length <= r.upTo);
     const rows = [];
     for (let i = 0; i < players.length; i += perRow) rows.push(players.slice(i, i + perRow));
-    // рост подбирается под экран; первые игроки впереди, задние ряды чуть мельче
+    // размер подбирается под экран; первые игроки впереди, задние ряды чуть мельче
     const widest = Math.max(...rows.map((r) => r.length));
-    const height = Math.min(stage.clientHeight / (FIG_TALL + (rows.length - 1) * ROW_STEP) * 0.96, stage.clientWidth / widest / (FIG_WIDTH * 1.2));
+    const size = Math.min(FIG_MAX, stage.clientHeight / rows.length / FIG_TALL, stage.clientWidth / widest / FIG_WIDE);
     stage.replaceChildren(...rows.map((row, i) => {
       const el = document.createElement("div");
       el.className = "fig-row";
       el.style.zIndex = rows.length - i;
-      const size = height * (1 - i * 0.05);
-      el.append(...row.map((p) => figure(p, size)));
+      el.append(...row.map((p) => figure(p, size * (1 - i * 0.05))));
       return el;
     }).reverse());
   }
@@ -152,7 +153,7 @@ const lobby = (() => {
     cur = state;
     if (!was || !cur || was.leader !== cur.leader) o.onChange();
     if (cur) {
-      if (!was && o.screen() !== "game") o.show("lobby"); // рост бойцов считается по видимой сцене
+      if (!was && o.screen() !== "game") o.show("lobby"); // размер скинов считается по видимой сцене
       render();
       if (was && o.screen() === "lobby" && !cur.inMatch) $("lobby-error").textContent = "";
     } else if (o.screen() === "lobby") {

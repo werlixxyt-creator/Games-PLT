@@ -2113,25 +2113,28 @@ body[data-screen="lobby"] #app { max-width: none; padding: 0; }
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: center;
   min-height: 0;
   padding-bottom: 8px;
   overflow: hidden;
   background: radial-gradient(ellipse 70% 34% at 50% 100%, rgba(120, 112, 160, .55), transparent);
 }
-.fig-row { position: relative; display: flex; justify-content: center; gap: 1.5%; }
-.fig-row:nth-child(even):not(:last-child) { translate: 2% 0; }
-.fig { position: relative; display: flex; flex-direction: column; align-items: center; flex: none; width: calc(var(--h) * .6); margin-top: calc(var(--h) * -.55); color: var(--c); }
-.fig-row:first-child .fig { margin-top: 0; }
-.fig-body { display: block; width: 100%; height: var(--h); margin-top: calc(var(--h) * -.03); filter: drop-shadow(0 6px 4px rgba(0, 0, 0, .35)); }
-.fig-head { display: block; flex: none; width: 58%; aspect-ratio: 1; z-index: 1; }
-.fig-head { margin-bottom: calc(var(--h) * -.19); } /* голова стоит на плечах */
+.fig-row { position: relative; display: flex; justify-content: center; }
+.fig { position: relative; display: flex; flex-direction: column; align-items: center; flex: none; width: calc(var(--h) * 1.15); color: var(--c); }
+.fig-head { display: block; width: var(--h); aspect-ratio: 1; filter: drop-shadow(0 6px 4px rgba(0, 0, 0, .35)); animation: hover-float 3s ease-in-out infinite; }
+.fig-stand {
+  width: 72%;
+  height: calc(var(--h) * .09);
+  margin-top: calc(var(--h) * -.03);
+  background: radial-gradient(ellipse, currentColor, transparent 72%);
+  border-radius: 50%;
+}
 .fig-name {
-  z-index: 2;
-  max-width: 130%;
+  max-width: 100%;
+  margin-top: calc(var(--h) * .03);
   padding: 1px 7px;
   overflow: hidden;
-  font-size: clamp(10px, calc(var(--h) * .05), 15px);
+  font-size: clamp(10px, calc(var(--h) * .07), 16px);
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
