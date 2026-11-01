@@ -266,6 +266,10 @@ const course = (() => {
     star: { path: starPath(5, 33, 14), color: "#ffd84d" },
     crown: { path: new Path2D("M-28 20 L-32 -18 L-14 -2 L0 -26 L14 -2 L32 -18 L28 20 Z"), color: "#ffd84d" },
     gem: { path: new Path2D("M-16 -24 H16 L31 -6 L0 28 L-31 -6 Z"), color: "#39d8ff" },
+    heart: { path: new Path2D("M0 27 C-36 3 -31 -25 -12 -25 C-4 -25 0 -17 0 -14 C0 -17 4 -25 12 -25 C31 -25 36 3 0 27 Z"), color: "#ff3b6e" },
+    bolt: { path: new Path2D("M9 -33 L-21 6 L-3 6 L-9 33 L21 -8 L3 -8 Z"), color: "#ffe14d" },
+    gear: { path: starPath(10, 31, 22), color: "#9fb4d8" },
+    moon: { path: new Path2D("M12 -30 A30 30 0 1 0 12 30 A23 23 0 1 1 12 -30 Z"), color: "#fff1b8" },
   };
 
   // ---------- Частицы ----------

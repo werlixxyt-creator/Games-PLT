@@ -165,6 +165,8 @@ const fx = (() => {
 
   const FIRE = ["#ff7a1a", "#ffb31f", "#ff3b5c"];
   const VOLT = ["#22c7f0", "#9b7bff", "#ffffff"];
+  const FROST = ["#ffffff", "#9fe3ff", "#5cc8ff"];
+  const TOXIC = ["#b6ff3c", "#5dff7a", "#eaff7a"];
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
   /** Угольки поднимаются вверх и мерцают (серия «Пламя»; color null — радуга). */
@@ -202,6 +204,8 @@ const fx = (() => {
     const n = Math.round(30 * Math.min(2.5, power));
     if (kind === "electric") zaps(x, y, Math.round(n * 0.6));
     else if (kind === "rainbow") { embers(x, y, n, null); ring(x, y, COLORS[2], 110, 4); }
+    else if (kind === "frost") { embers(x, y, n, FROST); ring(x, y, FROST[1], 100, 4); }
+    else if (kind === "toxic") { embers(x, y, n, TOXIC); ring(x, y, TOXIC[0], 100, 4); }
     else { embers(x, y, n, FIRE); ring(x, y, FIRE[0], 100, 4); }
   }
 

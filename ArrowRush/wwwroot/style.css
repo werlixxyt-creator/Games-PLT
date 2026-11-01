@@ -386,6 +386,8 @@ h3 {
 .streak-badge svg { width: 14px; height: 14px; animation: flicker 1.2s ease-in-out infinite; }
 .streak-flame { --s: var(--a3); }
 .streak-electric { --s: var(--a0); }
+.streak-frost { --s: #9fe3ff; }
+.streak-toxic { --s: #b6ff3c; }
 .streak-rainbow { animation: pop-in .5s var(--ease-back) both, cycle 3s linear infinite; }
 @keyframes flicker { 50% { transform: scale(1.2) rotate(-8deg); } }
 @keyframes cycle {
@@ -1486,6 +1488,9 @@ h3 {
 
 /* Пиксели: заполнение квадратными ступеньками */
 .skin-pixel .slider .bar { border-radius: 3px; }
+.skin-ocean .slider .fill { background: linear-gradient(90deg, #0d4fa8, #3fb6ff); }
+.skin-lava .slider .fill { background: linear-gradient(90deg, #c8102e, #ff6a2b, #ffd23f); }
+.skin-mint .slider .fill { background: linear-gradient(90deg, #1fbf8f, #b8ffe6); }
 .skin-pixel .slider .fill {
   box-shadow: none;
   -webkit-mask: repeating-linear-gradient(to top, #000 0 9px, transparent 9px 12px);
@@ -1783,8 +1788,8 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
   margin-top: 28px;
 }
 .tile {
-  --tile-a: #1579c9;
-  --tile-b: #0b2a66;
+  --tile-a: #ff4f9a;
+  --tile-b: #ff8a3d;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1806,7 +1811,7 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
 .tile:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--outline); }
 .tile:focus-visible { outline: 3px solid var(--a3); outline-offset: 2px; }
 .tile.ready { border-color: var(--a1); }
-.tile-next { --tile-a: #d9a441; --tile-b: #5c3412; }
+.tile-next { --tile-a: #7b3ff2; --tile-b: #22c7f0; }
 .tile > * { position: relative; }
 .tile > .tile-art {
   position: absolute;
@@ -1815,7 +1820,10 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
   color: rgba(255, 255, 255, .14);
   rotate: 12deg;
 }
-.tile > .tile-hero { position: absolute; top: 8px; right: 6px; width: 54px; height: 54px; }
+.tile > .tile-skin { position: absolute; top: 7px; right: 7px; }
+.tile-skin .fx-tile { width: 46px; height: 46px; font-size: 22px; border-width: 2px; }
+.tile-skin .fx-tile svg { width: 22px; height: 22px; }
+.tile-skin .fx-tile .hero-preview { width: 36px; height: 36px; }
 .tile > .tile-badge {
   position: absolute;
   top: 7px; right: 8px;
@@ -1831,16 +1839,21 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
 .tile-title { font: 900 16px/1.2 var(--font-display); text-shadow: 0 2px 0 rgba(0, 0, 0, .35); margin-top: 2px; }
 .tile-note { font-size: 11px; font-weight: 800; }
 .tile > .reward-bar { width: calc(100% - 8px); height: 5px; margin-top: auto; }
-.star-total { color: var(--gold); text-transform: none; }
+.star-total { color: #ffe27a; text-transform: none; }
 .star-total b { font: inherit; font-variant-numeric: tabular-nums; }
+
+.rarity-common { --r: #4b9dff; }
+.rarity-rare { --r: #a061ff; }
+.rarity-epic { --r: #ff4fd0; }
+.rarity-legend { --r: #ffc93c; }
 
 .reward-window {
   position: fixed;
   top: 50%; left: 50%;
   z-index: 3;
-  width: min(330px, calc(100vw - 32px));
+  width: min(350px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
-  padding: 10px 14px 14px;
+  padding: 0 12px 12px;
   overflow-y: auto;
   color: var(--on-bg);
   background: var(--room);
@@ -1849,25 +1862,48 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
   box-shadow: 0 var(--depth) 0 var(--outline);
   translate: -50% -50%;
 }
-.reward-head { display: flex; align-items: center; justify-content: space-between; font: 900 15px var(--font-display); }
-.reward-title { display: flex; align-items: baseline; justify-content: space-between; margin: 10px 0 6px; font-size: 13px; }
+/* общая анимация экрана задержала бы окно на полсекунды: кнопка казалась бы нерабочей */
+#screen-menu > .reward-window { animation: pop-up .18s var(--ease-out) both; animation-delay: 0s; }
+.reward-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 -12px 2px;
+  padding: 7px 12px;
+  font: 900 15px var(--font-display);
+  background: linear-gradient(90deg, #ff4f9a, #ff8a3d);
+}
+.reward-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0 6px; font-size: 13px; }
+.reward-title b { padding: 1px 9px; color: var(--outline); border-radius: 999px; }
+.reward-title.day b { background: #ffb31f; }
+.reward-title.week b { background: #2fd6a8; }
 .reward-title span { font-size: 12px; color: var(--muted-room); }
 .reward-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .reward {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   gap: 3px 8px;
   align-items: center;
-  padding: 7px 9px;
+  padding: 6px 9px 6px 7px;
   font-size: 13px;
   font-weight: 800;
-  background: var(--room-2);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--r) 42%, var(--room-2)), var(--room-2) 75%);
+  border-left: 4px solid var(--r);
   border-radius: 8px;
 }
 .reward.ready { box-shadow: inset 0 0 0 2px var(--a1); }
-.reward.claimed { opacity: .6; }
+.reward.claimed { filter: saturate(.35); opacity: .7; }
+.reward-icon {
+  grid-row: span 2;
+  width: 30px; height: 30px;
+  padding: 6px;
+  color: var(--outline);
+  background: var(--r);
+  border: 2px solid var(--outline);
+  border-radius: 50%;
+}
 .reward-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reward-stars { color: var(--gold); font-weight: 900; white-space: nowrap; }
+.reward-stars { color: var(--r); font-weight: 900; white-space: nowrap; filter: brightness(1.2); }
 .reward-claim {
   padding: 3px 10px;
   font: 900 12px var(--font-body);
@@ -1879,8 +1915,9 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
 }
 .reward-claim:hover:not(:disabled) { filter: brightness(1.1); }
 .reward-bar { position: relative; display: block; height: 6px; overflow: hidden; background: rgba(0, 0, 0, .4); border-radius: 999px; }
-.reward-bar i { position: absolute; inset: 0 auto 0 0; background: var(--gold); border-radius: 999px; }
+.reward-bar i { position: absolute; inset: 0 auto 0 0; background: var(--r, var(--gold)); border-radius: 999px; }
 .reward-count { font-size: 11px; line-height: 1; color: var(--muted-room); font-variant-numeric: tabular-nums; }
+.reward-note { margin: 10px 0 0; font-size: 11px; color: var(--muted-room); }
 .reward-window .conn { margin-top: 8px; }
 
 /* табличка с «шурупами» по бокам */
@@ -1909,16 +1946,16 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
 .ad-plate::before { left: 6px; }
 .ad-plate::after { right: 6px; }
 
-/* на широком экране — маленькая колонка у левого края, окно наград открывается рядом с ней */
+/* на широком экране — маленькая колонка в левом нижнем углу, окно наград открывается рядом с ней */
 @media (min-width: 1100px) {
   .rewards {
     position: fixed;
-    top: 16px; left: 16px;
+    bottom: 16px; left: 16px;
     grid-template-columns: 1fr;
     width: 200px;
     margin: 0;
   }
-  .reward-window { top: 16px; left: 228px; translate: none; }
+  .reward-window { top: auto; bottom: 16px; left: 228px; translate: none; }
   body[data-screen="menu"] #app { max-width: none; padding-left: 232px; padding-right: 88px; }
   #screen-menu .topbar { left: 232px; right: 88px; }
   #screen-menu .logo { font-size: clamp(46px, 7vw, 92px); }

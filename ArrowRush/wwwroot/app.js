@@ -32,7 +32,7 @@ const DIFFS = {
 const MATE_COLOR = "#2fd6a8"; // «2 на 2»: напарник на траектории и его полоса внизу
 const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
 // кайма следа персонажа по скину ползунков; цвета стрелок от скина не зависят
-const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16" };
+const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16", ocean: "#3fb6ff", lava: "#ff6a2b", mint: "#6fffc4" };
 // экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
 const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search"]);
 const UNLOCK_TEXT = {
@@ -46,6 +46,8 @@ const UNLOCK_TEXT = {
 const FX_PREVIEW = {
   rush: ["#arrow", "var(--a2)"], nova: ["✦", "var(--gold)"], frost: ["❄", "var(--a0)"], finale: ["✺", "var(--a3)"],
   flame: ["#flame", "var(--a2)"], electric: ["#bolt", "var(--a0)"], rainbow: ["◉", "var(--a1)"],
+  sapphire: ["✦", "#4fa8ff"], redgiant: ["✦", "#ff3b3b"], frost2: ["❄", "#9fe3ff"], toxic: ["☣", "#b6ff3c"],
+  ocean: ["▰", "#3fb6ff"], lava: ["▰", "#ff6a2b"], mint: ["▰", "#6fffc4"],
 };
 
 function plural(n, one, few, many) {
@@ -601,9 +603,10 @@ rewards.init({
   api,
   me: () => profile,
   refresh: refreshProfile,
-  openHeroes: () => {
+  skinTile,
+  openSkins: (slot) => {
     $("btn-skins").click();
-    document.querySelector('#skin-tabs [data-slot="hero"]').click();
+    document.querySelector(`#skin-tabs [data-slot="${slot}"]`).click();
   },
 });
 
@@ -669,6 +672,12 @@ function playVictory(skin, sub) {
   victory.play(skin, { title: "ПОБЕДА!", sub, hero });
 }
 
+/** Значок скина для кнопки наград: персонаж рисуется, остальное — плитка эффекта. Иней занят скином победы. */
+function skinTile(s) {
+  if (s.slot === "hero") return heroPreview(s.id);
+  return fxPreview({ id: s.slot === "streak" && s.id === "frost" ? "frost2" : s.id });
+}
+
 function renderSkins() {
   if (skinSlot === "music") return renderMusicTab();
   if (!profile) return;
@@ -684,7 +693,7 @@ function renderSkins() {
 
     const preview = document.createElement("div");
     preview.className = "skin-preview";
-    preview.appendChild(s.slot === "slider" ? sliderPreview(s.id) : s.slot === "hero" ? heroPreview(s.id) : fxPreview(s));
+    preview.appendChild(s.slot === "slider" ? sliderPreview(s.id) : skinTile(s));
     if (!s.unlocked) preview.insertAdjacentHTML("beforeend", `<span class="skin-lock"><svg viewBox="0 0 24 24"><use href="#lock"/></svg></span>`);
 
     const name = document.createElement("div");
@@ -861,6 +870,9 @@ conn.on("queued", (d) => {
 conn.on("matchStart", startMatch);
 
 conn.on("friends", () => social.changed());
+
+// матч записан в базу: прогресс наград и статистика изменились
+conn.on("stats", refreshProfile);
 
 conn.on("state", (s) => {
   if (!match) return;

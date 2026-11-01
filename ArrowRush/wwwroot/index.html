@@ -84,7 +84,7 @@
 
       <div id="conn-status" class="conn" data-conn>Подключение к серверу…</div>
 
-      <!-- кнопки слева, как в меню CS2 (rewards.js); на узком экране — под кнопками меню -->
+      <!-- кнопки слева внизу, как в меню CS2 (rewards.js); на узком экране — под кнопками меню -->
       <aside class="rewards" aria-label="Награды">
         <button id="btn-rewards" class="tile tile-day" type="button" aria-expanded="false">
           <svg class="tile-art" viewBox="0 0 24 24" aria-hidden="true"><use href="#flame"/></svg>
@@ -94,7 +94,7 @@
           <b id="reward-badge" class="tile-badge" hidden></b>
         </button>
         <button id="btn-reward-next" class="tile tile-next" type="button">
-          <canvas id="reward-next-hero" class="tile-hero" width="168" height="168" aria-hidden="true"></canvas>
+          <span id="reward-next-art" class="tile-skin" aria-hidden="true"></span>
           <span class="tile-label">За звёзды · <span class="star-total">★ <b id="reward-stars">0</b></span></span>
           <span id="reward-next-name" class="tile-title"></span>
           <span id="reward-next-need" class="tile-note"></span>
@@ -109,10 +109,11 @@
           <span>Награды</span>
           <button id="reward-close" class="panel-close" type="button" aria-label="Закрыть">×</button>
         </div>
-        <div class="reward-title"><b>Ежедневные</b><span id="reward-day-reset"></span></div>
+        <div class="reward-title day"><b>Ежедневные</b><span id="reward-day-reset"></span></div>
         <ul id="reward-day" class="reward-list"></ul>
-        <div class="reward-title"><b>Еженедельные</b><span id="reward-week-reset"></span></div>
+        <div class="reward-title week"><b>Еженедельные</b><span id="reward-week-reset"></span></div>
         <ul id="reward-week" class="reward-list"></ul>
+        <p class="reward-note">Считаются матчи из поиска. Тренировки и матчи, из которых ты вышел, не идут в задания.</p>
         <div id="reward-error" class="conn bad" role="alert"></div>
       </div>
     </section>
@@ -217,7 +218,7 @@
         <button id="btn-skins-back" class="btn ghost small">← В меню</button>
       </div>
       <h2>Скины</h2>
-      <p class="muted">Открываются за матчи, победы и серии побед</p>
+      <p class="muted">Открываются за матчи, победы, серии побед и звёзды</p>
       <div id="skin-tabs" class="tabs five" role="tablist" data-active="0">
         <button type="button" class="tab active" data-slot="slider" role="tab">Ползунки</button>
         <button type="button" class="tab" data-slot="hero" role="tab">Персонаж</button>

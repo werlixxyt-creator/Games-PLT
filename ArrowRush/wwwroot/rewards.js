@@ -1,32 +1,55 @@
 "use strict";
 
-// Ежедневные и еженедельные награды: кнопки слева в меню, как в CS2, задания — в окне по кнопке «Награды».
-// Прогресс и звёзды считает сервер (Data/Rewards.cs), здесь только показ и кнопка «Забрать».
+// Ежедневные и еженедельные награды: кнопки слева внизу, как в CS2, задания — в окне по кнопке «Награды».
+// Задания, прогресс и звёзды считает сервер (Data/Rewards.cs), здесь только показ и кнопка «Забрать».
 const rewards = (() => {
   const $ = (id) => document.getElementById(id);
+  const TICK_MS = 20000;
 
-  let o = null;     // { api, me — текущий профиль, refresh — перечитать его, openHeroes — экран персонажей }
-  let data = null;  // ответ /api/account/rewards
+  // значок задания по цели; #id — символ из <svg> в index.html
+  const GOAL_ICON = {
+    visit: "#play", games: "#target", wins: "#chart", sliders: "#arrow", finishes: "#flame",
+    fastgames: "#bolt", hardgames: "#heart", teamgames: "#team", mirrorgames: "#mirror", blindgames: "#eye",
+  };
 
-  function resetText(iso) {
-    const hours = Math.max(1, Math.ceil((new Date(iso) - Date.now()) / 3600000));
-    return hours > 24 ? `ещё ${Math.ceil(hours / 24)} дн.` : `ещё ${hours} ч`;
+  let o = null;       // { api, me — текущий профиль, refresh — перечитать его, skinTile, openSkins(slot) }
+  let data = null;    // ответ /api/account/rewards
+  let nextSkin = null; // скин на кнопке «За звёзды»
+
+  /** Редкость — цвет задания: чем больше звёзд, тем она выше. */
+  function rarity(stars) {
+    return stars <= 15 ? "common" : stars <= 30 ? "rare" : stars <= 90 ? "epic" : "legend";
+  }
+
+  function timeLeft(iso) {
+    const minutes = Math.max(1, Math.ceil((new Date(iso) - Date.now()) / 60000));
+    if (minutes < 60) return `${minutes} мин`;
+    const hours = Math.floor(minutes / 60);
+    return hours >= 24 ? `${Math.floor(hours / 24)} дн ${hours % 24} ч` : `${hours} ч ${minutes % 60} мин`;
   }
 
   function taskRow(t) {
     const done = t.have >= t.need;
     const li = document.createElement("li");
-    li.className = "reward" + (t.claimed ? " claimed" : done ? " ready" : "");
+    li.className = `reward rarity-${rarity(t.stars)}` + (t.claimed ? " claimed" : done ? " ready" : "");
+
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("class", "reward-icon");
+    icon.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", GOAL_ICON[t.goal] || "#target");
+    icon.appendChild(use);
 
     const name = document.createElement("span");
     name.className = "reward-name";
     name.textContent = t.name;
-    li.appendChild(name);
+    li.append(icon, name);
 
     if (t.claimed) {
       const got = document.createElement("span");
       got.className = "reward-stars";
-      got.textContent = "✓";
+      got.textContent = "✓ получено";
       li.appendChild(got);
     } else if (done) {
       const claim = document.createElement("button");
@@ -52,17 +75,20 @@ const rewards = (() => {
     return li;
   }
 
-  function renderPeriod(id, period) {
-    $(id).replaceChildren(...period.tasks.map(taskRow));
-    $(id + "-reset").textContent = resetText(period.resetsAt);
+  const allTasks = () => [...data.day.tasks, ...data.week.tasks];
+  const readyCount = () => allTasks().filter((t) => t.have >= t.need && !t.claimed).length;
+
+  /** Обратный отсчёт и подпись на кнопке «Награды». */
+  function renderTimes() {
+    $("reward-day-reset").textContent = `новые через ${timeLeft(data.day.resetsAt)}`;
+    $("reward-week-reset").textContent = `новые через ${timeLeft(data.week.resetsAt)}`;
+    $("reward-hint").textContent = readyCount() ? "Можно забрать" : `Новые через ${timeLeft(data.day.resetsAt)}`;
   }
 
   /** Кнопка «Награды»: сколько заданий закрыто и сколько наград ждёт. */
   function renderSummary() {
-    const tasks = [...data.day.tasks, ...data.week.tasks];
-    const ready = tasks.filter((t) => t.have >= t.need && !t.claimed).length;
-    $("reward-summary").textContent = `${tasks.filter((t) => t.claimed).length} из ${tasks.length}`;
-    $("reward-hint").textContent = ready ? "Можно забрать" : `Новые — ${resetText(data.day.resetsAt)}`;
+    const ready = readyCount();
+    $("reward-summary").textContent = `${allTasks().filter((t) => t.claimed).length} из ${allTasks().length}`;
     $("reward-badge").hidden = ready === 0;
     $("reward-badge").textContent = ready;
     $("btn-rewards").classList.toggle("ready", ready > 0);
@@ -70,21 +96,25 @@ const rewards = (() => {
 
   /** Кнопка со следующим скином за звёзды; когда открыты все, показывает последний. */
   function renderNext() {
-    const skins = o.me().skins.filter((s) => s.by === "stars");
+    const skins = o.me().skins.filter((s) => s.by === "stars").sort((a, b) => a.need - b.need);
     const next = skins.find((s) => !s.unlocked);
     const skin = next || skins[skins.length - 1];
-    course.paintHero($("reward-next-hero"), skin.id);
+    if (!nextSkin || nextSkin.id !== skin.id || nextSkin.slot !== skin.slot) {
+      $("reward-next-art").replaceChildren(o.skinTile(skin));
+    }
+    nextSkin = skin;
     $("reward-next-name").textContent = skin.name;
     $("reward-next-need").textContent = next ? `Собери ${next.need} ★` : "Все награды открыты";
     $("reward-next-bar").style.width = `${Math.min(100, (data.stars / skin.need) * 100)}%`;
   }
 
   function render() {
-    if (!data) return;
+    if (!data || !o.me()) return;
     fx.countUp($("reward-stars"), data.stars);
-    renderPeriod("reward-day", data.day);
-    renderPeriod("reward-week", data.week);
+    $("reward-day").replaceChildren(...data.day.tasks.map(taskRow));
+    $("reward-week").replaceChildren(...data.week.tasks.map(taskRow));
     renderSummary();
+    renderTimes();
     renderNext();
   }
 
@@ -103,7 +133,7 @@ const rewards = (() => {
       const r = await o.api("POST", "rewards/claim", { id: task.id });
       if (!r.ok) {
         err.textContent = (r.data && r.data.error) || "Не получилось забрать награду";
-        btn.disabled = false;
+        await load(); // задания могли смениться, пока окно было открыто
         return;
       }
       const [x, y] = fx.anchor(btn);
@@ -121,11 +151,20 @@ const rewards = (() => {
     $("reward-error").textContent = "";
   }
 
+  const inMenu = () => document.body.dataset.screen === "menu";
+
+  /** Новый день или неделя наступили: задания надо перечитать. */
+  function tick() {
+    if (!data || !inMenu()) return;
+    if (Date.now() >= new Date(data.day.resetsAt)) load();
+    else renderTimes();
+  }
+
   function init(options) {
     o = options;
     $("btn-rewards").addEventListener("click", () => setWindow($("reward-window").hidden));
     $("reward-close").addEventListener("click", () => setWindow(false));
-    $("btn-reward-next").addEventListener("click", o.openHeroes);
+    $("btn-reward-next").addEventListener("click", () => { if (nextSkin) o.openSkins(nextSkin.slot); });
     // клик мимо окна и Esc закрывают его
     addEventListener("pointerdown", (e) => {
       if (!$("reward-window").contains(e.target) && !$("btn-rewards").contains(e.target)) setWindow(false);
@@ -133,12 +172,11 @@ const rewards = (() => {
     addEventListener("keydown", (e) => {
       if (e.code === "Escape") setWindow(false);
     });
-    // пока открыто меню: обновляем обратный отсчёт и новый день, если он наступил
-    setInterval(() => {
-      if (!data || document.body.dataset.screen !== "menu") return;
-      if (Date.now() >= new Date(data.day.resetsAt)) load();
-      else render();
-    }, 60000);
+    setInterval(tick, TICK_MS);
+    // вкладка могла простоять в фоне всю ночь
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && data && inMenu()) load();
+    });
   }
 
   return { init, load };

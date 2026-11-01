@@ -245,6 +245,10 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
             var db = scope.ServiceProvider.GetRequiredService<AppDb>();
             db.Matches.AddRange(records);
             await db.SaveChangesAsync();
+
+            // клиент уже мог перечитать профиль: матч сохраняется позже, чем приходят итоги
+            var users = records.SelectMany(r => r.Participants).Select(p => p.UserId).OfType<string>().Distinct().ToList();
+            await hub.Clients.Users(users).SendAsync("stats");
         }
         catch (Exception e)
         {

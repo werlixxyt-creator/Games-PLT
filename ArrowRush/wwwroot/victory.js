@@ -232,18 +232,20 @@ const victory = (() => {
     nova: {
       sky: "#0c0626",
       title: ["#fff6c9", "#ff9f1c"],
+      pal: GOLD,
+      rgb: ["255,226,122", "255,159,28"], // свет лучей: от центра к краю
       setup(cue) {
         run.stars = Array.from({ length: 130 }, () => ({ x: rand(0, W), y: rand(0, H), size: rand(0.6, 2), phase: rand(0, TAU) }));
         run.spiral = Array.from({ length: 260 }, () => ({
-          a: rand(0, TAU), r: Math.max(W, H) * rand(0.3, 0.75), at: rand(0, IMPACT - 0.8), color: pick(GOLD),
+          a: rand(0, TAU), r: Math.max(W, H) * rand(0.3, 0.75), at: rand(0, IMPACT - 0.8), color: pick(run.show.pal),
         }));
         cue(IMPACT, () => {
           const cx = W / 2, cy = H / 2, big = Math.hypot(W, H);
-          burst(cx, cy, 130, { kind: "star", colors: GOLD, speed: big * 1.3, drag: 1.5, max: [1.4, 2.8], size: [12, 36] });
-          burst(cx, cy, 200, { kind: "line", colors: [...GOLD, "#fff"], speed: big * 2.2, drag: 2.2, max: [0.6, 1.5], size: [1.5, 4] });
-          ring(cx, cy, big * 0.7, 70, "#ffe27a");
+          burst(cx, cy, 130, { kind: "star", colors: run.show.pal, speed: big * 1.3, drag: 1.5, max: [1.4, 2.8], size: [12, 36] });
+          burst(cx, cy, 200, { kind: "line", colors: [...run.show.pal, "#fff"], speed: big * 2.2, drag: 2.2, max: [0.6, 1.5], size: [1.5, 4] });
+          ring(cx, cy, big * 0.7, 70, run.show.pal[1]);
           ring(cx, cy, big * 0.5, 34, "#fff", 0.12);
-          ring(cx, cy, big * 0.35, 18, "#ff9f1c", 0.26);
+          ring(cx, cy, big * 0.35, 18, run.show.pal[2], 0.26);
         });
       },
       draw(t, dt) {
@@ -268,7 +270,7 @@ const victory = (() => {
           // ядро растёт, а перед самым ударом резко сжимается в точку
           const grow = clamp01(t / (IMPACT - 0.3)), fall = clamp01((IMPACT - t) / 0.3);
           const size = min * 0.3 * grow * grow * fall + 3;
-          glow(cx, cy, size * 3, "#ff9f1c", 0.8);
+          glow(cx, cy, size * 3, run.show.pal[2], 0.8);
           glow(cx, cy, size * 1.4, "#fff", 1);
           return;
         }
@@ -276,9 +278,9 @@ const victory = (() => {
         // лучи вращаются навстречу друг другу
         const since = t - IMPACT, far = Math.hypot(W, H) * 0.7;
         const light = ctx.createRadialGradient(cx, cy, 0, cx, cy, far);
-        light.addColorStop(0, "rgba(255,226,122,.9)");
-        light.addColorStop(0.5, "rgba(255,159,28,.28)");
-        light.addColorStop(1, "rgba(255,159,28,0)");
+        light.addColorStop(0, `rgba(${run.show.rgb[0]},.9)`);
+        light.addColorStop(0.5, `rgba(${run.show.rgb[1]},.28)`);
+        light.addColorStop(1, `rgba(${run.show.rgb[1]},0)`);
         ctx.fillStyle = light;
         for (const [dir, rays, alpha] of [[1, 12, 0.55], [-1, 9, 0.35]]) {
           ctx.globalAlpha = clamp01(since / 0.25) * alpha;
@@ -292,12 +294,12 @@ const victory = (() => {
           }
           ctx.fill();
         }
-        glow(cx, cy, min * (0.55 + 0.04 * Math.sin(t * 5)), "#ffb31f", 0.55);
+        glow(cx, cy, min * (0.55 + 0.04 * Math.sin(t * 5)), run.show.pal[0], 0.55);
 
         if (t < run.end - 1) {
           emit(dt, 16, () => {
             const a = rand(0, TAU), sp = rand(40, 170), dist = rand(0.1, 0.5) * min;
-            add({ kind: "star", x: cx + Math.cos(a) * dist, y: cy + Math.sin(a) * dist, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vr: rand(-2, 2), max: rand(1.4, 2.4), size: rand(8, 22), color: pick(GOLD) });
+            add({ kind: "star", x: cx + Math.cos(a) * dist, y: cy + Math.sin(a) * dist, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vr: rand(-2, 2), max: rand(1.4, 2.4), size: rand(8, 22), color: pick(run.show.pal) });
           });
         }
       },
@@ -490,6 +492,9 @@ const victory = (() => {
       },
     },
   };
+
+  SHOWS.sapphire = { ...SHOWS.nova, sky: "#050b2e", title: ["#ffffff", "#4fa8ff"], pal: ["#4fa8ff", "#bfe4ff", "#2f6bff"], rgb: ["191,228,255", "47,107,255"] };
+  SHOWS.redgiant = { ...SHOWS.nova, sky: "#1f0509", title: ["#ffe9d6", "#ff3b3b"], pal: ["#ff3b3b", "#ffb199", "#c8102e"], rgb: ["255,177,153", "200,16,46"] };
 
   // ---------- Надпись и персонаж ----------
 

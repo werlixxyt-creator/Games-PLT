@@ -51,6 +51,9 @@ public static class Skins
         new(Slider, "pixel", "Пиксели", Unlock.Sliders, 300),
         new(Slider, "gold", "Золото", Unlock.Wins, 15),
         new(Slider, "rainbow", "Радуга", Unlock.Streak, 5),
+        new(Slider, "ocean", "Океан", Unlock.Stars, 100),
+        new(Slider, "lava", "Лава", Unlock.Stars, 300),
+        new(Slider, "mint", "Мята", Unlock.Stars, 1100),
 
         new(Hero, "circle", "Кружок"),
         new(Hero, "cube", "Куб", Unlock.Games, 3),
@@ -59,16 +62,24 @@ public static class Skins
         new(Hero, "spike", "Шипастый", Unlock.Sliders, 1000),
         new(Hero, "star", "Звезда", Unlock.Streak, 4),
         new(Hero, "crown", "Корона", Unlock.Stars, 200),
+        new(Hero, "heart", "Сердце", Unlock.Stars, 400),
         new(Hero, "gem", "Самоцвет", Unlock.Stars, 600),
+        new(Hero, "bolt", "Разряд", Unlock.Stars, 900),
+        new(Hero, "gear", "Шестерня", Unlock.Stars, 1300),
+        new(Hero, "moon", "Луна", Unlock.Stars, 2000),
 
         new(Win, "rush", "Шквал стрелок"),
         new(Win, "nova", "Сверхновая", Unlock.Wins, 1),
         new(Win, "frost", "Ледяной шторм", Unlock.Wins, 5),
         new(Win, "finale", "Гранд-финал", Unlock.Wins, 25),
+        new(Win, "sapphire", "Синий гигант", Unlock.Stars, 500),
+        new(Win, "redgiant", "Красный гигант", Unlock.Stars, 1600),
 
         new(StreakSlot, "flame", "Пламя"),
         new(StreakSlot, "electric", "Молнии", Unlock.Streak, 3),
         new(StreakSlot, "rainbow", "Радуга", Unlock.Streak, 8),
+        new(StreakSlot, "frost", "Иней", Unlock.Stars, 150),
+        new(StreakSlot, "toxic", "Токсин", Unlock.Stars, 750),
     ];
 
     public static readonly string[] SliderIds = All.Where(s => s.Slot == Slider).Select(s => s.Id).ToArray();
