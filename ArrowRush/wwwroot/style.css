@@ -69,6 +69,15 @@ body {
   pointer-events: none;
 }
 #fx { z-index: 50; }
+#victory {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  touch-action: none;
+}
 
 #app {
   position: relative;

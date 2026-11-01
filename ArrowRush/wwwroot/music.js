@@ -241,7 +241,7 @@ const music = (() => {
   const crash = (t) => noiseHit(t, "highpass", 3500, 0.5, 1.5);
 
   /** Короткий взлёт шума перед «СТАРТ!». */
-  function riser(t, len) {
+  function riser(t, len, out = bus) {
     const s = ctx.createBufferSource();
     s.buffer = noise;
     s.loop = true;
@@ -254,7 +254,7 @@ const music = (() => {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.25, t + len);
     g.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.05);
-    s.connect(f).connect(g).connect(bus);
+    s.connect(f).connect(g).connect(out);
     s.start(t);
     s.stop(t + len + 0.1);
   }
@@ -514,6 +514,48 @@ const music = (() => {
       o.stop(t + 1);
     });
     setTimeout(() => out.disconnect(), 2000);
+  }
+
+  /** Сцена победы: нарастание, через impact секунд — удар баса с тарелкой и мажорный аккорд, за ним взлёт нот. */
+  function fanfare(impact) {
+    if (!ctx) return;
+    const out = ctx.createGain();
+    out.connect(master);
+    const t = ctx.currentTime + impact;
+    riser(ctx.currentTime, impact, out);
+    noiseHit(t, "highpass", 3500, 0.5, 2.2, out);
+
+    const boom = ctx.createOscillator();
+    const boomGain = ctx.createGain();
+    boom.frequency.setValueAtTime(140, t);
+    boom.frequency.exponentialRampToValueAtTime(36, t + 0.5);
+    env(boomGain, t, 0.003, 0.9, 1);
+    boom.connect(boomGain).connect(out);
+    boom.start(t);
+    boom.stop(t + 1.1);
+
+    for (const m of [48, 60, 67, 72, 76, 79]) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sawtooth";
+      o.frequency.value = freq(m);
+      env(g, t, 0.01, 0.08, 2.6);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 2.7);
+    }
+    [84, 88, 91, 96].forEach((m, i) => {
+      const at = t + 0.3 + i * 0.1;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "square";
+      o.frequency.value = freq(m);
+      env(g, at, 0.005, 0.1, i === 3 ? 1.3 : 0.25);
+      o.connect(g).connect(out);
+      o.start(at);
+      o.stop(at + 1.4);
+    });
+    setTimeout(() => out.disconnect(), (impact + 3.5) * 1000);
   }
 
   function setMuted(m) {
@@ -805,7 +847,7 @@ const music = (() => {
   }
 
   return {
-    unlock, start, stop, jingle, setMuted, tap, energy, ding, miss,
+    unlock, start, stop, jingle, fanfare, setMuted, tap, energy, ding, miss,
     isMuted: () => muted, isPlaying: () => !!song, part: () => (song ? song.part : null),
     menu, setMenuTrack, setMatchTrack, setCustomFile,
     menuTracks: MENU_TRACKS, menuTrack: () => menuId, matchTrack: () => matchId,

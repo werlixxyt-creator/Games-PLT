@@ -43,7 +43,7 @@ const UNLOCK_TEXT = {
 };
 // превью эффектов на экране скинов: значок (символ или #id из <svg> в index.html) и цвет плитки
 const FX_PREVIEW = {
-  confetti: ["▰", "var(--a2)"], stars: ["★", "var(--gold)"], snow: ["❄", "var(--a0)"], fireworks: ["✺", "var(--a3)"],
+  rush: ["#arrow", "var(--a2)"], nova: ["✦", "var(--gold)"], frost: ["❄", "var(--a0)"], finale: ["✺", "var(--a3)"],
   flame: ["#flame", "var(--a2)"], electric: ["#bolt", "var(--a0)"], rainbow: ["◉", "var(--a1)"],
 };
 
@@ -637,11 +637,18 @@ function heroPreview(id) {
   return tile;
 }
 
-/** Проигрывает эффект скина над элементом. */
-function playSkinFx(slot, id, el, power = 1) {
+/** Проигрывает эффект серии побед над элементом. */
+function playStreakFx(id, el, power = 1) {
   const [x, y] = fx.anchor(el);
-  if (slot === "win") fx.win(id, x, y);
-  else if (slot === "streak") fx.streak(id, x, y, power);
+  fx.streak(id, x, y, power);
+}
+
+/** Сцена победы с персонажем игрока. */
+function playVictory(skin, sub) {
+  const hero = document.createElement("canvas");
+  hero.width = hero.height = 252;
+  course.paintHero(hero, profile ? profile.equipped.hero : "circle");
+  victory.play(skin, { title: "ПОБЕДА!", sub, hero });
 }
 
 function renderSkins() {
@@ -685,7 +692,7 @@ function renderSkins() {
       const look = document.createElement("button");
       look.className = "btn ghost small";
       look.textContent = "Посмотреть";
-      look.addEventListener("click", () => playSkinFx(s.slot, s.id, preview, 1.5));
+      look.addEventListener("click", () => (s.slot === "win" ? playVictory(s.id, s.name) : playStreakFx(s.id, preview, 1.5)));
       buttons.appendChild(look);
     }
     if (s.unlocked) {
@@ -841,7 +848,12 @@ conn.on("state", (s) => {
   stateAt = performance.now();
 });
 
-conn.on("matchEnd", showResults);
+conn.on("matchEnd", (r) => {
+  if (!match) return;
+  const me = r.results.find((x) => x.slot === match.you);
+  if (me && me.won) celebrateWin();
+  victory.after(() => showResults(r));
+});
 
 // ---------- Меню и поиск ----------
 
@@ -1048,6 +1060,17 @@ function startMatch(d) {
   show("game");
 }
 
+/**
+ * Победная сцена матча, один раз за матч. Без команд первый финиш — уже победа, поэтому она
+ * начинается сразу, не дожидаясь остальных; в командах её запускает конец матча.
+ */
+function celebrateWin() {
+  if (match.celebrated) return;
+  match.celebrated = true;
+  music.stop(0.4);
+  playVictory(profile ? profile.equipped.win : "rush", match.teams ? "Твоя команда финишировала первой" : "Первое место");
+}
+
 function showResults(r) {
   if (!match) return;
   const you = match.you;
@@ -1124,9 +1147,8 @@ function showResults(r) {
 
   show("results");
 
-  music.jingle(win);
-  if (win) playSkinFx("win", profile ? profile.equipped.win : "confetti", title);
-  if (streak >= 2) setTimeout(() => playSkinFx("streak", profile.equipped.streak, banner, streak / 3), 450);
+  if (!win) music.jingle(false); // у победы была своя фанфара
+  if (streak >= 2) setTimeout(() => playStreakFx(profile.equipped.streak, banner, streak / 3), 450);
 }
 
 // ---------- Отрисовка (60 fps) ----------
@@ -1205,7 +1227,7 @@ function showCombo() {
   el.textContent = `x${combo}`;
   el.classList.toggle("hot", combo >= 10);
   fx.retrigger(el, "pop");
-  if (combo % 10 === 0) playSkinFx("streak", profile ? profile.equipped.streak : "flame", el, 0.5);
+  if (combo % 10 === 0) playStreakFx(profile ? profile.equipped.streak : "flame", el, 0.5);
 }
 
 /** Режимы с нажатиями: сверяем своё предсказание с сервером. */
@@ -1309,6 +1331,7 @@ function render(now) {
   // подсказки для меня
   const mine = st.players.find((p) => p.slot === match.you);
   if (!mine) return;
+  if (mine.done && mine.place === 1 && !match.teams) celebrateWin();
   // при удержании ошибки считает только сервер
   if (!speed) { pred.miss = mine.miss; pred.out = mine.out; }
   if (match.lives) renderLives();

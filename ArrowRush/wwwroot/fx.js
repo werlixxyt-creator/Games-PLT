@@ -163,65 +163,9 @@ const fx = (() => {
 
   // ---------- Скины эффектов ----------
 
-  const STAR = (() => {
-    const path = new Path2D();
-    for (let i = 0; i < 10; i++) {
-      const r = i % 2 ? 4.5 : 11;
-      const a = -Math.PI / 2 + (i * Math.PI) / 5;
-      path[i ? "lineTo" : "moveTo"](12 + Math.cos(a) * r, 12 + Math.sin(a) * r);
-    }
-    path.closePath();
-    return path;
-  })();
-  const GOLD = ["#ffc93c", "#ffe27a", "#ff9f1c"];
-  const ICE = ["#ffffff", "#d8f3ff", "#9fe3ff"];
   const FIRE = ["#ff7a1a", "#ffb31f", "#ff3b5c"];
   const VOLT = ["#22c7f0", "#9b7bff", "#ffffff"];
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-  /** Звёзды падают сверху, крутясь. */
-  function stars(n = 70) {
-    if (reduce) return;
-    for (let i = 0; i < n; i++) {
-      add({
-        kind: "star",
-        x: Math.random() * W, y: -30 - Math.random() * H * 0.5,
-        vx: (Math.random() - 0.5) * 80, vy: 160 + Math.random() * 220,
-        rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 6,
-        size: 12 + Math.random() * 16, color: pick(GOLD),
-        life: 0, max: 2.6 + Math.random() * 1.4,
-      });
-    }
-  }
-
-  /** Медленный снегопад. */
-  function snow(n = 130) {
-    if (reduce) return;
-    for (let i = 0; i < n; i++) {
-      add({
-        kind: "flake",
-        x: Math.random() * W, y: -20 - Math.random() * H * 0.7,
-        vx: (Math.random() - 0.5) * 30, vy: 60 + Math.random() * 90,
-        rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 2,
-        size: 4 + Math.random() * 7, color: pick(ICE), sway: Math.random() * Math.PI * 2,
-        life: 0, max: 4 + Math.random() * 2,
-      });
-    }
-  }
-
-  /** Ракеты снизу, на вершине — взрыв искрами. */
-  function fireworks(n = 7) {
-    if (reduce) return;
-    for (let i = 0; i < n; i++) {
-      add({
-        kind: "rocket",
-        x: W * (0.15 + Math.random() * 0.7), y: H + 10,
-        vx: (Math.random() - 0.5) * 60, vy: -(H * 0.9 + Math.random() * H * 0.5),
-        color: COLORS[i % 4],
-        life: -i * 0.22, max: 0.75 + Math.random() * 0.25,
-      });
-    }
-  }
 
   /** Угольки поднимаются вверх и мерцают (серия «Пламя»; color null — радуга). */
   function embers(x, y, n, palette) {
@@ -253,15 +197,6 @@ const fx = (() => {
     ring(x, y, VOLT[0], 120, 4);
   }
 
-  /** Эффект победы выбранного скина. */
-  function win(kind, x, y) {
-    if (kind === "stars") stars();
-    else if (kind === "snow") snow();
-    else if (kind === "fireworks") fireworks();
-    else confetti(180);
-    if (x !== undefined) arrowsFrom(x, y, 28);
-  }
-
   /** Эффект серии побед выбранного скина; power растёт с длиной серии. */
   function streak(kind, x, y, power = 1) {
     const n = Math.round(30 * Math.min(2.5, power));
@@ -278,44 +213,13 @@ const fx = (() => {
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i];
       p.life += dt;
-      if (p.life < 0) continue; // ракета ещё ждёт своей очереди
       const k = p.life / p.max;
       if (k >= 1) {
         parts.splice(i, 1);
-        if (p.kind === "rocket") burst(p.x, p.y, p.color, 46, 1.5);
         continue;
       }
 
-      if (p.kind === "star" || p.kind === "flake") {
-        p.x += (p.vx + (p.sway !== undefined ? Math.sin((p.sway += dt * 2)) * 30 : 0)) * dt;
-        p.y += p.vy * dt;
-        p.rot += p.vr * dt;
-        fctx.globalAlpha = Math.min(1, (1 - k) * 3);
-        if (p.kind === "star") {
-          drawShape(fctx, STAR, p.x, p.y, p.size, p.rot, p.color);
-        } else {
-          fctx.strokeStyle = p.color;
-          fctx.lineWidth = 1.6;
-          fctx.beginPath();
-          for (let j = 0; j < 3; j++) {
-            const a = p.rot + (j * Math.PI) / 3;
-            fctx.moveTo(p.x - Math.cos(a) * p.size, p.y - Math.sin(a) * p.size);
-            fctx.lineTo(p.x + Math.cos(a) * p.size, p.y + Math.sin(a) * p.size);
-          }
-          fctx.stroke();
-        }
-      } else if (p.kind === "rocket") {
-        p.vy *= 1 - dt * 1.6;
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        fctx.globalAlpha = 1;
-        fctx.strokeStyle = p.color;
-        fctx.lineWidth = 3;
-        fctx.beginPath();
-        fctx.moveTo(p.x, p.y);
-        fctx.lineTo(p.x - p.vx * 0.04, p.y - p.vy * 0.04);
-        fctx.stroke();
-      } else if (p.kind === "ember") {
+      if (p.kind === "ember") {
         p.vx *= 1 - dt * 1.5;
         p.x += p.vx * dt + Math.sin(p.life * 8 + p.flick) * 0.6;
         p.y += p.vy * dt;
@@ -448,7 +352,7 @@ const fx = (() => {
 
   return {
     colors: COLORS,
-    burst, ring, confetti, arrowsFrom, win, streak,
+    burst, ring, confetti, arrowsFrom, streak,
     retrigger, countUp, anchor,
     setCalm(on) { calmTarget = on ? 1 : 0; },
   };

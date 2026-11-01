@@ -56,10 +56,10 @@ public static class Skins
         new(Hero, "spike", "Шипастый", Unlock.Sliders, 1000),
         new(Hero, "star", "Звезда", Unlock.Streak, 4),
 
-        new(Win, "confetti", "Конфетти"),
-        new(Win, "stars", "Звездопад", Unlock.Wins, 1),
-        new(Win, "snow", "Снегопад", Unlock.Wins, 5),
-        new(Win, "fireworks", "Салют", Unlock.Wins, 25),
+        new(Win, "rush", "Шквал стрелок"),
+        new(Win, "nova", "Сверхновая", Unlock.Wins, 1),
+        new(Win, "frost", "Ледяной шторм", Unlock.Wins, 5),
+        new(Win, "finale", "Гранд-финал", Unlock.Wins, 25),
 
         new(StreakSlot, "flame", "Пламя"),
         new(StreakSlot, "electric", "Молнии", Unlock.Streak, 3),

@@ -51,6 +51,9 @@ public static class Database
         AddColumnIfMissing(db, "AspNetUsers", "HeroSkin", "TEXT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "WinSkin", "TEXT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "StreakSkin", "TEXT NULL");
+        // частицы на победу заменены большими сценами: надетый скин переходит в свою замену
+        foreach (var (before, after) in new[] { ("confetti", "rush"), ("stars", "nova"), ("snow", "frost"), ("fireworks", "finale") })
+            db.ExecuteSql($"UPDATE \"AspNetUsers\" SET \"WinSkin\" = {after} WHERE \"WinSkin\" = {before}");
     }
 
     /// <remarks>Имена — константы из кода, не пользовательский ввод.</remarks>
