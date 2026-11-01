@@ -1199,7 +1199,7 @@ h3 {
   font: 900 12px var(--font-display);
   color: var(--outline);
 }
-.opp.mate .opp-bar i { background: #2fd6a8; } /* напарник — не цветом соперников */
+.opp.mate .opp-bar i { background: #2fd6a8; } /* как MATE_COLOR в app.js: напарник на траектории того же цвета */
 .opp-bar.wrong { border-color: var(--bad); }
 .opp.left { opacity: .45; filter: grayscale(.8); }
 .tag-bot, .tag-mode {

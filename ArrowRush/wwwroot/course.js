@@ -3,7 +3,7 @@
 // Сцена матча в духе Geometry Dash: ползунки изогнуты вдоль траектории, по которой летит персонаж.
 // Ползунок — участок пути, стрелка стоит в его конце: держишь стрелку — летишь к ней.
 // Логику считает сервер, здесь только картинка. Траектория строится из id матча,
-// поэтому у всех игроков она одинаковая. На ней только свой персонаж: прогресс соперников — на панели снизу.
+// поэтому у всех игроков она одинаковая. На ней свой персонаж и напарник в «2 на 2»: прогресс соперников — на панели снизу.
 // Стиль уровня выбирается случайно при старте и не меняется до конца матча: одна из палитр
 // космоса со стенами или особая сцена (scenes.js). Он тоже зависит от id матча — у всех одинаковый.
 // Участки пути идут секциями с разной формой пути; между ними — портал.
@@ -51,6 +51,7 @@ const course = (() => {
   let palette = THEMES[0];
   let flash = 0, shake = 0, beat = 0, heat = 0, lastPart = null;
   let parts = [];       // пиксели
+  let mateShown = new Map(); // где напарники на экране: slot → номер ползунка + доля
 
   /** Повторяемый генератор случайных чисел: один и тот же матч — одна и та же траектория. */
   function rng(seed) {
@@ -686,7 +687,8 @@ const course = (() => {
     if (map.endX < right + 300) drawPortal(map.endX, map.endY, [255, 255, 255], 190);
   }
 
-  function drawHero(c, id, x, y, angle, size) {
+  /** color — заменить цвет скина (напарник рисуется своим цветом). */
+  function drawHero(c, id, x, y, angle, size, color) {
     const hero = HEROES[id] || HEROES.circle;
     c.save();
     c.translate(x, y);
@@ -699,9 +701,49 @@ const course = (() => {
     c.strokeStyle = OUTLINE;
     c.lineWidth = 4;
     c.stroke(hero.path);
-    c.fillStyle = hero.color;
+    c.fillStyle = color || hero.color;
     c.fill(hero.path, "evenodd");
     c.restore();
+  }
+
+  /** Напарник летит по той же траектории со своим прогрессом; ушёл за край экрана — метка у края. */
+  function drawMates(mates, dt) {
+    const n = map.segs.length;
+    const edgeL = camX - viewW * PLAYER_AT + 54, edgeR = camX + viewW * (1 - PLAYER_AT) - 54;
+    ctx.font = "800 15px Nunito, sans-serif";
+    ctx.textAlign = "center";
+    for (const m of mates) {
+      const was = mateShown.has(m.slot) ? mateShown.get(m.slot) : m.pos;
+      const pos = clamp(was + (m.pos - was) * (1 - Math.exp(-dt * (opts.fast ? 24 : 34))), 0, n + 1);
+      mateShown.set(m.slot, pos);
+      const p = at(pos);
+
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = m.color;
+      ctx.lineWidth = opts.fast ? 6 : 8;
+      trace(Math.max(0, pos - (opts.fast ? 8 : 3)), pos);
+      ctx.stroke();
+
+      const x = clamp(p.x, edgeL, edgeR), y = clamp(p.y, camY - 300, camY + 300);
+      const inside = x === p.x;
+      drawHero(ctx, "circle", x, y, p.a, inside ? 0.8 : 0.6, m.color);
+      if (!inside) {
+        // треугольник показывает, в какую сторону ушёл напарник
+        const dir = p.x < x ? -1 : 1;
+        ctx.fillStyle = m.color;
+        ctx.beginPath();
+        ctx.moveTo(x + dir * 40, y);
+        ctx.lineTo(x + dir * 24, y - 11);
+        ctx.lineTo(x + dir * 24, y + 11);
+        ctx.fill();
+      }
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = OUTLINE;
+      ctx.strokeText(m.name, x, y - 34);
+      ctx.fillStyle = "#fff";
+      ctx.fillText(m.name, x, y - 34);
+    }
   }
 
   function sectionAt(pos) {
@@ -792,6 +834,7 @@ const course = (() => {
     map = build(o.level, o.fast, o.seed);
     s = 0;
     parts = [];
+    mateShown = new Map();
     section = 0;
     palette = map.colors;
     flash = shake = beat = heat = tilt = 0;
@@ -830,7 +873,7 @@ const course = (() => {
   }
 
   /**
-   * Кадр. o: { pos — номер ползунка + доля, wrong, holding,
+   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, mates: [{ slot, pos, name, color }],
    * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null }.
    */
   function frame(now, o) {
@@ -904,6 +947,7 @@ const course = (() => {
       const last = visibleRange(right);
       for (let i = last - 1; i >= cur; i--) drawKey(i, i === cur, s - cur, o.wrong);
     }
+    drawMates(o.mates, dt);
     drawParts(dt);
 
     // у финишного портала персонаж уменьшается и исчезает

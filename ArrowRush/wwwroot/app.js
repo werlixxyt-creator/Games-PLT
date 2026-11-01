@@ -28,6 +28,7 @@ const DIFFS = {
   hard: { name: "сложная", desc: "Больше ползунков, заполняются быстрее, штрафы и паузы жёстче, бот почти не ошибается." },
 };
 
+const MATE_COLOR = "#2fd6a8"; // «2 на 2»: напарник на траектории и его полоса внизу
 const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
 // кайма следа персонажа по скину ползунков; цвета стрелок от скина не зависят
 const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16" };
@@ -958,7 +959,7 @@ function startMatch(d) {
       tag.textContent = isMate(p) ? "напарник" : "соперник";
       nameEl.insertBefore(tag, badge);
     }
-    match.tracks.set(p.slot, { box, bar, fill, count, badge });
+    match.tracks.set(p.slot, { box, bar, fill, count, badge, name: p.name, mate: isMate(p) });
   }
 
   // стартовый снимок, пока сервер не прислал первый
@@ -1156,6 +1157,7 @@ function render(now) {
 
   const speed = match.press;
   let myPos = 0, myWrong = false, myHolding = false;
+  const mates = [];
 
   for (const p of st.players) {
     const track = match.tracks.get(p.slot);
@@ -1202,6 +1204,7 @@ function render(now) {
       myHolding = holding;
     } else {
       renderOpponent(track, idx, progress, wrong, level);
+      if (track.mate && !p.left) mates.push({ slot: p.slot, pos: p.idx + p.p, name: track.name, color: MATE_COLOR });
     }
 
     if (p.done || p.out) {
@@ -1212,7 +1215,7 @@ function render(now) {
     if (track.box) track.box.classList.toggle("left", p.left || p.out);
   }
 
-  course.frame(now, { pos: myPos, wrong: myWrong, holding: myHolding, energy: music.energy(), part: music.part() });
+  course.frame(now, { pos: myPos, wrong: myWrong, holding: myHolding, mates, energy: music.energy(), part: music.part() });
 
   // подсказки для меня
   const mine = st.players.find((p) => p.slot === match.you);
