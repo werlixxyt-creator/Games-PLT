@@ -73,6 +73,7 @@ app.UseAuthorization();
 
 app.MapAccount();
 app.MapSocial();
+app.MapRewards();
 app.MapHub<GameHub>("/hub");
 app.MapGet("/health", () => Results.Ok("ok"));
 

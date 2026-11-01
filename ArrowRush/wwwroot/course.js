@@ -264,6 +264,8 @@ const course = (() => {
     ship: { path: new Path2D("M36 3 L-4 -15 L-27 -24 L-17 -5 L-31 -2 L-17 8 L-27 24 L-3 17 Z"), color: "#ffffff", nose: true },
     spike: { path: starPath(7, 31, 19), color: "#ff2448" },
     star: { path: starPath(5, 33, 14), color: "#ffd84d" },
+    crown: { path: new Path2D("M-28 20 L-32 -18 L-14 -2 L0 -26 L14 -2 L32 -18 L28 20 Z"), color: "#ffd84d" },
+    gem: { path: new Path2D("M-16 -24 H16 L31 -6 L0 28 L-31 -6 Z"), color: "#39d8ff" },
   };
 
   // ---------- Частицы ----------

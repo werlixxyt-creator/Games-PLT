@@ -40,6 +40,7 @@ const UNLOCK_TEXT = {
   wins: (n) => `Выиграй ${n} ${plural(n, "матч", "матча", "матчей")}`,
   sliders: (n) => `Заполни ${n} ползунков`,
   streak: (n) => `Выиграй ${n} ${plural(n, "раз", "раза", "раз")} подряд`,
+  stars: (n) => `Собери ${n} ★ за награды`,
 };
 // превью эффектов на экране скинов: значок (символ или #id из <svg> в index.html) и цвет плитки
 const FX_PREVIEW = {
@@ -522,6 +523,7 @@ function applyProfile(p) {
   $("profile-name").textContent = p.userName;
   social.paintAvatar($("profile-avatar"), p.userName, p.color);
   social.loadFriends();
+  rewards.load();
   renderStats();
   renderStreak();
   const open = p.skins.filter((s) => s.unlocked).length;
@@ -595,6 +597,7 @@ $("btn-stats").addEventListener("click", () => {
 $("btn-stats-back").addEventListener("click", () => show("menu"));
 
 social.init({ api, historyItem, me: () => profile, refresh: refreshProfile });
+rewards.init({ api, refresh: refreshProfile });
 
 for (const t of document.querySelectorAll("#skin-tabs .tab")) {
   t.addEventListener("click", () => {

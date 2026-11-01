@@ -64,6 +64,16 @@ public static class Database
             )
             """);
         db.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_Friendships_ToId\" ON \"Friendships\" (\"ToId\")");
+        db.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "RewardClaims" (
+                "UserId" TEXT NOT NULL REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+                "TaskId" TEXT NOT NULL,
+                "Period" TEXT NOT NULL,
+                "Stars" INTEGER NOT NULL,
+                "ClaimedAt" TIMESTAMPTZ NOT NULL,
+                PRIMARY KEY ("UserId", "TaskId", "Period")
+            )
+            """);
         // частицы на победу заменены большими сценами: надетый скин переходит в свою замену
         foreach (var (before, after) in new[] { ("confetti", "rush"), ("stars", "nova"), ("snow", "frost"), ("fireworks", "finale") })
             db.ExecuteSql($"UPDATE \"AspNetUsers\" SET \"WinSkin\" = {after} WHERE \"WinSkin\" = {before}");

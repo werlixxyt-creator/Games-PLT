@@ -9,6 +9,8 @@ public enum Unlock
     Sliders,
     /// <summary>Лучшая серия побед подряд.</summary>
     Streak,
+    /// <summary>Сколько всего собрано звёзд за награды.</summary>
+    Stars,
 }
 
 /// <summary>
@@ -18,7 +20,7 @@ public enum Unlock
 public sealed record Skin(string Slot, string Id, string Name, Unlock By = Unlock.Free, int Need = 0);
 
 /// <summary>Достижения игрока, по которым открываются скины.</summary>
-public sealed record Achievements(int Games, int Wins, int Sliders, int Streak, int BestStreak)
+public sealed record Achievements(int Games, int Wins, int Sliders, int Streak, int BestStreak, int Stars)
 {
     public int Value(Unlock by) => by switch
     {
@@ -26,6 +28,7 @@ public sealed record Achievements(int Games, int Wins, int Sliders, int Streak, 
         Unlock.Wins => Wins,
         Unlock.Sliders => Sliders,
         Unlock.Streak => BestStreak,
+        Unlock.Stars => Stars,
         _ => 0,
     };
 
@@ -55,6 +58,8 @@ public static class Skins
         new(Hero, "ship", "Корабль", Unlock.Wins, 10),
         new(Hero, "spike", "Шипастый", Unlock.Sliders, 1000),
         new(Hero, "star", "Звезда", Unlock.Streak, 4),
+        new(Hero, "crown", "Корона", Unlock.Stars, 200),
+        new(Hero, "gem", "Самоцвет", Unlock.Stars, 600),
 
         new(Win, "rush", "Шквал стрелок"),
         new(Win, "nova", "Сверхновая", Unlock.Wins, 1),

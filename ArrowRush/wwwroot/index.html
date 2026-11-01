@@ -83,6 +83,24 @@
       </div>
 
       <div id="conn-status" class="conn" data-conn>Подключение к серверу…</div>
+
+      <!-- награды слева, как новости в меню CS2 (rewards.js); на узком экране — под кнопками -->
+      <aside class="rewards" aria-label="Награды">
+        <div class="rewards-head">
+          <span>Награды</span>
+          <span class="star-total" title="Звёзды открывают скины">★ <b id="reward-stars">0</b></span>
+        </div>
+        <section>
+          <div class="reward-title"><b>Ежедневные</b><span id="reward-day-reset"></span></div>
+          <ul id="reward-day" class="reward-list"></ul>
+        </section>
+        <section>
+          <div class="reward-title"><b>Еженедельные</b><span id="reward-week-reset"></span></div>
+          <ul id="reward-week" class="reward-list"></ul>
+        </section>
+        <div id="reward-error" class="conn bad" role="alert"></div>
+        <div class="ad-plate">Тут могла быть ваша реклама</div>
+      </aside>
     </section>
 
     <!-- ВЫБОР РЕЖИМА: режимы листаются влево-вправо -->
@@ -444,6 +462,7 @@
   <script src="course.js"></script>
   <script src="victory.js"></script>
   <script src="social.js"></script>
+  <script src="rewards.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

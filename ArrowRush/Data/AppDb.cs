@@ -34,6 +34,17 @@ public sealed class Friendship
     public DateTime CreatedAt { get; set; }
 }
 
+/// <summary>Полученная награда за задание; Period — номер дня или недели (см. <see cref="Rewards"/>).</summary>
+public sealed class RewardClaim
+{
+    public required string UserId { get; set; }
+    public AppUser User { get; set; } = null!;
+    public required string TaskId { get; set; }
+    public required string Period { get; set; }
+    public int Stars { get; set; }
+    public DateTime ClaimedAt { get; set; }
+}
+
 /// <summary>Сыгранный матч.</summary>
 public sealed class MatchRecord
 {
@@ -78,6 +89,7 @@ public sealed class AppDb(DbContextOptions<AppDb> options)
     public DbSet<MatchRecord> Matches => Set<MatchRecord>();
     public DbSet<MatchParticipant> MatchParticipants => Set<MatchParticipant>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
+    public DbSet<RewardClaim> RewardClaims => Set<RewardClaim>();
 
     /// <summary>Ключи шифрования cookie — в базе, чтобы после перезапуска сервера не разлогинивало.</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -105,6 +117,12 @@ public sealed class AppDb(DbContextOptions<AppDb> options)
             e.HasIndex(f => f.ToId);
             e.HasOne(f => f.From).WithMany().HasForeignKey(f => f.FromId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(f => f.To).WithMany().HasForeignKey(f => f.ToId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<RewardClaim>(e =>
+        {
+            e.HasKey(c => new { c.UserId, c.TaskId, c.Period });
+            e.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

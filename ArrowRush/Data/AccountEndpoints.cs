@@ -265,7 +265,8 @@ public static class AccountEndpoints
             best = Math.Max(best, streak);
         }
 
-        return new Achievements(results.Count, results.Count(r => r.Win), results.Sum(r => r.Sliders), streak, best);
+        var stars = await db.RewardClaims.Where(c => c.UserId == userId).SumAsync(c => c.Stars);
+        return new Achievements(results.Count, results.Count(r => r.Win), results.Sum(r => r.Sliders), streak, best, stars);
     }
 
     private static string? ValidateName(string name)
