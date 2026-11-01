@@ -19,6 +19,7 @@ const course = (() => {
 
   // мир: единицы, высота экрана всегда VIEW_H, x растёт по ходу полёта
   const VIEW_H = 720;
+  const MIN_VIEW_W = 760;    // столько единиц по ширине видно даже на телефоне
   const PLAYER_AT = 0.3;     // доля ширины экрана, где держится персонаж
   const HOLD_SPEED = 230;    // обычный темп: единиц в секунду заполнения
   const FAST_STEP = 130;     // быстрый темп: длина одного ползунка
@@ -766,7 +767,8 @@ const course = (() => {
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
     }
-    scale = h / VIEW_H;
+    // на узком экране мельче, иначе впереди видно только одну стрелку
+    scale = Math.min(h / VIEW_H, w / MIN_VIEW_W);
     viewW = w / scale;
     return true;
   }
@@ -879,7 +881,7 @@ const course = (() => {
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const scene = map.scene;
-    const view = { w: cssW, h: cssH, camX, camY, scale, time, beat, heat };
+    const view = { w: cssW, h: cssH, camX, camY, scale: cssH / VIEW_H, time, beat, heat };
     if (scene) {
       scenes.back(scene, ctx, view);
     } else {

@@ -961,18 +961,62 @@ h3 {
 }
 @keyframes fade-out { to { opacity: 0; } }
 
-/* сцена матча занимает всё поле, имя и подсказка лежат поверх неё */
-body[data-screen="game"] #app { max-width: 1500px; padding-bottom: 20px; }
+/* матч на всё окно: сцена во весь экран, панели, имя и подсказка лежат поверх неё */
+#screen-game.active { position: fixed; inset: 0; padding: 0; }
 #screen-game .stage {
-  position: relative;
-  overflow: hidden;
+  position: absolute;
+  inset: 0;
+  margin: 0;
   padding: 0;
-  height: clamp(340px, calc(100dvh - 290px), 820px);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
+#screen-game .stage.hit::after { inset: 0; }
+#screen-game .hud {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  color: #fff;
+  background: rgba(14, 10, 38, .62);
+  border-color: transparent;
+  box-shadow: none;
+}
+#screen-game .hud-label { color: rgba(255, 255, 255, .7); }
+#screen-game #hud-count { color: #a6f05a; }
+#screen-game .opponents {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 3;
+  margin: 0;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+#screen-game .opp {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  color: #fff;
+  background: rgba(14, 10, 38, .62);
+  border-color: transparent;
+  box-shadow: none;
+}
+#screen-game .opp.finished { background: rgba(38, 96, 40, .78); }
+#screen-game .opp .track-name { margin: 0; font-size: 14px; }
+#screen-game .opp .tag-bot { color: rgba(255, 255, 255, .8); border-color: rgba(255, 255, 255, .3); }
+#screen-game .opp-bar { height: 20px; }
+#screen-game .combo { top: 84px; }
 #course { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #screen-game .stage .track-name {
   position: absolute;
-  top: 12px;
+  top: 84px;
   left: 16px;
   right: 90px;
   z-index: 1;
@@ -984,7 +1028,7 @@ body[data-screen="game"] #app { max-width: 1500px; padding-bottom: 20px; }
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: 12px;
+  bottom: 62px;
   z-index: 1;
   margin: 0;
   color: #fff;
@@ -1317,9 +1361,11 @@ body[data-screen="game"] #app { max-width: 1500px; padding-bottom: 20px; }
 
 @media (hover: none) and (pointer: coarse) {
   /* место под кнопки, чтобы они не закрывали соперников */
-  #screen-game.active, #screen-rhythm.active { padding-bottom: calc(190px + env(safe-area-inset-bottom)); }
+  #screen-rhythm.active { padding-bottom: calc(190px + env(safe-area-inset-bottom)); }
   .rh-stage { height: clamp(300px, calc(100svh - 300px), 640px); }
-  #screen-game .stage { height: clamp(240px, calc(100svh - 330px), 640px); }
+  /* в матче сцена заканчивается над кнопками, панель соперников лежит сразу над ними */
+  #screen-game .stage { bottom: calc(190px + env(safe-area-inset-bottom)); }
+  #screen-game .opponents { bottom: calc(198px + env(safe-area-inset-bottom)); }
 
   /* кнопки видны только во время игры: в матче и в «Своём треке» */
   body[data-screen="game"] .touchpad, body[data-screen="rhythm"] .touchpad { display: grid; }
