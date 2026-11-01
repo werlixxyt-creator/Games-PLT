@@ -2114,27 +2114,61 @@ body[data-screen="lobby"] #app { max-width: none; padding: 0; }
   display: flex;
   flex-direction: column;
   justify-content: center;
+  gap: 10px;
   min-height: 0;
   padding-bottom: 8px;
   overflow: hidden;
   background: radial-gradient(ellipse 70% 34% at 50% 100%, rgba(120, 112, 160, .55), transparent);
 }
-.fig-row { position: relative; display: flex; justify-content: center; }
-.fig { position: relative; display: flex; flex-direction: column; align-items: center; flex: none; width: calc(var(--h) * 1.15); color: var(--c); }
-.fig-head { display: block; width: var(--h); aspect-ratio: 1; filter: drop-shadow(0 6px 4px rgba(0, 0, 0, .35)); animation: hover-float 3s ease-in-out infinite; }
-.fig-stand {
-  width: 72%;
+/* ряд висит над своей полосой пола; задний ряд короче */
+.fig-row { position: relative; display: flex; justify-content: center; width: fit-content; margin: 0 auto; padding: 0 2%; }
+.fig-row::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: calc(var(--h) * .13);
+  background: linear-gradient(#c3bde6, #8079ad);
+  border: 3px solid var(--outline);
+  border-radius: 999px;
+}
+.fig { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; flex: none; width: calc(var(--h) * 1.2); perspective: calc(var(--h) * 4); }
+.fig-float { width: var(--h); margin-top: calc(var(--h) * .04); margin-bottom: calc(var(--h) * .14); animation: fig-bob var(--bob) ease-in-out var(--bob-at) infinite; }
+.fig-head { display: block; width: 100%; aspect-ratio: 1; filter: drop-shadow(0 4px 2px rgba(0, 0, 0, .3)); animation: var(--turn) ease-in-out var(--turn-at) infinite; }
+/* тень на полу: когда скин поднимается, она становится меньше и светлее */
+.fig-shadow {
+  width: 78%;
   height: calc(var(--h) * .09);
-  margin-top: calc(var(--h) * -.03);
-  background: radial-gradient(ellipse, currentColor, transparent 72%);
+  margin-bottom: calc(var(--h) * .02);
+  background: radial-gradient(ellipse, rgba(20, 12, 50, .9) 30%, transparent 72%);
   border-radius: 50%;
+  animation: fig-shadow var(--bob) ease-in-out var(--bob-at) infinite;
+}
+@keyframes fig-bob { 50% { transform: translateY(calc(var(--h) * -.12)); } }
+@keyframes fig-shadow { 50% { transform: scale(.62); opacity: .5; } }
+
+.turn-sway .fig-head { animation-name: turn-sway; }
+.turn-wobble .fig-head { animation-name: turn-wobble; }
+.turn-rock .fig-head { animation-name: turn-rock; }
+.turn-spin .fig-head { animation-name: turn-spin; animation-timing-function: linear; animation-duration: calc(var(--turn) * 2); }
+.turn-flip .fig-head { animation-name: turn-flip; animation-duration: calc(var(--turn) * 1.5); }
+@keyframes turn-sway { 0%, 100% { transform: rotate(var(--tilt)); } 50% { transform: rotate(calc(var(--tilt) * -1)); } }
+@keyframes turn-wobble {
+  0%, 100% { transform: rotate(var(--tilt)) scale(1); }
+  25% { transform: rotate(calc(var(--tilt) * .3)) scale(1.06, .94); }
+  75% { transform: rotate(calc(var(--tilt) * 1.4)) scale(.94, 1.06); }
+}
+@keyframes turn-rock { 0%, 100% { transform: rotate(var(--tilt)) rotateY(-38deg); } 50% { transform: rotate(var(--tilt)) rotateY(38deg); } }
+@keyframes turn-spin { to { transform: rotate(360deg); } }
+@keyframes turn-flip { from { transform: rotate(var(--tilt)) rotateY(0); } to { transform: rotate(var(--tilt)) rotateY(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .fig-float, .fig-shadow { animation: none; }
+  .fig-head { animation: none; transform: rotate(var(--tilt)); }
 }
 .fig-name {
   max-width: 100%;
-  margin-top: calc(var(--h) * .03);
   padding: 1px 7px;
   overflow: hidden;
-  font-size: clamp(10px, calc(var(--h) * .07), 16px);
+  font-size: clamp(10px, calc(var(--h) * .08), 15px);
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;

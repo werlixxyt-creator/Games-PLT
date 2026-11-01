@@ -1,17 +1,18 @@
 "use strict";
 
-// Лобби: лидер настраивает матч, зовёт друзей и ставит ботов, скины игроков стоят в ряд на подставках.
+// Лобби: лидер настраивает матч, зовёт друзей и ставит ботов, скины игроков парят рядами над полом.
 // Всё состояние присылает сервер (MatchManager.Lobby.cs), здесь только показ и вызовы хаба.
 // Приглашения — вывеска сверху на несколько секунд и список в панели друзей.
 const lobby = (() => {
   const $ = (id) => document.getElementById(id);
   const BANNER_MS = 15000;
 
-  // скины стоят рядами: сколько в ряду, по числу игроков
-  const ROWS = [{ upTo: 7, perRow: 7 }, { upTo: 21, perRow: 7 }, { upTo: 40, perRow: 10 }];
+  // ряды стоят друг за другом: передний полный, неполный — сзади; сколько в ряду, по числу игроков
+  const ROWS = [{ upTo: 10, perRow: 5 }, { upTo: 21, perRow: 7 }, { upTo: 40, perRow: 10 }];
+  const TURNS = ["sway", "spin", "rock", "flip", "wobble"]; // как у скина меняется поворот, см. .turn-*
   const FIG_MAX = 300;      // самый крупный скин, пикселей
-  const FIG_TALL = 1.3;     // высота с подставкой и ником к размеру скина
-  const FIG_WIDE = 1.15;    // ширина с промежутком к размеру скина
+  const FIG_TALL = 1.55;    // высота с ником, зазором над полом и полом к размеру скина
+  const FIG_WIDE = 1.3;     // ширина с промежутком и краями пола к размеру скина
 
   const THEMES = [
     ["auto", "Случайный", "conic-gradient(#ff4f9a, #ffb31f, #7ee03a, #22c7f0, #ff4f9a)"],
@@ -85,11 +86,28 @@ const lobby = (() => {
 
   // ---------- Игроки ----------
 
+  /**
+   * Своё парение у каждого: движение зависит от ника, поэтому не меняется между обновлениями лобби.
+   * Сдвиг по часам нужен, потому что ряды строятся заново: иначе анимации начинались бы с начала.
+   */
+  function floatStyle(fig, name) {
+    let seed = 0;
+    for (const ch of name) seed = (seed * 31 + ch.codePointAt(0)) >>> 0;
+    const bob = 2.6 + (seed % 21) / 10, turn = 3.2 + ((seed >>> 4) % 31) / 10;
+    const now = performance.now() / 1000;
+    fig.classList.add(`turn-${TURNS[(seed >>> 8) % TURNS.length]}`);
+    fig.style.setProperty("--tilt", `${-22 + ((seed >>> 3) % 45)}deg`);
+    fig.style.setProperty("--bob", `${bob}s`);
+    fig.style.setProperty("--turn", `${turn}s`);
+    fig.style.setProperty("--bob-at", `${-((now + seed % 7) % bob)}s`);
+    fig.style.setProperty("--turn-at", `${-((now + seed % 5) % turn)}s`);
+  }
+
   function figure(p, size) {
     const fig = document.createElement("div");
     fig.className = "fig" + (p.you ? " you" : "");
     fig.style.setProperty("--h", `${size}px`);
-    fig.style.setProperty("--c", p.color);
+    floatStyle(fig, p.name);
 
     const name = document.createElement("div");
     name.className = "fig-name";
@@ -100,10 +118,13 @@ const lobby = (() => {
     head.width = head.height = 168;
     course.paintHero(head, p.hero);
 
-    const stand = document.createElement("div");
-    stand.className = "fig-stand";
+    const float = document.createElement("div");
+    float.className = "fig-float";
+    float.appendChild(head);
+    const shadow = document.createElement("div");
+    shadow.className = "fig-shadow";
 
-    fig.append(head, stand, name);
+    fig.append(name, float, shadow);
 
     if (cur.leader && !p.you && !cur.inMatch) {
       const kick = document.createElement("button");
@@ -130,6 +151,7 @@ const lobby = (() => {
       const el = document.createElement("div");
       el.className = "fig-row";
       el.style.zIndex = rows.length - i;
+      el.style.setProperty("--h", `${size * (1 - i * 0.05)}px`); // толщина пола по размеру скинов
       el.append(...row.map((p) => figure(p, size * (1 - i * 0.05))));
       return el;
     }).reverse());
