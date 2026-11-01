@@ -4,7 +4,8 @@
 // Ползунок — участок пути, стрелка стоит в его конце: держишь стрелку — летишь к ней.
 // Логику считает сервер, здесь только картинка. Траектория строится из id матча,
 // поэтому у всех игроков она одинаковая и соперники летят по ней же.
-// Участки пути идут секциями, у каждой свой вид полёта и своя палитра; между ними — портал.
+// Участки пути идут секциями, у каждой своя форма пути и своя палитра; между ними — портал.
+// Персонаж при этом всегда один и тот же.
 const course = (() => {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const css = getComputedStyle(document.documentElement);
@@ -219,22 +220,8 @@ const course = (() => {
     return p;
   }
 
-  // персонажи смотрят вправо
-  const ICONS = {
-    wave: new Path2D("M-26 -17 L32 0 L-26 17 L-13 0 Z"),
-    ship: new Path2D("M36 3 L-4 -15 L-27 -24 L-17 -5 L-31 -2 L-17 8 L-27 24 L-3 17 Z"),
-    dash: new Path2D("M-20 -20 H20 V20 H-20 Z M-9 -9 V9 H9 V-9 Z"),
-    ball: (() => {
-      const p = new Path2D();
-      const step = Math.PI / 7;
-      for (let i = 0; i < 14; i++) {
-        const r = i % 2 ? 19 : 30;
-        p.lineTo(Math.cos(i * step) * r, Math.sin(i * step) * r);
-      }
-      p.closePath();
-      return p;
-    })(),
-  };
+  // персонаж один на весь уровень, смотрит вправо
+  const ICON = new Path2D("M-26 -17 L32 0 L-26 17 L-13 0 Z");
 
   // ---------- Частицы ----------
 
@@ -665,22 +652,21 @@ const course = (() => {
     if (map.endX < right + 300) drawPortal(map.endX, map.endY, [255, 255, 255], 190);
   }
 
-  function drawIcon(x, y, angle, kind, color, size, alpha = 1) {
-    const icon = ICONS[kind];
+  function drawIcon(x, y, angle, color, size, alpha = 1) {
     ctx.save();
     ctx.translate(x, y);
     ctx.globalAlpha = alpha;
-    ctx.rotate(kind === "ball" || kind === "dash" ? time * 7 : angle);
+    ctx.rotate(angle);
     ctx.scale(size, size);
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 8;
-    ctx.stroke(icon);
+    ctx.stroke(ICON);
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 4;
-    ctx.stroke(icon);
+    ctx.stroke(ICON);
     ctx.fillStyle = color;
-    ctx.fill(icon, "evenodd");
+    ctx.fill(ICON);
     ctx.restore();
   }
 
@@ -688,8 +674,7 @@ const course = (() => {
     for (const g of ghosts) {
       const pos = clamp(g.pos, 0, map.segs.length + 1);
       const p = at(pos);
-      const kind = sectionAt(pos).kind;
-      drawIcon(p.x, p.y, p.a, kind, g.color, 0.72, g.out ? 0.2 : 0.55);
+      drawIcon(p.x, p.y, p.a, g.color, 0.72, g.out ? 0.2 : 0.55);
       ctx.fillStyle = "rgba(255,255,255,.8)";
       ctx.font = "800 15px Nunito, sans-serif";
       ctx.textAlign = "center";
@@ -899,7 +884,7 @@ const course = (() => {
     const gone = clamp(n + 1 - s, 0, 1);
     if (gone > 0.02) {
       const jitter = o.wrong && !reduce ? (Math.random() - 0.5) * 7 : 0;
-      drawIcon(me.x + jitter, me.y + jitter, me.a, sec.kind, color, (o.holding ? 1.14 : 1) * gone, 1);
+      drawIcon(me.x + jitter, me.y + jitter, me.a, color, (o.holding ? 1.14 : 1) * gone, 1);
     }
     ctx.restore();
 

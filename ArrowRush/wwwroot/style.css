@@ -1074,17 +1074,6 @@ body[data-screen="game"] #app { max-width: 1500px; padding-bottom: 20px; }
 @keyframes pulse { 50% { transform: scale(1.22); } }
 @keyframes jitter { 25% { translate: -2px 0; } 75% { translate: 2px 0; } }
 
-.track.finished .slider { opacity: 1; animation: wave .6s var(--ease-back) both; }
-.track.finished .slider:nth-child(odd) { animation-delay: .05s; }
-@keyframes wave { 40% { transform: translateY(-12px); } }
-
-/* быстрый темп: ползунков много — делаем их плотнее */
-.track.speed { gap: 4px; }
-.track.speed .slider .bar { border-width: 2px; border-radius: 8px; }
-.track.speed .slider .key svg { width: 20px; height: 20px; }
-.opp .track.speed { gap: 2px; }
-.opp .track.speed .slider .key svg { width: 10px; height: 10px; }
-
 .need {
   margin-top: 14px;
   text-align: center;
@@ -1146,16 +1135,24 @@ body[data-screen="game"] #app { max-width: 1500px; padding-bottom: 20px; }
 }
 .opp { padding: 12px; transition: opacity .3s, transform .3s; }
 .opp.finished { background: #effbe3; }
-.opp .track-name { font-size: 14px; margin-bottom: 8px; }
-.opp .track { height: 72px; gap: 4px; }
-.opp .slider { gap: 4px; }
-.opp .slider.current { transform: none; }
-.opp .slider .bar { border-radius: 6px; background: var(--panel-2); border: 2px solid var(--outline); }
-.opp .slider.current .bar { border-color: var(--outline); }
-.opp .slider .fill { transition: height 60ms linear; box-shadow: none; }
-.opp .slider .fill::before { height: 2px; }
-.opp .slider .key { height: 16px; }
-.opp .slider .key svg { width: 13px; height: 13px; animation: none; stroke: none; }
+.opp-bar {
+  position: relative;
+  height: 26px;
+  overflow: hidden;
+  border: 2px solid var(--outline);
+  border-radius: 999px;
+  background: var(--panel-2);
+}
+.opp-bar i { display: block; height: 100%; background: var(--c); transition: width 80ms linear; }
+.opp-bar span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 900 12px var(--font-display);
+  color: var(--outline);
+}
+.opp-bar.wrong { border-color: var(--bad); }
 .opp.left { opacity: .45; filter: grayscale(.8); }
 .tag-bot, .tag-mode {
   flex: none;
@@ -1368,13 +1365,6 @@ body[data-screen="game"] #app { max-width: 1500px; padding-bottom: 20px; }
 
 /* ---------- Режимы в игре ---------- */
 
-/* «Вслепую»: у будущих ползунков вместо стрелки — знак вопроса */
-.track.blind .slider:not(.done):not(.current) .key svg { display: none; }
-.track.blind .slider:not(.done):not(.current) .key::after { content: "?"; font: 900 18px var(--font-display); color: var(--muted-room); }
-.opp .track.blind .slider:not(.done):not(.current) .key::after { font-size: 10px; color: var(--muted); }
-/* «Зеркало»: текущая стрелка в пунктирной рамке — напоминание, что всё наоборот */
-.track.mirror .slider.current .key { outline: 3px dashed var(--c); outline-offset: -3px; border-radius: 10px; }
-
 /* ---------- Скины ползунков ---------- */
 
 /* Неон: тёмная колба, светящееся заполнение */
@@ -1411,10 +1401,6 @@ body[data-screen="game"] #app { max-width: 1500px; padding-bottom: 20px; }
   animation: rainbow 2s linear infinite;
 }
 @keyframes rainbow { to { background-position: 0 300%; } }
-
-/* у соперников дорожки мелкие — анимации полосок и переливов не нужны */
-.opp .slider .fill { animation: none !important; }
-.opp .skin-neon .slider .fill { box-shadow: none; }
 
 /* ---------- Результаты ---------- */
 

@@ -19,9 +19,9 @@ public static class GameRules
 
     // Матч
     public const double CountdownSeconds = 3;
-    public const double MatchTimeLimitSeconds = 60;
+    public const double MatchTimeLimitSeconds = 180;
     /// <summary>Сколько матч ещё идёт после финиша первого игрока.</summary>
-    public const double AfterFirstFinishSeconds = 12;
+    public const double AfterFirstFinishSeconds = 30;
 
     // Режим «Хардкор»: без пауз за ошибку, но ошибки ограничены
     /// <summary>Столько ошибок — и игрок выбывает.</summary>
@@ -57,19 +57,19 @@ public static class Difficulties
     private static readonly Dictionary<Difficulty, DifficultyRules> All = new()
     {
         [Difficulty.Easy] = new("easy",
-            MinSliders: 5, MaxSliders: 7, FastMinSliders: 14, FastMaxSliders: 20,
+            MinSliders: 15, MaxSliders: 21, FastMinSliders: 42, FastMaxSliders: 60,
             MinFillSeconds: 0.8, MaxFillSeconds: 1.8,
             IdleDrainPerSecond: 0.2, WrongDrainPerSecond: 0.7,
             FastWrongStunSeconds: 0.35,
             BotReaction: 1.8, BotMistakes: 2),
         [Difficulty.Normal] = new("normal",
-            MinSliders: 6, MaxSliders: 10, FastMinSliders: 20, FastMaxSliders: 30,
+            MinSliders: 18, MaxSliders: 30, FastMinSliders: 60, FastMaxSliders: 90,
             MinFillSeconds: 0.6, MaxFillSeconds: 1.6,
             IdleDrainPerSecond: 0.35, WrongDrainPerSecond: 1.2,
             FastWrongStunSeconds: 0.5,
             BotReaction: 1, BotMistakes: 1),
         [Difficulty.Hard] = new("hard",
-            MinSliders: 9, MaxSliders: 13, FastMinSliders: 28, FastMaxSliders: 38,
+            MinSliders: 27, MaxSliders: 39, FastMinSliders: 84, FastMaxSliders: 114,
             MinFillSeconds: 0.45, MaxFillSeconds: 1.2,
             IdleDrainPerSecond: 0.55, WrongDrainPerSecond: 1.7,
             FastWrongStunSeconds: 0.7,

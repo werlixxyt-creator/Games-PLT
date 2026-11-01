@@ -848,25 +848,6 @@ function arrowSvg(arrow) {
   return `<svg viewBox="0 0 24 24" style="rotate:${ROTATION[arrow]}deg"><use href="#arrow"/></svg>`;
 }
 
-/** Классы дорожки: плотная для режимов с нажатиями, «вслепую», скин ползунков. */
-function trackClass(skin) {
-  return ["track", match.press && "speed", match.blind && "blind", match.mirror && "mirror", `skin-${skin}`]
-    .filter(Boolean).join(" ");
-}
-
-function buildTrack(container, level) {
-  container.innerHTML = "";
-  const sliders = level.map((s) => {
-    const el = document.createElement("div");
-    el.className = "slider";
-    el.style.setProperty("--c", `var(--a${s.arrow})`);
-    el.innerHTML = `<div class="bar"><div class="fill"></div></div><div class="key">${arrowSvg(s.arrow)}</div>`;
-    container.appendChild(el);
-    return { el, fill: el.querySelector(".fill") };
-  });
-  return { root: container, sliders, idx: -1 };
-}
-
 function nameRow(container, player) {
   container.textContent = "";
   const name = document.createElement("span");
@@ -938,15 +919,17 @@ function startMatch(d) {
     box.className = "opp glass";
     const nameEl = document.createElement("div");
     nameEl.className = "track-name";
-    const trackEl = document.createElement("div");
-    trackEl.className = trackClass(p.skin);
-    box.append(nameEl, trackEl);
+    // цвет полосы — как у персонажа соперника на траектории
+    const bar = document.createElement("div");
+    bar.className = "opp-bar";
+    bar.style.setProperty("--c", fx.colors[p.slot % 4]);
+    const fill = document.createElement("i");
+    const count = document.createElement("span");
+    bar.append(fill, count);
+    box.append(nameEl, bar);
     opps.appendChild(box);
 
-    const t = buildTrack(trackEl, d.level);
-    t.badge = nameRow(nameEl, p);
-    t.box = box;
-    match.tracks.set(p.slot, t);
+    match.tracks.set(p.slot, { box, bar, fill, count, badge: nameRow(nameEl, p) });
   }
 
   // стартовый снимок, пока сервер не прислал первый
@@ -1050,49 +1033,32 @@ function trackMine(track, idx, wrong, level) {
   track.wasWrong = wrong;
 }
 
-function renderTrack(track, idx, progress, wrong, holding, level) {
-  if (track.idx !== idx) {
-    const prev = track.idx;
-    track.sliders.forEach((s, i) => {
-      s.el.classList.toggle("done", i < idx);
-      s.el.classList.toggle("current", i === idx);
-      s.el.classList.remove("wrong", "holding");
-      s.fill.style.height = i < idx ? "" : "0%";
-    });
-    track.root.classList.toggle("finished", idx >= level.length);
-    track.idx = idx;
-    if (prev >= 0 && idx > prev) celebrate(track, prev, idx, level);
+/** Соперник: полоса прогресса на весь уровень. */
+function renderOpponent(track, idx, progress, wrong, level) {
+  const n = level.length;
+  track.fill.style.width = (Math.min(n, idx + progress) / n * 100).toFixed(1) + "%";
+  track.count.textContent = `${Math.min(idx, n)} / ${n}`;
+  track.bar.classList.toggle("wrong", wrong);
+  if (idx >= n && !track.box.classList.contains("finished")) {
+    track.box.classList.add("finished");
+    const [x, y] = fx.anchor(track.box);
+    fx.ring(x, y, fx.colors[1], 140);
   }
-
-  if (idx >= level.length) return;
-
-  const cur = track.sliders[idx];
-  cur.fill.style.height = (progress * 100).toFixed(1) + "%";
-  cur.el.classList.toggle("wrong", wrong);
-  cur.el.classList.toggle("holding", holding);
 }
 
 /** Искры над заполненными ползунками, салют на финише. */
 function celebrate(track, from, to, level) {
-  const finished = to >= level.length;
-
-  if (track.mine) {
-    const speed = match.press;
-    for (let i = from; i < Math.min(to, level.length); i++) {
-      const [x, y] = course.point(i);
-      fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
-      course.filled(i);
-      music.ding(i);
-    }
-    if (finished) {
-      const [x, y] = fx.anchor($("stage"));
-      fx.arrowsFrom(x, y, 24);
-      fx.confetti(70);
-    }
-  } else if (finished && track.box) {
-    track.box.classList.add("finished");
-    const [x, y] = fx.anchor(track.box);
-    fx.ring(x, y, fx.colors[1], 140);
+  const speed = match.press;
+  for (let i = from; i < Math.min(to, level.length); i++) {
+    const [x, y] = course.point(i);
+    fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
+    course.filled(i);
+    music.ding(i);
+  }
+  if (to >= level.length) {
+    const [x, y] = fx.anchor($("stage"));
+    fx.arrowsFrom(x, y, 24);
+    fx.confetti(70);
   }
 }
 
@@ -1198,7 +1164,7 @@ function render(now) {
       myWrong = wrong;
       myHolding = holding;
     } else {
-      renderTrack(track, idx, progress, wrong, holding, level);
+      renderOpponent(track, idx, progress, wrong, level);
       const who = match.players.find((o) => o.slot === p.slot);
       if (!p.left) ghosts.push({ pos: p.idx + p.p, color: fx.colors[p.slot % 4], name: who.name, out: p.out });
     }
