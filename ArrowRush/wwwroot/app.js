@@ -540,25 +540,6 @@ function renderShowcase() {
     tile.append(num, name);
     return tile;
   }));
-  for (const card of document.querySelectorAll("#quick-modes .quick-mode")) {
-    const x = modeTotal(card.dataset.gameMode);
-    card.querySelector(".quick-meta").textContent = x.games ? `Побед: ${x.wins}` : "Ещё не играл";
-  }
-}
-
-// быстрый выбор режима в меню: сразу на экран режима с этой карточкой
-for (const [id, m] of Object.entries(MODES)) {
-  const card = document.createElement("button");
-  card.type = "button";
-  card.className = "quick-mode";
-  card.dataset.gameMode = id;
-  card.style.setProperty("--c", m.color);
-  card.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${m.icon === "bar" ? "arrow" : m.icon}"/></svg><span class="quick-name">${m.name}</span><span class="quick-meta"></span>`;
-  card.addEventListener("click", () => {
-    show("modes");
-    setGameMode(id);
-  });
-  $("quick-modes").appendChild(card);
 }
 
 // совет меняется сам, начиная со случайного
