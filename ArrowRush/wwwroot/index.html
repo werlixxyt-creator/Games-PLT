@@ -12,6 +12,8 @@
 <body>
   <!-- Летящие стрелки на canvas; занавес закрывает смену экранов. -->
   <canvas id="bg" aria-hidden="true"></canvas>
+  <!-- планета на горизонте, только в меню -->
+  <div class="planet" aria-hidden="true"></div>
   <div id="curtain" class="curtain" aria-hidden="true"><span>ARROW <i>RUSH</i></span></div>
 
   <main id="app">
@@ -46,17 +48,6 @@
 
     <!-- МЕНЮ -->
     <section id="screen-menu" class="screen">
-      <div class="topbar">
-        <div class="chip">
-          <span id="streak-badge" class="streak-badge" title="Серия побед подряд" hidden>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#flame"/></svg><b id="streak-num">0</b>
-          </span>
-          <button id="btn-menu-music" class="btn ghost small icon-btn music-toggle" type="button" aria-label="Музыка" title="Музыка вкл/выкл">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#sound"/></svg>
-          </button>
-          <button id="btn-logout" class="btn ghost small">Выйти</button>
-        </div>
-      </div>
 
       <h1 class="logo"><span class="w1">ARROW</span><span class="w2">RUSH</span></h1>
       <p class="tagline">Зажимай нужную стрелку и заполняй ползунки быстрее соперников</p>
@@ -84,9 +75,12 @@
 
       <div id="conn-status" class="conn" data-conn>Подключение к серверу…</div>
 
-      <!-- кнопки слева внизу, как в меню CS2 (rewards.js); на узком экране — под кнопками меню -->
+      <!-- быстрый выбор режима: карточки строит app.js из MODES -->
+      <div id="quick-modes" class="quick-modes"></div>
+
+      <!-- колонка слева внизу, как в меню CS2 (rewards.js); на узком экране — под кнопками меню -->
       <aside class="rewards" aria-label="Награды">
-        <button id="btn-rewards" class="tile tile-day" type="button" aria-expanded="false">
+        <button id="btn-rewards" class="tile tile-day" type="button">
           <svg class="tile-art" viewBox="0 0 24 24" aria-hidden="true"><use href="#flame"/></svg>
           <span class="tile-label">Награды</span>
           <span id="reward-summary" class="tile-title"></span>
@@ -103,19 +97,15 @@
         <div class="ad-plate">Тут могла быть ваша реклама</div>
       </aside>
 
-      <!-- окно наград открывается кнопкой «Награды» -->
-      <div id="reward-window" class="reward-window" role="dialog" aria-label="Награды" hidden>
-        <div class="reward-head">
-          <span>Награды</span>
-          <button id="reward-close" class="panel-close" type="button" aria-label="Закрыть">×</button>
-        </div>
-        <div class="reward-title day"><b>Ежедневные</b><span id="reward-day-reset"></span></div>
-        <ul id="reward-day" class="reward-list"></ul>
-        <div class="reward-title week"><b>Еженедельные</b><span id="reward-week-reset"></span></div>
-        <ul id="reward-week" class="reward-list"></ul>
-        <p class="reward-note">Считаются матчи из поиска. Тренировки и матчи, из которых ты вышел, не идут в задания.</p>
-        <div id="reward-error" class="conn bad" role="alert"></div>
-      </div>
+      <!-- витрина справа: зеркально колонке наград -->
+      <aside class="showcase" aria-label="Мой игрок">
+        <button id="btn-showcase" class="show-hero" type="button" title="Мой профиль">
+          <canvas id="showcase-hero" width="252" height="252" aria-hidden="true"></canvas>
+          <span id="showcase-name" class="show-name"></span>
+        </button>
+        <div id="showcase-stats" class="show-stats"></div>
+        <div class="show-tip"><b>Совет</b> <span id="menu-tip"></span></div>
+      </aside>
     </section>
 
     <!-- ВЫБОР РЕЖИМА: режимы листаются влево-вправо -->
@@ -210,6 +200,33 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- НАГРАДЫ -->
+    <section id="screen-rewards" class="screen">
+      <div class="topbar start">
+        <button id="btn-rewards-back" class="btn ghost small">← В меню</button>
+      </div>
+      <h2>Награды</h2>
+      <p class="muted">Всего собрано: <b class="reward-total">★ <span id="reward-total">0</span></b></p>
+
+      <div class="reward-columns">
+        <section class="reward-col day">
+          <div class="reward-title"><b>Ежедневные</b><span id="reward-day-reset"></span></div>
+          <ul id="reward-day" class="reward-list"></ul>
+        </section>
+        <section class="reward-col week">
+          <div class="reward-title"><b>Еженедельные</b><span id="reward-week-reset"></span></div>
+          <ul id="reward-week" class="reward-list"></ul>
+        </section>
+      </div>
+      <div id="reward-error" class="conn bad" role="alert"></div>
+
+      <div class="reward-track glass">
+        <h3>Скины за звёзды</h3>
+        <div id="reward-ladder" class="reward-ladder"></div>
+      </div>
+      <p class="reward-note">Считаются матчи из поиска. Тренировки и матчи, из которых ты вышел, не идут в задания.</p>
     </section>
 
     <!-- СКИНЫ -->
@@ -318,41 +335,56 @@
 
   </main>
 
-  <!-- панель справа: друзья, заявки и профиль (social.js). Свёрнута — видна только полоса с аватарами -->
-  <button id="panel-toggle" class="panel-toggle" type="button" aria-label="Друзья и профиль">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#team"/></svg>
-    <b class="friends-badge" hidden></b>
-  </button>
-  <aside id="panel" class="panel" aria-label="Друзья и профиль">
-    <div class="panel-top">
-      <button id="btn-my-profile" class="panel-me" type="button" title="Мой профиль">
-        <span id="profile-avatar" class="avatar" aria-hidden="true"></span>
-        <span id="profile-name" class="profile-name"></span>
+  <!-- правый верхний угол: серия, звук, выход (только в меню), друзья и профиль (social.js) -->
+  <div id="top-right" class="top-right">
+    <div class="chip">
+          <span id="streak-badge" class="streak-badge" title="Серия побед подряд" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#flame"/></svg><b id="streak-num">0</b>
+          </span>
+          <button id="btn-menu-music" class="btn ghost small icon-btn music-toggle" type="button" aria-label="Музыка" title="Музыка вкл/выкл">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#sound"/></svg>
+          </button>
+          <button id="btn-logout" class="btn ghost small">Выйти</button>
+    </div>
+    <div class="chip social-chip">
+      <button id="panel-toggle" class="friends-btn" type="button" aria-label="Друзья" title="Друзья">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#team"/></svg>
+        <span id="friend-stack" class="friend-stack" aria-hidden="true"></span>
         <b class="friends-badge" hidden></b>
       </button>
-      <button id="panel-close" class="panel-close only-open" type="button" aria-label="Свернуть панель">×</button>
+      <button id="btn-my-profile" class="me-btn" type="button" title="Мой профиль">
+        <span id="profile-name" class="profile-name"></span>
+        <span id="profile-avatar" class="avatar" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>
+
+  <aside id="panel" class="panel" aria-label="Друзья и профиль">
+    <div class="panel-top">
+      <span>Друзья</span>
+      <button id="panel-close" class="panel-close" type="button" aria-label="Закрыть">×</button>
     </div>
 
     <div id="panel-list">
-      <label class="field only-open">
+      <label class="field">
         <span>Найти игрока по нику</span>
         <input id="friend-search" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Начни вводить ник">
       </label>
-      <ul id="search-list" class="people-list only-open"></ul>
-      <div id="friend-error" class="conn bad only-open" role="alert"></div>
+      <ul id="search-list" class="people-list"></ul>
+      <div id="friend-error" class="conn bad" role="alert"></div>
 
       <section id="incoming-box" class="panel-box" hidden>
-        <h3 class="only-open">Заявки в друзья</h3>
+        <h3>Заявки в друзья</h3>
         <ul id="incoming-list" class="people-list incoming"></ul>
       </section>
 
       <section class="panel-box">
-        <h3 class="only-open">Мои друзья</h3>
+        <h3>Мои друзья</h3>
         <ul id="friends-list" class="people-list"></ul>
-        <p id="friends-empty" class="muted small only-open">Пока никого. Найди игрока по нику или открой его профиль из итогов матча.</p>
+        <p id="friends-empty" class="muted small">Пока никого. Найди игрока по нику или открой его профиль из итогов матча.</p>
       </section>
 
-      <section id="outgoing-box" class="panel-box only-open" hidden>
+      <section id="outgoing-box" class="panel-box" hidden>
         <h3>Отправленные заявки</h3>
         <ul id="outgoing-list" class="people-list"></ul>
       </section>

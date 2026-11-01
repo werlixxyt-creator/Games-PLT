@@ -1,18 +1,17 @@
 "use strict";
 
-// Панель справа, как в меню CS2: узкая полоса с аватарами разворачивается при наведении.
+// Друзья и профиль: кнопки в правом верхнем углу открывают панель под ними.
 // В ней поиск игроков, заявки и друзья, там же открывается профиль (свой можно редактировать).
 // Всё, что написал игрок (ник, «о себе»), выводится только через textContent.
 const social = (() => {
   const $ = (id) => document.getElementById(id);
   const ABOUT_MAX = 160;
-  const COLLAPSE_DELAY = 300; // мышь может на миг выскочить за край панели
+  const STACK_SIZE = 4;  // сколько аватаров друзей видно на кнопке
 
   let o = null;         // { api, me — текущий профиль, refresh — перечитать его, historyItem }
   let shown = null;     // открытый профиль: ответ сервера, null — виден список друзей
   let pickedColor = null;
   let searchTimer = 0;
-  let collapseTimer = 0;
 
   /** Кружок с первой буквой ника. */
   function paintAvatar(el, name, color) {
@@ -47,7 +46,6 @@ const social = (() => {
   const isOpen = () => $("panel").classList.contains("open");
 
   function setOpen(on) {
-    clearTimeout(collapseTimer);
     $("panel").classList.toggle("open", on);
   }
 
@@ -59,7 +57,7 @@ const social = (() => {
     $("panel-list").hidden = false;
   }
 
-  /** Сворачивает панель в полосу. */
+  /** Закрывает панель. */
   function close() {
     setOpen(false);
     showList();
@@ -67,9 +65,6 @@ const social = (() => {
     $("search-list").innerHTML = "";
     $("friend-error").textContent = "";
   }
-
-  /** Свёрнуть нельзя, пока игрок здесь чем-то занят: мышь могла просто уйти в сторону. */
-  const busy = () => shown !== null || $("friend-search").value !== "";
 
   // ---------- Профиль ----------
 
@@ -278,6 +273,12 @@ const social = (() => {
     $("incoming-box").hidden = data.incoming.length === 0;
     $("outgoing-box").hidden = data.outgoing.length === 0;
     $("friends-empty").hidden = data.friends.length > 0;
+    $("friend-stack").replaceChildren(...data.friends.slice(0, STACK_SIZE).map((p) => {
+      const avatar = document.createElement("span");
+      avatar.className = "avatar";
+      paintAvatar(avatar, p.userName, p.color);
+      return avatar;
+    }));
     for (const badge of document.querySelectorAll(".friends-badge")) {
       badge.hidden = data.incoming.length === 0;
       badge.textContent = data.incoming.length;
@@ -313,25 +314,19 @@ const social = (() => {
 
   function init(options) {
     o = options;
-    const panel = $("panel");
-
-    panel.addEventListener("pointerenter", (e) => {
-      if (e.pointerType === "mouse") setOpen(true);
-    });
-    panel.addEventListener("pointerleave", (e) => {
-      if (e.pointerType !== "mouse" || busy()) return;
-      collapseTimer = setTimeout(() => setOpen(false), COLLAPSE_DELAY);
-    });
-    panel.addEventListener("focusin", () => setOpen(true));
-    // клик мимо панели и Esc сворачивают её, даже если открыт профиль
+    // клик мимо панели и Esc закрывают её
     addEventListener("pointerdown", (e) => {
-      if (isOpen() && !panel.contains(e.target) && !$("panel-toggle").contains(e.target)) close();
+      if (isOpen() && !$("panel").contains(e.target) && !$("top-right").contains(e.target)) close();
     });
     addEventListener("keydown", (e) => {
       if (e.code === "Escape" && isOpen()) close();
     });
 
-    $("panel-toggle").addEventListener("click", () => (isOpen() ? close() : setOpen(true)));
+    $("panel-toggle").addEventListener("click", () => {
+      if (isOpen() && !shown) return close();
+      showList();
+      setOpen(true);
+    });
     $("panel-close").addEventListener("click", close);
     $("btn-my-profile").addEventListener("click", () => open(o.me().userName));
     $("btn-profile-back").addEventListener("click", showList);

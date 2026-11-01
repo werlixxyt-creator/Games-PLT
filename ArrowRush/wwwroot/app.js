@@ -34,7 +34,19 @@ const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
 // кайма следа персонажа по скину ползунков; цвета стрелок от скина не зависят
 const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16", ocean: "#3fb6ff", lava: "#ff6a2b", mint: "#6fffc4" };
 // экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
-const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search"]);
+const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards"]);
+// советы под витриной в меню
+const TIPS = [
+  "В «Зеркале» держи стрелку, противоположную нарисованной.",
+  "За золотой ячейкой идут 10 одинаковых стрелок.",
+  "В быстром темпе для двух одинаковых стрелок отпусти клавишу и нажми снова.",
+  "В «Хардкоре» нет пауз за ошибку, но три ошибки — и ты выбыл.",
+  "Можно играть на WASD.",
+  "Звёзды за задания открывают новые скины.",
+  "В командных режимах побеждает команда того, кто финишировал первым.",
+  "Свой аудиофайл можно превратить в ритм-уровень.",
+];
+const TIP_MS = 12000;
 const UNLOCK_TEXT = {
   games: (n) => `Сыграй ${n} ${plural(n, "матч", "матча", "матчей")}`,
   wins: (n) => `Выиграй ${n} ${plural(n, "матч", "матча", "матчей")}`,
@@ -103,7 +115,7 @@ function targetOf(arrow) {
 // ---------- Экраны ----------
 
 function show(name) {
-  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "game", "rhythm", "results"]) {
+  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "rewards", "game", "rhythm", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
   // ушли из «Своего трека» или из матча — музыку останавливаем (итоги сами гасят её плавно)
@@ -512,6 +524,52 @@ function renderStats() {
 }
 
 /** Значок серии побед у ника: виден с двух побед подряд, оформлен надетым скином серии. */
+function renderShowcase() {
+  const s = sumStats(MODE_IDS.map(modeTotal));
+  $("showcase-name").textContent = profile.userName;
+  course.paintHero($("showcase-hero"), profile.equipped.hero);
+  $("showcase-stats").replaceChildren(...[
+    [s.games, "матчей"], [s.wins, "побед"], [s.games ? `${Math.round((s.wins / s.games) * 100)}%` : "—", "побед, %"], [profile.streak.best, "серия"],
+  ].map(([value, label]) => {
+    const tile = document.createElement("div");
+    tile.className = "show-stat";
+    const num = document.createElement("b");
+    num.textContent = value;
+    const name = document.createElement("span");
+    name.textContent = label;
+    tile.append(num, name);
+    return tile;
+  }));
+  for (const card of document.querySelectorAll("#quick-modes .quick-mode")) {
+    const x = modeTotal(card.dataset.gameMode);
+    card.querySelector(".quick-meta").textContent = x.games ? `Побед: ${x.wins}` : "Ещё не играл";
+  }
+}
+
+// быстрый выбор режима в меню: сразу на экран режима с этой карточкой
+for (const [id, m] of Object.entries(MODES)) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "quick-mode";
+  card.dataset.gameMode = id;
+  card.style.setProperty("--c", m.color);
+  card.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${m.icon === "bar" ? "arrow" : m.icon}"/></svg><span class="quick-name">${m.name}</span><span class="quick-meta"></span>`;
+  card.addEventListener("click", () => {
+    show("modes");
+    setGameMode(id);
+  });
+  $("quick-modes").appendChild(card);
+}
+
+// совет меняется сам, начиная со случайного
+{
+  let tip = Math.floor(Math.random() * TIPS.length);
+  const nextTip = () => { $("menu-tip").textContent = TIPS[tip++ % TIPS.length]; };
+  nextTip();
+  setInterval(nextTip, TIP_MS);
+}
+$("btn-showcase").addEventListener("click", () => social.open(profile.userName));
+
 function renderStreak() {
   const n = profile.streak.current;
   const badge = $("streak-badge");
@@ -526,6 +584,7 @@ function applyProfile(p) {
   social.paintAvatar($("profile-avatar"), p.userName, p.color);
   social.loadFriends();
   rewards.load();
+  renderShowcase();
   renderStats();
   renderStreak();
   const open = p.skins.filter((s) => s.unlocked).length;
@@ -601,6 +660,7 @@ $("btn-stats-back").addEventListener("click", () => show("menu"));
 social.init({ api, historyItem, me: () => profile, refresh: refreshProfile });
 rewards.init({
   api,
+  show,
   me: () => profile,
   refresh: refreshProfile,
   skinTile,

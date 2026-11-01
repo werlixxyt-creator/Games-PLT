@@ -1,6 +1,6 @@
 "use strict";
 
-// Ежедневные и еженедельные награды: кнопки слева внизу, как в CS2, задания — в окне по кнопке «Награды».
+// Ежедневные и еженедельные награды: кнопки слева внизу, как в CS2, задания — на своём экране по кнопке «Награды».
 // Задания, прогресс и звёзды считает сервер (Data/Rewards.cs), здесь только показ и кнопка «Забрать».
 const rewards = (() => {
   const $ = (id) => document.getElementById(id);
@@ -12,7 +12,7 @@ const rewards = (() => {
     fastgames: "#bolt", hardgames: "#heart", teamgames: "#team", mirrorgames: "#mirror", blindgames: "#eye",
   };
 
-  let o = null;       // { api, me — текущий профиль, refresh — перечитать его, skinTile, openSkins(slot) }
+  let o = null;       // { api, show, me — текущий профиль, refresh — перечитать его, skinTile, openSkins(slot) }
   let data = null;    // ответ /api/account/rewards
   let nextSkin = null; // скин на кнопке «За звёзды»
 
@@ -108,14 +108,35 @@ const rewards = (() => {
     $("reward-next-bar").style.width = `${Math.min(100, (data.stars / skin.need) * 100)}%`;
   }
 
+  /** Все скины за звёзды по порядку: что уже открыто и что впереди. */
+  function renderLadder() {
+    const skins = o.me().skins.filter((s) => s.by === "stars").sort((a, b) => a.need - b.need);
+    $("reward-ladder").replaceChildren(...skins.map((s) => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "ladder-card" + (s.unlocked ? " open" : "");
+      card.addEventListener("click", () => o.openSkins(s.slot));
+      const name = document.createElement("span");
+      name.className = "ladder-name";
+      name.textContent = s.name;
+      const need = document.createElement("span");
+      need.className = "ladder-need";
+      need.textContent = s.unlocked ? "✓ открыт" : `${s.need} ★`;
+      card.append(o.skinTile(s), name, need);
+      return card;
+    }));
+  }
+
   function render() {
     if (!data || !o.me()) return;
     fx.countUp($("reward-stars"), data.stars);
+    fx.countUp($("reward-total"), data.stars);
     $("reward-day").replaceChildren(...data.day.tasks.map(taskRow));
     $("reward-week").replaceChildren(...data.week.tasks.map(taskRow));
     renderSummary();
     renderTimes();
     renderNext();
+    renderLadder();
   }
 
   async function load() {
@@ -145,37 +166,27 @@ const rewards = (() => {
     }
   }
 
-  function setWindow(open) {
-    $("reward-window").hidden = !open;
-    $("btn-rewards").setAttribute("aria-expanded", open);
-    $("reward-error").textContent = "";
-  }
-
-  const inMenu = () => document.body.dataset.screen === "menu";
+  const onScreen = () => ["menu", "rewards"].includes(document.body.dataset.screen);
 
   /** Новый день или неделя наступили: задания надо перечитать. */
   function tick() {
-    if (!data || !inMenu()) return;
+    if (!data || !onScreen()) return;
     if (Date.now() >= new Date(data.day.resetsAt)) load();
     else renderTimes();
   }
 
   function init(options) {
     o = options;
-    $("btn-rewards").addEventListener("click", () => setWindow($("reward-window").hidden));
-    $("reward-close").addEventListener("click", () => setWindow(false));
+    $("btn-rewards").addEventListener("click", () => o.show("rewards"));
+    $("btn-rewards-back").addEventListener("click", () => o.show("menu"));
     $("btn-reward-next").addEventListener("click", () => { if (nextSkin) o.openSkins(nextSkin.slot); });
-    // клик мимо окна и Esc закрывают его
-    addEventListener("pointerdown", (e) => {
-      if (!$("reward-window").contains(e.target) && !$("btn-rewards").contains(e.target)) setWindow(false);
-    });
     addEventListener("keydown", (e) => {
-      if (e.code === "Escape") setWindow(false);
+      if (e.code === "Escape" && document.body.dataset.screen === "rewards") o.show("menu");
     });
     setInterval(tick, TICK_MS);
     // вкладка могла простоять в фоне всю ночь
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && data && inMenu()) load();
+      if (!document.hidden && data && onScreen()) load();
     });
   }
 
