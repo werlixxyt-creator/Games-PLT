@@ -5,6 +5,7 @@
 // Логику считает сервер, здесь только картинка. Траектория строится из id матча,
 // поэтому у всех игроков она одинаковая. На ней только свой персонаж: прогресс соперников — на панели снизу.
 // Участки пути идут секциями, у каждой своя форма пути и своя палитра; между ними — портал.
+// Иногда секции идут в особом стиле (scenes.js): вместо космоса со стенами — другая картинка.
 // Персонаж при этом не меняется, а цвет стрелки зависит только от её направления.
 const course = (() => {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -100,12 +101,30 @@ const course = (() => {
     const st = { up: rand() < 0.5 ? -1 : 1 };
     let x = 0, y = 0, kind = -1;
     let theme = Math.floor(rand() * THEMES.length);
+    // особые стили идут по кругу с разного места, чтобы матчи не были похожи
+    let nextScene = Math.floor(rand() * scenes.names.length);
+    let scene = null, sceneLeft = 0, sinceScene = 0, shown = 0;
 
     for (let i = 0; i < level.length;) {
       const prev = kind;
       do kind = Math.floor(rand() * KINDS.length); while (kind === prev);
+
+      if (sceneLeft > 0) {
+        sceneLeft--;
+      } else {
+        scene = null;
+        sinceScene++;
+        // иногда стиль меняется; хотя бы один особый стиль за матч будет
+        if (sinceScene >= 2 && (rand() < 0.45 || shown === 0)) {
+          scene = scenes.names[nextScene++ % scenes.names.length];
+          sceneLeft = fast ? 1 : 2;
+          sinceScene = 0;
+          shown++;
+        }
+      }
+
       const end = Math.min(level.length, i + (fast ? 6 + Math.floor(rand() * 7) : 2 + Math.floor(rand() * 2)));
-      sections.push({ from: i, to: end, kind: KINDS[kind], theme, x });
+      sections.push({ from: i, to: end, kind: KINDS[kind], theme, scene, x });
       for (; i < end; i++) {
         const len = fast ? FAST_STEP : level[i].fill * HOLD_SPEED;
         const pts = shape(KINDS[kind], x, y, len, rand, st);
@@ -676,7 +695,7 @@ const course = (() => {
       const sec = map.sections[i];
       if (sec.x < left - 200 || sec.x > right + 200) continue;
       const p = map.segs[sec.from][0];
-      drawPortal(p[0], p[1], THEMES[sec.theme].glow, 104);
+      drawPortal(p[0], p[1], paletteOf(sec).glow, 104);
     }
     if (map.endX < right + 300) drawPortal(map.endX, map.endY, [255, 255, 255], 190);
   }
@@ -698,6 +717,8 @@ const course = (() => {
     c.fill(hero.path, "evenodd");
     c.restore();
   }
+
+  const paletteOf = (sec) => (sec.scene ? scenes.palettes[sec.scene] : THEMES[sec.theme]);
 
   function sectionAt(pos) {
     const i = Math.min(Math.floor(pos), map.segs.length - 1);
@@ -787,7 +808,7 @@ const course = (() => {
     s = 0;
     parts = [];
     section = 0;
-    palette = from = THEMES[map.sections[0].theme];
+    palette = from = paletteOf(map.sections[0]);
     fade = 1;
     flash = shake = beat = heat = tilt = 0;
     lastPart = null;
@@ -854,15 +875,17 @@ const course = (() => {
     // новая секция: смена палитры
     const secIdx = map.sections.indexOf(sectionAt(s));
     if (secIdx !== section) {
+      // особый стиль включается сразу: резкую смену картинки прячет более яркая вспышка
+      const changed = map.sections[secIdx].scene !== map.sections[section].scene;
       section = secIdx;
       from = palette;
-      fade = 0;
-      flash = Math.max(flash, 0.55);
+      fade = changed ? 1 : 0;
+      flash = Math.max(flash, changed ? 1 : 0.25);
       const p = at(s);
-      pixels(p.x, p.y, 26, rgba(THEMES[map.sections[secIdx].theme].glow));
+      pixels(p.x, p.y, 26, rgba(paletteOf(map.sections[secIdx]).glow));
     }
     fade = Math.min(1, fade + dt * 2.4);
-    const to = THEMES[map.sections[section].theme];
+    const to = paletteOf(map.sections[section]);
     if (fade < 1) {
       palette = {};
       for (const key of Object.keys(to)) palette[key] = mixRgb(from[key], to[key], fade);
@@ -885,15 +908,25 @@ const course = (() => {
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawSky(cssW, cssH);
-    drawFar(cssW, cssH);
+    const scene = sec.scene;
+    const view = { w: cssW, h: cssH, camX, camY, scale, time, beat, heat };
+    if (scene) {
+      scenes.back(scene, ctx, view);
+    } else {
+      drawSky(cssW, cssH);
+      drawFar(cssW, cssH);
+    }
 
     ctx.save();
     applyCamera();
     const left = camX - viewW * PLAYER_AT - 120;
     const right = camX + viewW * (1 - PLAYER_AT) + 120;
-    drawWalls(left, right);
-    drawDeco(left, right);
+    if (scene) {
+      scenes.world(scene, ctx, view, { left, right }, (x) => wallAt(map.walls, x, map.walls.mid));
+    } else {
+      drawWalls(left, right);
+      drawDeco(left, right);
+    }
     drawPortals(left, right);
     drawTrail();
     if (s < n) {
@@ -911,6 +944,7 @@ const course = (() => {
     }
     ctx.restore();
 
+    if (scene) scenes.front(scene, ctx, view);
     drawStreaks(cssW, cssH);
     drawVignette(cssW, cssH);
     if (!reduce && flash > 0.02) {
