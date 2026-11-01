@@ -81,7 +81,7 @@ public static class AccountEndpoints
                 g.Key.Mode,
                 g.Key.Fast,
                 Games = g.Count(),
-                Wins = g.Count(p => p.Place == 1 && p.FinishTime != null),
+                Wins = g.Count(p => p.Won),
                 Sliders = g.Sum(p => p.Sliders),
             })
             .ToListAsync();
@@ -95,6 +95,7 @@ public static class AccountEndpoints
                 p.Match.Fast,
                 p.Match.Difficulty,
                 p.Match.PlayedAt,
+                p.Won,
                 p.Place,
                 Players = p.Match.Participants.Count,
                 p.FinishTime,
@@ -142,6 +143,7 @@ public static class AccountEndpoints
                 difficulty = r.Difficulty.ToWire(),
                 // SQLite теряет пометку UTC — возвращаем её, чтобы браузер показал местное время
                 playedAt = DateTime.SpecifyKind(r.PlayedAt, DateTimeKind.Utc),
+                won = r.Won,
                 place = r.Place,
                 players = r.Players,
                 time = r.FinishTime,
@@ -180,7 +182,7 @@ public static class AccountEndpoints
         var results = await db.MatchParticipants
             .Where(p => p.UserId == userId)
             .OrderBy(p => p.MatchRecordId)
-            .Select(p => new { Win = p.Place == 1 && p.FinishTime != null, p.Sliders })
+            .Select(p => new { Win = p.Won, p.Sliders })
             .ToListAsync();
 
         int streak = 0, best = 0;

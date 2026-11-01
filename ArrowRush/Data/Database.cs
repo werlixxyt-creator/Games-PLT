@@ -44,6 +44,9 @@ public static class Database
         AddColumnIfMissing(db, "Matches", "Difficulty", "INTEGER NOT NULL DEFAULT 1");
         // бывший режим «Скорость» (1) — теперь «Классика» в быстром темпе
         db.ExecuteSqlRaw("UPDATE \"Matches\" SET \"Mode\" = 0, \"Fast\" = TRUE WHERE \"Mode\" = 1");
+        AddColumnIfMissing(db, "MatchParticipants", "Won", "BOOLEAN NOT NULL DEFAULT FALSE");
+        // в матчах до появления команд победа — первое место с финишем
+        db.ExecuteSqlRaw("UPDATE \"MatchParticipants\" SET \"Won\" = TRUE WHERE \"Place\" = 1 AND \"FinishTime\" IS NOT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "SliderSkin", "TEXT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "HeroSkin", "TEXT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "WinSkin", "TEXT NULL");

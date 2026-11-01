@@ -18,6 +18,8 @@ public sealed class Player
     public string? UserId { get; init; }
     /// <summary>Скин ползунков — его видят и соперники.</summary>
     public string Skin { get; init; } = "classic";
+    /// <summary>«2 на 2»: номер команды, 0 или 1. В остальных режимах -1.</summary>
+    public int Team { get; init; } = -1;
     public bool IsBot => ConnectionId is null;
 
     /// <summary>Номер текущего ползунка. Равен длине уровня, когда игрок финишировал.</summary>
@@ -60,6 +62,7 @@ public sealed class Match
     private readonly DifficultyRules _diff;
     private int _finishedCount;
     private double? _firstFinishAt;
+    private int? _winningTeam;
 
     public Match(string id, GameMode mode, bool fast, Difficulty difficulty, Random rnd, bool practice = false)
     {
@@ -79,6 +82,7 @@ public sealed class Match
     /// <summary>Быстрый темп: ползунок заполняется одним нажатием. Иначе стрелку надо держать.</summary>
     public bool Fast { get; }
     public Difficulty Difficulty { get; }
+    public bool Teams => _rules.Teams;
     /// <summary>Тренировка с ботом: в базу не сохраняется.</summary>
     public bool Practice { get; }
     public Slider[] Level { get; }
@@ -171,6 +175,7 @@ public sealed class Match
             p.FinishTime = Math.Round(GameTime, 2);
             p.Place = ++_finishedCount;
             _firstFinishAt ??= GameTime;
+            _winningTeam ??= p.Team;
         }
     }
 
@@ -286,6 +291,7 @@ public sealed class Match
         var everyoneDone = Players.All(p => !p.Active);
 
         if (humansLeft) Finish("abandoned");
+        else if (Teams && _firstFinishAt.HasValue) Finish("team_finished");
         else if (everyoneDone) Finish("all_finished");
         else if (_firstFinishAt is { } first && GameTime - first >= GameRules.AfterFirstFinishSeconds) Finish("time_after_winner");
         else if (GameTime >= GameRules.MatchTimeLimitSeconds) Finish("time_limit");
@@ -325,13 +331,14 @@ public sealed class Match
         mirror = _rules.Mirror,
         blind = _rules.Blind,
         lives = _rules.Lives,
+        teams = Teams,
         you = yourSlot,
         countdown = GameRules.CountdownSeconds,
         stun = _diff.FastWrongStunSeconds,
         idleDrain = _diff.IdleDrainPerSecond,
         wrongDrain = _diff.WrongDrainPerSecond,
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds }),
-        players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin }),
+        players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, team = p.Team }),
     };
 
     public object StatePayload() => new
@@ -352,9 +359,13 @@ public sealed class Match
         }),
     };
 
-    /// <summary>Итоговый порядок: финишировавшие по месту, потом по прогрессу, за ними выбывшие, вышедшие — в конце.</summary>
+    /// <summary>Победил ли игрок: в «2 на 2» — вся команда первого финишировавшего, кроме вышедших, иначе — только он сам.</summary>
+    public bool Won(Player p) => Teams ? p.Team == _winningTeam && !p.Left : p.Done && p.Place == 1;
+
+    /// <summary>Итоговый порядок: победители, финишировавшие по месту, потом по прогрессу, за ними выбывшие, вышедшие — в конце.</summary>
     public List<Player> Standings() => Players
-        .OrderBy(p => p.Done ? 0 : 1)
+        .OrderBy(p => Won(p) ? 0 : 1)
+        .ThenBy(p => p.Done ? 0 : 1)
         .ThenBy(p => p.Done ? p.Place : 0)
         .ThenBy(p => p.Left ? 2 : p.Out ? 1 : 0)
         .ThenByDescending(p => p.Index + p.Progress)
@@ -365,6 +376,7 @@ public sealed class Match
         mode = Mode.ToWire(),
         fast = Fast,
         practice = Practice,
+        teams = Teams,
         reason = EndReason,
         results = Standings()
             .Select((p, i) => new
@@ -372,6 +384,8 @@ public sealed class Match
                 slot = p.Slot,
                 name = p.Name,
                 bot = p.IsBot,
+                team = p.Team,
+                won = Won(p),
                 place = i + 1,
                 time = p.FinishTime,
                 done = p.Done,
@@ -399,6 +413,7 @@ public sealed class Match
                 UserId = p.UserId,
                 Name = p.Name,
                 IsBot = p.IsBot,
+                Won = Won(p),
                 Place = i + 1,
                 FinishTime = p.FinishTime,
                 Sliders = Math.Min(p.Index, Level.Length),

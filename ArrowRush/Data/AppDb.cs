@@ -48,6 +48,8 @@ public sealed class MatchParticipant
     /// <summary>Ник на момент матча.</summary>
     public required string Name { get; set; }
     public bool IsBot { get; set; }
+    /// <summary>Победа: в «2 на 2» она есть и у напарника, который сам не финишировал.</summary>
+    public bool Won { get; set; }
     public int Place { get; set; }
     public double? FinishTime { get; set; }
     public int Sliders { get; set; }

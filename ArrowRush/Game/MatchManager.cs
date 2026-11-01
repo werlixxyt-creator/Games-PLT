@@ -140,6 +140,12 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
                 {
                     group = queue.Take(GameRules.MaxPlayers).ToList();
                 }
+                else if (mode.Rules().Teams)
+                {
+                    // команды ждут полного состава; кто ждёт слишком долго — играет с ботами
+                    if (queue.Count == 0 || Now - queue[0].JoinedAt < GameRules.BotAfterSeconds) break;
+                    group = queue;
+                }
                 else if (queue.Count >= GameRules.MinPlayers && Now - queue[GameRules.MinPlayers - 1].JoinedAt >= GameRules.GatherSeconds)
                 {
                     group = queue;
@@ -166,22 +172,30 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
     {
         var match = new Match(Guid.NewGuid().ToString("N")[..8], mode, fast, difficulty, new Random(_rnd.Next()), practice);
 
+        // чётные места — одна команда, нечётные — другая: двое людей окажутся друг против друга
+        int TeamOf(int seat) => match.Teams ? seat % GameRules.TeamSize : -1;
+
         var slot = 0;
         foreach (var q in group)
         {
-            match.Players.Add(new Player { Slot = slot++, Name = q.Name, ConnectionId = q.ConnectionId, UserId = q.UserId, Skin = q.Skin });
+            match.Players.Add(new Player { Slot = slot, Name = q.Name, ConnectionId = q.ConnectionId, UserId = q.UserId, Skin = q.Skin, Team = TeamOf(slot) });
             _matchByConnection[q.ConnectionId] = match;
+            slot++;
         }
 
-        // одиночке — один бот, чтобы не ждать вечно
-        if (match.Players.Count < GameRules.MinPlayers)
+        // одиночке — бот, чтобы не ждать вечно; в командах боты занимают все пустые места
+        var seats = match.Teams ? GameRules.TeamSize * 2 : GameRules.MinPlayers;
+        var botNames = BotNames.OrderBy(_ => _rnd.Next()).ToList();
+        for (var bot = 0; match.Players.Count < seats; bot++)
         {
             match.Players.Add(new Player
             {
                 Slot = slot,
-                Name = BotNames[_rnd.Next(BotNames.Length)],
+                Name = botNames[bot],
                 Skin = Skins.SliderIds[_rnd.Next(Skins.SliderIds.Length)],
+                Team = TeamOf(slot),
             });
+            slot++;
         }
 
         _matches.Add(match);

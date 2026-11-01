@@ -14,6 +14,7 @@ const MODES = {
   mirror: { name: "Зеркало", icon: "mirror", color: "var(--a0)", desc: "Жми стрелку, противоположную нарисованной: ← значит →, ↑ значит ↓." },
   blind: { name: "Вслепую", icon: "eye", color: "var(--a3)", desc: "Видна только текущая стрелка, следующие спрятаны." },
   hardcore: { name: "Хардкор", icon: "heart", color: "var(--bad)", desc: "Без пауз за ошибку, но три ошибки — и ты выбыл." },
+  teams: { name: "2 на 2", icon: "team", color: "var(--a2)", desc: "Две команды по двое: чей игрок финишировал первым, та команда и победила." },
 };
 // темп выбирается для любого режима
 const PACES = {
@@ -457,7 +458,7 @@ function applyProfile(p) {
   const list = $("history-list");
   list.innerHTML = "";
   p.recent.forEach((m, i) => {
-    const win = m.place === 1 && m.time != null;
+    const win = m.won;
     const li = document.createElement("li");
     li.style.setProperty("--i", i);
 
@@ -469,7 +470,7 @@ function applyProfile(p) {
     what.className = "res-name";
     const text = document.createElement("span");
     text.className = "n";
-    text.textContent = win ? `Победа · ${m.time.toFixed(2)} с`
+    text.textContent = win ? (m.time != null ? `Победа · ${m.time.toFixed(2)} с` : `Победа · ${m.sliders}/${m.total}`)
       : m.time != null ? `${m.place} из ${m.players} · ${m.time.toFixed(2)} с`
       : m.left ? `Вышел · ${m.sliders}/${m.total}`
       : `${m.place} из ${m.players} · ${m.sliders}/${m.total}`;
@@ -840,6 +841,11 @@ function updateSearch() {
   $("search-info").textContent = `В очереди: ${search.inQueue}`;
 
   const botIn = Math.max(0, Math.ceil(search.botAfter - sec));
+  if (gameMode === "teams") {
+    $("search-info").textContent = `В очереди: ${search.inQueue} из 4`;
+    $("search-bot").textContent = botIn > 0 ? `Через ${botIn} с свободные места займут боты` : "Подключаем ботов…";
+    return;
+  }
   $("search-bot").textContent = search.inQueue > 1
     ? "Соперник найден, собираем лобби…"
     : botIn > 0 ? `Если никого не найдём, через ${botIn} с сыграешь с ботом` : "Подключаем бота…";
@@ -893,6 +899,7 @@ function startMatch(d) {
     mirror: d.mirror,
     blind: d.blind,
     lives: d.lives,
+    teams: d.teams,
     you: d.you,
     level: d.level,
     idleDrain: d.idleDrain,
@@ -929,9 +936,11 @@ function startMatch(d) {
   // соперники
   const opps = $("opponents");
   opps.innerHTML = "";
-  for (const p of d.players.filter((p) => p.slot !== d.you)) {
+  // напарник — первым: его полоса другого цвета
+  const isMate = (p) => d.teams && p.team === me.team;
+  for (const p of d.players.filter((p) => p.slot !== d.you).sort((a, b) => isMate(b) - isMate(a))) {
     const box = document.createElement("div");
-    box.className = "opp glass";
+    box.className = "opp glass" + (isMate(p) ? " mate" : "");
     const nameEl = document.createElement("div");
     nameEl.className = "track-name";
     const bar = document.createElement("div");
@@ -942,7 +951,14 @@ function startMatch(d) {
     box.append(nameEl, bar);
     opps.appendChild(box);
 
-    match.tracks.set(p.slot, { box, bar, fill, count, badge: nameRow(nameEl, p) });
+    const badge = nameRow(nameEl, p);
+    if (d.teams) {
+      const tag = document.createElement("span");
+      tag.className = "tag-bot";
+      tag.textContent = isMate(p) ? "напарник" : "соперник";
+      nameEl.insertBefore(tag, badge);
+    }
+    match.tracks.set(p.slot, { box, bar, fill, count, badge });
   }
 
   // стартовый снимок, пока сервер не прислал первый
@@ -964,14 +980,17 @@ function showResults(r) {
   music.stop(0.6);
 
   const me = r.results.find((x) => x.slot === you);
-  const win = me && me.done && me.place === 1;
+  const win = !!(me && me.won);
 
   const title = $("res-title");
-  title.textContent = win ? "Победа!" : me ? `${me.place} место` : "Матч окончен";
+  title.textContent = win ? "Победа!" : r.teams && me ? "Поражение" : me ? `${me.place} место` : "Матч окончен";
   title.classList.toggle("win", win);
   $("screen-results").classList.toggle("win", win);
 
-  $("res-sub").textContent = (me && me.done
+  const someoneWon = r.results.some((x) => x.won);
+  $("res-sub").textContent = (r.teams && me
+    ? (win ? "Твоя команда финишировала первой" : someoneWon ? "Соперники финишировали первыми" : "Никто не успел финишировать")
+    : me && me.done
     ? `Твоё время: ${me.time.toFixed(2)} с`
     : me && me.out ? `Выбыл на ${me.sliders + 1}-м ползунке из ${r.total}`
     : me ? `Заполнено ${me.sliders} из ${r.total} ползунков` : "") + (r.practice ? " · тренировка" : "");
@@ -1011,6 +1030,12 @@ function showResults(r) {
       const tag = document.createElement("span");
       tag.className = "tag-bot";
       tag.textContent = "бот";
+      name.appendChild(tag);
+    }
+    if (r.teams && me) {
+      const tag = document.createElement("span");
+      tag.className = "tag-bot";
+      tag.textContent = x.team === me.team ? "твоя команда" : "соперники";
       name.appendChild(tag);
     }
 

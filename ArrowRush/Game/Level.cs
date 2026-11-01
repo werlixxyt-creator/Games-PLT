@@ -24,13 +24,16 @@ public enum GameMode
     Blind = 3,
     /// <summary>После нескольких ошибок игрок выбывает (зато без пауз за ошибку).</summary>
     Hardcore = 4,
+    /// <summary>Две команды по двое: побеждает команда того, кто финишировал первым.</summary>
+    Teams = 5,
 }
 
 /// <summary>
 /// Правила режима. Mirror — правильная стрелка противоположна нарисованной. Blind — клиент прячет следующие стрелки.
 /// Lives &gt; 0 — столько ошибок можно сделать до выбывания (и пауз за ошибку нет).
+/// Teams — игроки делятся на две команды, матч заканчивается на первом финише.
 /// </summary>
-public sealed record ModeRules(string Wire, bool Mirror = false, bool Blind = false, int Lives = 0);
+public sealed record ModeRules(string Wire, bool Mirror = false, bool Blind = false, int Lives = 0, bool Teams = false);
 
 public static class GameModes
 {
@@ -40,6 +43,7 @@ public static class GameModes
         [GameMode.Mirror] = new("mirror", Mirror: true),
         [GameMode.Blind] = new("blind", Blind: true),
         [GameMode.Hardcore] = new("hardcore", Lives: GameRules.HardcoreLives),
+        [GameMode.Teams] = new("teams", Teams: true),
     };
 
     public static ModeRules Rules(this GameMode mode) => All[mode];
