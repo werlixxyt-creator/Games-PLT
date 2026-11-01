@@ -12,8 +12,8 @@ public static class GameRules
     // Матчмейкинг
     public const int MinPlayers = 2;
     public const int MaxPlayers = 4;
-    /// <summary>«2 на 2»: команд две, в матче всегда столько игроков; пустые места занимают боты.</summary>
-    public const int TeamSize = 2;
+    /// <summary>Сколько команд в командных режимах; их размер задан в правилах режима.</summary>
+    public const int TeamCount = 2;
     /// <summary>Сколько ждать ещё игроков, когда в очереди уже есть двое.</summary>
     public const double GatherSeconds = 4;
     /// <summary>Через сколько секунд одиночке подставляется бот.</summary>

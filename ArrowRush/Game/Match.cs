@@ -18,7 +18,7 @@ public sealed class Player
     public string? UserId { get; init; }
     /// <summary>Скин ползунков — его видят и соперники.</summary>
     public string Skin { get; init; } = "classic";
-    /// <summary>«2 на 2»: номер команды, 0 или 1. В остальных режимах -1.</summary>
+    /// <summary>Командные режимы: номер команды, 0 или 1. В остальных режимах -1.</summary>
     public int Team { get; init; } = -1;
     public bool IsBot => ConnectionId is null;
 
@@ -74,7 +74,7 @@ public sealed class Match
         _rnd = rnd;
         _rules = mode.Rules();
         _diff = difficulty.Rules();
-        Level = LevelGenerator.Generate(fast, _diff, rnd);
+        Level = LevelGenerator.Generate(fast, _diff, rnd, _rules.LevelScale);
     }
 
     public string Id { get; }
@@ -294,7 +294,7 @@ public sealed class Match
         else if (Teams && _firstFinishAt.HasValue) Finish("team_finished");
         else if (everyoneDone) Finish("all_finished");
         else if (_firstFinishAt is { } first && GameTime - first >= GameRules.AfterFirstFinishSeconds) Finish("time_after_winner");
-        else if (GameTime >= GameRules.MatchTimeLimitSeconds) Finish("time_limit");
+        else if (GameTime >= GameRules.MatchTimeLimitSeconds * _rules.LevelScale) Finish("time_limit");
     }
 
     private void Finish(string reason)
@@ -359,7 +359,7 @@ public sealed class Match
         }),
     };
 
-    /// <summary>Победил ли игрок: в «2 на 2» — вся команда первого финишировавшего, кроме вышедших, иначе — только он сам.</summary>
+    /// <summary>Победил ли игрок: в командных режимах — вся команда первого финишировавшего, кроме вышедших, иначе — только он сам.</summary>
     public bool Won(Player p) => Teams ? p.Team == _winningTeam && !p.Left : p.Done && p.Place == 1;
 
     /// <summary>Итоговый порядок: победители, финишировавшие по месту, потом по прогрессу, за ними выбывшие, вышедшие — в конце.</summary>

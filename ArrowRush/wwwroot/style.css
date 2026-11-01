@@ -1219,6 +1219,15 @@ h3 {
   font: 900 12px var(--font-display);
   color: var(--outline);
 }
+/* «5 на 5»: девять полос — без подписей, узкими рядами по пять */
+#screen-game.crowd .opponents { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+#screen-game.crowd .opp { grid-template-columns: 1fr; gap: 2px; padding: 3px 8px; }
+#screen-game.crowd .opp.mate + .opp:not(.mate) { grid-column-start: 1; } /* соперники — со следующего ряда */
+#screen-game.crowd .opp .track-name { font-size: 11px; gap: 4px; }
+#screen-game.crowd .opp .tag-bot { display: none; }
+#screen-game.crowd .opp-bar { height: 8px; border-width: 1px; }
+#screen-game.crowd .opp-bar span { display: none; }
+#screen-game.crowd .need { bottom: 100px; }
 .opp.mate .opp-bar i { background: #2fd6a8; } /* как MATE_COLOR в app.js: напарник на траектории того же цвета */
 .opp-bar.wrong { border-color: var(--bad); }
 .opp.left { opacity: .45; filter: grayscale(.8); }

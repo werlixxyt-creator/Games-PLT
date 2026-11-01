@@ -709,7 +709,8 @@ const course = (() => {
   /** Напарник летит по той же траектории со своим прогрессом; ушёл за край экрана — метка у края. */
   function drawMates(mates, dt) {
     const n = map.segs.length;
-    const edgeL = camX - viewW * PLAYER_AT + 54, edgeR = camX + viewW * (1 - PLAYER_AT) - 54;
+    const edgeL = camX - viewW * PLAYER_AT + 76, edgeR = camX + viewW * (1 - PLAYER_AT) - 76;
+    const stacked = { left: 0, right: 0 }; // метки у края идут столбиком, чтобы не накладывались
     ctx.font = "800 15px Nunito, sans-serif";
     ctx.textAlign = "center";
     for (const m of mates) {
@@ -725,8 +726,9 @@ const course = (() => {
       trace(Math.max(0, pos - (opts.fast ? 8 : 3)), pos);
       ctx.stroke();
 
-      const x = clamp(p.x, edgeL, edgeR), y = clamp(p.y, camY - 300, camY + 300);
+      const x = clamp(p.x, edgeL, edgeR);
       const inside = x === p.x;
+      const y = inside ? p.y : camY - 170 + stacked[p.x < x ? "left" : "right"]++ * 76;
       drawHero(ctx, "circle", x, y, p.a, inside ? 0.8 : 0.6, m.color);
       if (!inside) {
         // треугольник показывает, в какую сторону ушёл напарник

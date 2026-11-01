@@ -101,7 +101,7 @@ public static class AccountEndpoints
             {
                 var duels = g.Select(p => p.Mode.Rules().Teams
                     // команды: победители обошли обоих соперников; если никто не финишировал, счёт не меняется
-                    ? (Kills: p.Won ? GameRules.TeamSize : 0, Deaths: p.AnyoneWon && !p.Won ? GameRules.TeamSize : 0)
+                    ? (Kills: p.Won ? p.Mode.Rules().TeamSize : 0, Deaths: p.AnyoneWon && !p.Won ? p.Mode.Rules().TeamSize : 0)
                     : (Kills: p.Players - p.Place, Deaths: p.Place - 1)).ToList();
                 return new ModeStats(
                     g.Count(),

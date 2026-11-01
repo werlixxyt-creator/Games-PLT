@@ -14,7 +14,8 @@ const MODES = {
   mirror: { name: "Зеркало", icon: "mirror", color: "var(--a0)", desc: "Жми стрелку, противоположную нарисованной: ← значит →, ↑ значит ↓." },
   blind: { name: "Вслепую", icon: "eye", color: "var(--a3)", desc: "Видна только текущая стрелка, следующие спрятаны." },
   hardcore: { name: "Хардкор", icon: "heart", color: "var(--bad)", desc: "Без пауз за ошибку, но три ошибки — и ты выбыл." },
-  teams: { name: "2 на 2", icon: "team", color: "var(--a2)", desc: "Две команды по двое: чей игрок финишировал первым, та команда и победила." },
+  teams: { name: "2 на 2", icon: "team", color: "var(--a2)", seats: 4, desc: "Две команды по двое: чей игрок финишировал первым, та команда и победила." },
+  teams5: { name: "5 на 5", icon: "team", color: "var(--gold)", seats: 10, desc: "Две команды по пять человек, уровень в 4 раза длиннее. Чей игрок финишировал первым, та команда и победила." },
 };
 // темп выбирается для любого режима
 const PACES = {
@@ -422,6 +423,7 @@ const STAT_EXTRA = {
   blind: (s) => [[s.finishes, "финишей"], [s.sliders, "ползунков"]],
   hardcore: (s) => [[s.finishes, "дошёл до конца"], [s.games - s.finishes, "не дошёл"]],
   teams: (s) => [[s.carries, "финишировал первым"], [s.wins - s.carries, "вытащил напарник"]],
+  teams5: (s) => [[s.carries, "финишировал первым"], [s.wins - s.carries, "вытащил напарник"]],
 };
 
 /** К/Д: сколько соперников обошёл на одного, кто обошёл тебя. */
@@ -911,8 +913,8 @@ function updateSearch() {
   $("search-info").textContent = `В очереди: ${search.inQueue}`;
 
   const botIn = Math.max(0, Math.ceil(search.botAfter - sec));
-  if (gameMode === "teams") {
-    $("search-info").textContent = `В очереди: ${search.inQueue} из 4`;
+  if (MODES[gameMode].seats) {
+    $("search-info").textContent = `В очереди: ${search.inQueue} из ${MODES[gameMode].seats}`;
     $("search-bot").textContent = botIn > 0 ? `Через ${botIn} с свободные места займут боты` : "Подключаем ботов…";
     return;
   }
@@ -1006,6 +1008,8 @@ function startMatch(d) {
   // соперники
   const opps = $("opponents");
   opps.innerHTML = "";
+  // соперников много — плотная панель: в один ряд напарники, в другой соперники
+  $("screen-game").classList.toggle("crowd", d.players.length > 4);
   // напарник — первым: его полоса другого цвета
   const isMate = (p) => d.teams && p.team === me.team;
   for (const p of d.players.filter((p) => p.slot !== d.you).sort((a, b) => isMate(b) - isMate(a))) {

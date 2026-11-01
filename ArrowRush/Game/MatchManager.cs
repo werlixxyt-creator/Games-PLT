@@ -13,7 +13,9 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
     private sealed record QueuedPlayer(string ConnectionId, string UserId, string Name, string Skin, GameMode Mode, bool Fast, Difficulty Difficulty, double JoinedAt);
     private sealed record Outgoing(IReadOnlyList<string> To, string Method, object Payload);
 
-    private static readonly string[] BotNames = ["Бот Шустрик", "Бот Ракета", "Бот Стрелок"];
+    // в «5 на 5» ботов может понадобиться девять
+    private static readonly string[] BotNames =
+        ["Бот Шустрик", "Бот Ракета", "Бот Стрелок", "Бот Молния", "Бот Турбо", "Бот Искра", "Бот Вихрь", "Бот Комета", "Бот Дротик"];
 
     private readonly object _lock = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -136,9 +138,9 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
                 var queue = _queue.Where(q => q.Mode == mode && q.Fast == fast && q.Difficulty == difficulty).ToList();
                 List<QueuedPlayer> group;
 
-                if (queue.Count >= GameRules.MaxPlayers)
+                if (queue.Count >= mode.Rules().Seats)
                 {
-                    group = queue.Take(GameRules.MaxPlayers).ToList();
+                    group = queue.Take(mode.Rules().Seats).ToList();
                 }
                 else if (mode.Rules().Teams)
                 {
@@ -173,7 +175,7 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
         var match = new Match(Guid.NewGuid().ToString("N")[..8], mode, fast, difficulty, new Random(_rnd.Next()), practice);
 
         // чётные места — одна команда, нечётные — другая: двое людей окажутся друг против друга
-        int TeamOf(int seat) => match.Teams ? seat % GameRules.TeamSize : -1;
+        int TeamOf(int seat) => match.Teams ? seat % GameRules.TeamCount : -1;
 
         var slot = 0;
         foreach (var q in group)
@@ -184,7 +186,7 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
         }
 
         // одиночке — бот, чтобы не ждать вечно; в командах боты занимают все пустые места
-        var seats = match.Teams ? GameRules.TeamSize * 2 : GameRules.MinPlayers;
+        var seats = match.Teams ? mode.Rules().Seats : GameRules.MinPlayers;
         var botNames = BotNames.OrderBy(_ => _rnd.Next()).ToList();
         for (var bot = 0; match.Players.Count < seats; bot++)
         {

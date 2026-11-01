@@ -14,7 +14,7 @@ namespace ArrowRush.Game;
 [Authorize]
 public sealed class GameHub(MatchManager manager, AppDb db) : Hub
 {
-    /// <param name="mode">"classic", "mirror", "blind", "hardcore" или "teams".</param>
+    /// <param name="mode">"classic", "mirror", "blind", "hardcore", "teams" или "teams5".</param>
     /// <param name="fast">Быстрый темп: ползунок — одно нажатие; иначе стрелку надо держать.</param>
     /// <param name="difficulty">"easy", "normal" или "hard".</param>
     /// <param name="practice">true — сразу матч с ботом, не в статистику.</param>

@@ -26,14 +26,23 @@ public enum GameMode
     Hardcore = 4,
     /// <summary>Две команды по двое: побеждает команда того, кто финишировал первым.</summary>
     Teams = 5,
+    /// <summary>То же, что <see cref="Teams"/>, но команды по пять человек и уровень длиннее.</summary>
+    Teams5 = 6,
 }
 
 /// <summary>
 /// Правила режима. Mirror — правильная стрелка противоположна нарисованной. Blind — клиент прячет следующие стрелки.
 /// Lives &gt; 0 — столько ошибок можно сделать до выбывания (и пауз за ошибку нет).
-/// Teams — игроки делятся на две команды, матч заканчивается на первом финише.
+/// TeamSize &gt; 0 — игроки делятся на две команды такого размера, матч заканчивается на первом финише;
+/// пустые места занимают боты. LevelScale — во сколько раз уровень длиннее обычного (и лимит времени тоже).
 /// </summary>
-public sealed record ModeRules(string Wire, bool Mirror = false, bool Blind = false, int Lives = 0, bool Teams = false);
+public sealed record ModeRules(string Wire, bool Mirror = false, bool Blind = false, int Lives = 0, int TeamSize = 0, int LevelScale = 1)
+{
+    public bool Teams => TeamSize > 0;
+
+    /// <summary>Сколько мест в матче: все команды или обычный максимум.</summary>
+    public int Seats => Teams ? TeamSize * GameRules.TeamCount : GameRules.MaxPlayers;
+}
 
 public static class GameModes
 {
@@ -43,7 +52,8 @@ public static class GameModes
         [GameMode.Mirror] = new("mirror", Mirror: true),
         [GameMode.Blind] = new("blind", Blind: true),
         [GameMode.Hardcore] = new("hardcore", Lives: GameRules.HardcoreLives),
-        [GameMode.Teams] = new("teams", Teams: true),
+        [GameMode.Teams] = new("teams", TeamSize: 2),
+        [GameMode.Teams5] = new("teams5", TeamSize: 5, LevelScale: 4),
     };
 
     public static ModeRules Rules(this GameMode mode) => All[mode];
@@ -60,11 +70,12 @@ public sealed record Slider(Arrow Arrow, double FillSeconds);
 public static class LevelGenerator
 {
     /// <param name="fast">Быстрый темп: ползунок — одно нажатие, зато их больше.</param>
-    public static Slider[] Generate(bool fast, DifficultyRules d, Random rnd)
+    /// <param name="scale">Во сколько раз уровень длиннее обычного.</param>
+    public static Slider[] Generate(bool fast, DifficultyRules d, Random rnd, int scale = 1)
     {
-        var count = fast
+        var count = scale * (fast
             ? rnd.Next(d.FastMinSliders, d.FastMaxSliders + 1)
-            : rnd.Next(d.MinSliders, d.MaxSliders + 1);
+            : rnd.Next(d.MinSliders, d.MaxSliders + 1));
         var sliders = new Slider[count];
 
         for (var i = 0; i < count; i++)
