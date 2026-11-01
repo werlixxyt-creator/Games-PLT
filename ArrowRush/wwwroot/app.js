@@ -410,29 +410,97 @@ function renderModeInfo() {
 setGameMode(gameMode);
 setPace(pace);
 
-/** Экран статистики: итоги по всем режимам и таблица «режим × темп». */
+let statTab = "all";     // открытая вкладка статистики: "all" или id режима
+
+const paceText = (s) => (s.bestRate ? `${s.bestRate.toFixed(1)}/с` : "—");
+
+// показатели, которые есть только у этой вкладки; общие (матчи, победы, %, К/Д) — у всех
+const STAT_EXTRA = {
+  all: (s) => [[profile.streak.best, "лучшая серия"], [s.sliders, "ползунков"]],
+  classic: (s) => [[s.finishes, "финишей"], [paceText(s), "лучший темп"]],
+  mirror: (s) => [[paceText(s), "лучший темп"], [s.sliders, "ползунков"]],
+  blind: (s) => [[s.finishes, "финишей"], [s.sliders, "ползунков"]],
+  hardcore: (s) => [[s.finishes, "дошёл до конца"], [s.games - s.finishes, "не дошёл"]],
+  teams: (s) => [[s.carries, "финишировал первым"], [s.wins - s.carries, "вытащил напарник"]],
+};
+
+/** К/Д: сколько соперников обошёл на одного, кто обошёл тебя. */
+function kd(s) {
+  if (!s.kills && !s.deaths) return "—";
+  return (s.deaths ? s.kills / s.deaths : s.kills).toFixed(2);
+}
+
+/** Сумма итогов по списку; лучший темп — наибольший, а не сумма. */
+function sumStats(list) {
+  const sum = { games: 0, wins: 0, sliders: 0, kills: 0, deaths: 0, finishes: 0, carries: 0, bestRate: 0 };
+  for (const s of list) {
+    for (const key of Object.keys(sum)) sum[key] = key === "bestRate" ? Math.max(sum[key], s[key]) : sum[key] + s[key];
+  }
+  return sum;
+}
+
+const modeTotal = (mode) => sumStats(Object.keys(PACES).map((p) => profile.stats[mode][p]));
+
+for (const id of ["all", ...MODE_IDS]) {
+  const tab = document.createElement("button");
+  tab.type = "button";
+  tab.className = "stat-tab";
+  tab.setAttribute("role", "tab");
+  tab.dataset.tab = id;
+  tab.textContent = id === "all" ? "Все режимы" : MODES[id].name;
+  tab.addEventListener("click", () => { statTab = id; renderStats(); });
+  $("stat-tabs").appendChild(tab);
+}
+
+/** Строка таблицы: первая колонка — подпись, в остальных уже готовый текст. */
+function statRow(table, title, color, cells) {
+  const row = document.createElement("div");
+  row.className = "mt-row";
+  row.style.setProperty("--c", color);
+  row.innerHTML = `<span class="mt-mode"><i></i>${title}</span>${cells.map((c) => `<span>${c}</span>`).join("")}`;
+  table.appendChild(row);
+}
+
+/** Экран статистики: вкладка «Все режимы» или один режим со своими показателями. */
 function renderStats() {
   if (!profile) return;
-  let games = 0, wins = 0;
-  for (const mode of MODE_IDS) for (const p of Object.keys(PACES)) {
-    games += profile.stats[mode][p].games;
-    wins += profile.stats[mode][p].wins;
+  for (const tab of document.querySelectorAll("#stat-tabs .stat-tab")) {
+    const on = tab.dataset.tab === statTab;
+    tab.classList.toggle("active", on);
+    tab.setAttribute("aria-selected", on);
   }
-  fx.countUp($("st-games"), games);
-  fx.countUp($("st-wins"), wins);
-  if (games) fx.countUp($("st-rate"), Math.round((wins / games) * 100));
-  else $("st-rate").textContent = "—";
-  fx.countUp($("st-best"), profile.streak.best);
 
+  const all = statTab === "all";
+  const s = all ? sumStats(MODE_IDS.map(modeTotal)) : modeTotal(statTab);
+  const tiles = $("stat-tiles");
+  tiles.innerHTML = "";
+  const rate = s.games ? Math.round((s.wins / s.games) * 100) : "—";
+  for (const [value, label] of [[s.games, "матчей"], [s.wins, "побед"], [rate, "% побед"], [kd(s), "К/Д"], ...STAT_EXTRA[statTab](s)]) {
+    const tile = document.createElement("div");
+    tile.className = "stat";
+    const num = document.createElement("b");
+    num.textContent = typeof value === "number" ? "0" : value;
+    const name = document.createElement("span");
+    name.textContent = label;
+    tile.append(num, name);
+    tiles.appendChild(tile);
+    if (typeof value === "number") fx.countUp(num, value);
+  }
+
+  const none = `<span class="muted">—</span>`;
   const table = $("mode-table");
-  table.innerHTML = `<div class="mt-row mt-head"><span>Режим</span><span>Обычный</span><span>Быстрый</span></div>`;
-  for (const mode of MODE_IDS) {
-    const row = document.createElement("div");
-    row.className = "mt-row";
-    row.style.setProperty("--c", MODES[mode].color);
-    const cell = (s) => s.games ? `<b>${s.wins}</b> из ${s.games}` : `<span class="muted">—</span>`;
-    row.innerHTML = `<span class="mt-mode"><i></i>${MODES[mode].name}</span><span>${cell(profile.stats[mode].normal)}</span><span>${cell(profile.stats[mode].fast)}</span>`;
-    table.appendChild(row);
+  if (all) {
+    table.innerHTML = `<div class="mt-row mt-head"><span>Режим</span><span>Обычный</span><span>Быстрый</span><span>К/Д</span></div>`;
+    const cell = (x) => (x.games ? `<b>${x.wins}</b> из ${x.games}` : none);
+    for (const mode of MODE_IDS) {
+      statRow(table, MODES[mode].name, MODES[mode].color, [cell(profile.stats[mode].normal), cell(profile.stats[mode].fast), `<b>${kd(modeTotal(mode))}</b>`]);
+    }
+  } else {
+    table.innerHTML = `<div class="mt-row mt-head"><span>Темп</span><span>Матчи</span><span>Победы</span><span>К/Д</span></div>`;
+    for (const p of Object.keys(PACES)) {
+      const x = profile.stats[statTab][p];
+      statRow(table, PACES[p].name, MODES[statTab].color, x.games ? [`<b>${x.games}</b>`, `<b>${x.wins}</b>`, `<b>${kd(x)}</b>`] : [none, none, none]);
+    }
   }
   renderModeInfo();
 }
@@ -515,6 +583,7 @@ $("rh-file").addEventListener("change", (e) => {
 $("btn-stats").addEventListener("click", () => {
   show("stats");
   renderStats();
+  refreshProfile(); // только что сыгранный матч мог записаться уже после возврата в меню
 });
 $("btn-stats-back").addEventListener("click", () => show("menu"));
 

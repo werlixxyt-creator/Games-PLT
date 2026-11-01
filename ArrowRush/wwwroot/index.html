@@ -143,12 +143,9 @@
       </div>
       <h2>Статистика</h2>
 
-      <div class="stats">
-        <div class="stat"><b id="st-games">0</b><span>матчей</span></div>
-        <div class="stat"><b id="st-wins">0</b><span>побед</span></div>
-        <div class="stat"><b id="st-rate">—</b><span>% побед</span></div>
-        <div class="stat"><b id="st-best">0</b><span>лучшая серия</span></div>
-      </div>
+      <!-- вкладки, плитки и таблицу строит app.js: у каждого режима свои показатели -->
+      <div id="stat-tabs" class="stat-tabs" role="tablist" aria-label="Режим"></div>
+      <div id="stat-tiles" class="stats"></div>
 
       <div id="mode-table" class="mode-table glass"></div>
 

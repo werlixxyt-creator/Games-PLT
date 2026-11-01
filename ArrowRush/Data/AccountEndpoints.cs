@@ -19,6 +19,13 @@ public static class AccountEndpoints
     public sealed record Credentials(string? UserName, string? Password);
     public sealed record SkinChoice(string? Slot, string? Id);
 
+    /// <summary>
+    /// Итоги одного режима и темпа. Kills и Deaths — как в К/Д: сколько соперников игрок обошёл и сколько обошли его.
+    /// Finishes — сколько раз дошёл до конца, Carries — сколько побед принёс своим финишем,
+    /// BestRate — лучший темп на дошедшем до конца уровне, ползунков в секунду.
+    /// </summary>
+    public sealed record ModeStats(int Games, int Wins, int Sliders, int Kills, int Deaths, int Finishes, int Carries, double BestRate);
+
     public static void MapAccount(this WebApplication app)
     {
         var api = app.MapGroup("/api/account");
@@ -74,17 +81,38 @@ public static class AccountEndpoints
 
         var mine = db.MatchParticipants.Where(p => p.UserId == userId);
 
-        var byMode = await mine
-            .GroupBy(p => new { p.Match.Mode, p.Match.Fast })
-            .Select(g => new
+        var played = await mine
+            .Select(p => new
             {
-                g.Key.Mode,
-                g.Key.Fast,
-                Games = g.Count(),
-                Wins = g.Count(p => p.Won),
-                Sliders = g.Sum(p => p.Sliders),
+                p.Match.Mode,
+                p.Match.Fast,
+                p.Won,
+                p.Place,
+                p.FinishTime,
+                p.Sliders,
+                Players = p.Match.Participants.Count,
+                AnyoneWon = p.Match.Participants.Any(o => o.Won),
             })
             .ToListAsync();
+
+        var byMode = played
+            .GroupBy(p => (p.Mode, p.Fast))
+            .ToDictionary(g => g.Key, g =>
+            {
+                var duels = g.Select(p => p.Mode.Rules().Teams
+                    // команды: победители обошли обоих соперников; если никто не финишировал, счёт не меняется
+                    ? (Kills: p.Won ? GameRules.TeamSize : 0, Deaths: p.AnyoneWon && !p.Won ? GameRules.TeamSize : 0)
+                    : (Kills: p.Players - p.Place, Deaths: p.Place - 1)).ToList();
+                return new ModeStats(
+                    g.Count(),
+                    g.Count(p => p.Won),
+                    g.Sum(p => p.Sliders),
+                    duels.Sum(d => d.Kills),
+                    duels.Sum(d => d.Deaths),
+                    g.Count(p => p.FinishTime != null),
+                    g.Count(p => p.Won && p.Place == 1 && p.FinishTime != null),
+                    g.Where(p => p.FinishTime > 0).Select(p => p.Sliders / p.FinishTime!.Value).DefaultIfEmpty(0).Max());
+            });
 
         var recent = await mine
             .OrderByDescending(p => p.MatchRecordId)
@@ -128,14 +156,12 @@ public static class AccountEndpoints
                 [Skins.Win] = Skins.Equipped(Skins.Win, user.WinSkin),
                 [Skins.StreakSlot] = Skins.Equipped(Skins.StreakSlot, user.StreakSkin),
             },
-            // { classic: { normal: {games, wins, sliders}, fast: {...} }, mirror: {...} } — нули, если ещё не играл
+            // { classic: { normal: ModeStats, fast: ModeStats }, mirror: {...} } — нули, если ещё не играл
             stats = Enum.GetValues<GameMode>().ToDictionary(
                 m => m.ToWire(),
                 m => new[] { false, true }.ToDictionary(
                     fast => fast ? "fast" : "normal",
-                    fast => byMode.FirstOrDefault(s => s.Mode == m && s.Fast == fast) is { } s
-                        ? new { games = s.Games, wins = s.Wins, sliders = s.Sliders }
-                        : new { games = 0, wins = 0, sliders = 0 })),
+                    fast => byMode.GetValueOrDefault((m, fast)) ?? new ModeStats(0, 0, 0, 0, 0, 0, 0, 0))),
             recent = recent.Select(r => new
             {
                 mode = r.Mode.ToWire(),

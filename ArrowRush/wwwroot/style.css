@@ -643,11 +643,29 @@ h3 {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   width: min(840px, 100%);
   margin-top: 8px;
 }
+.stat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: min(840px, 100%);
+  margin: 8px 0 6px;
+}
+.stat-tab {
+  padding: 6px 14px;
+  font: 800 14px var(--font-body);
+  color: var(--outline);
+  background: var(--panel);
+  border: 2px solid var(--outline);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.stat-tab.active { background: var(--a1); }
 .stat {
   display: flex;
   flex-direction: column;
@@ -663,12 +681,14 @@ h3 {
 .stat:nth-child(2) b { color: #45a315; }
 .stat:nth-child(3) b { color: #0d93b8; }
 .stat:nth-child(4) b { color: #e0840c; }
+.stat:nth-child(5) b { color: #c2337a; }
+.stat:nth-child(6) b { color: #6a35d8; }
 .stat span { font-size: 12px; color: var(--muted); font-weight: 800; margin-top: 2px; }
 
 .mode-table { width: min(840px, 100%); margin-top: 18px; padding: 8px 18px; }
 .mt-row {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  grid-template-columns: 1.4fr 1fr 1fr .7fr;
   gap: 10px;
   padding: 11px 0;
   border-bottom: 2px dashed var(--line);
