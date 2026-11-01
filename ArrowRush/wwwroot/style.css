@@ -2027,6 +2027,13 @@ body[data-screen="rewards"] #app { max-width: none; padding-left: 24px; padding-
 /* ---------- Лобби ---------- */
 
 .lobby-btn { --face: var(--a0); }
+.lobby-btn.public { --face: var(--a3); }
+.lobbies-box { width: min(640px, 100%); margin-top: 18px; padding: 16px; }
+.lobbies-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.lobbies-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--panel-2); border-radius: 10px; }
+.lobbies-name { min-width: 0; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lobbies-info { flex: 1; font-size: 13px; color: var(--muted); }
+.fig-empty { width: 62%; aspect-ratio: 1; margin: 19% auto; border: 4px dashed rgba(255, 255, 255, .4); border-radius: 50%; }
 .invite-from { flex: 1; min-width: 0; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .invite-banner {

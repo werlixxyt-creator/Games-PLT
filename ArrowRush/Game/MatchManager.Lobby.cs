@@ -11,13 +11,13 @@ public sealed partial class MatchManager
 
     // ---------- Вызовы из GameHub ----------
 
-    public Task CreateLobbyAsync(LobbyMember me)
+    public Task CreateLobbyAsync(LobbyMember me, bool isPublic)
     {
         List<Outgoing> outbox;
         lock (_lock)
         {
             EnsureFree(me.UserId);
-            var lobby = new Lobby(Guid.NewGuid().ToString("N")[..8], me.UserId);
+            var lobby = new Lobby(Guid.NewGuid().ToString("N")[..8], me.UserId, isPublic);
             lobby.Members.Add(me);
             lobby.Write($"{me.Name} создал лобби");
             _lobbies[lobby.Id] = lobby;
@@ -33,11 +33,13 @@ public sealed partial class MatchManager
         lock (_lock)
         {
             var lobby = LeaderLobby(connectionId);
+            if (lobby.SearchingSince.HasValue) throw new HubException("Сначала отмени поиск");
             var parsed = GameModes.Parse(mode);
             var max = Math.Clamp(maxPlayers, Math.Max(LobbySettings.MinPlayers, lobby.Members.Count), LobbySettings.MaxLobbyPlayers);
-            lobby.Settings = new LobbySettings(
-                LobbySettings.Modes.Contains(parsed) ? parsed : GameMode.Classic, teams, fast,
-                Difficulties.Parse(difficulty), LobbySettings.Themes.Contains(theme) ? theme! : "auto", max);
+            lobby.Settings = lobby.Public
+                ? LobbySettings.Team(Math.Clamp(maxPlayers, Math.Max(LobbySettings.MinTeam, lobby.Members.Count), LobbySettings.MaxTeam), fast)
+                : new LobbySettings(LobbySettings.Modes.Contains(parsed) ? parsed : GameMode.Classic, teams, fast,
+                    Difficulties.Parse(difficulty), LobbySettings.Themes.Contains(theme) ? theme! : "auto", max);
             FitBots(lobby, lobby.Bots.Count);
             outbox = LobbyStates(lobby);
         }
@@ -50,6 +52,7 @@ public sealed partial class MatchManager
         lock (_lock)
         {
             var lobby = LeaderLobby(connectionId);
+            if (lobby.Public) throw new HubException("В общем лобби свободные места займут боты сами");
             FitBots(lobby, count);
             outbox = LobbyStates(lobby);
         }
@@ -78,10 +81,11 @@ public sealed partial class MatchManager
         List<Outgoing> outbox;
         lock (_lock)
         {
-            if (!_lobbies.TryGetValue(lobbyId, out var lobby) || !lobby.Invites.ContainsKey(me.UserId))
+            if (!_lobbies.TryGetValue(lobbyId, out var lobby) || !(lobby.Public || lobby.Invites.ContainsKey(me.UserId)))
                 throw new HubException("Приглашение устарело");
             EnsureFree(me.UserId);
             if (lobby.InMatch) throw new HubException("В лобби уже идёт матч, попробуй чуть позже");
+            if (lobby.SearchingSince.HasValue) throw new HubException("Эта команда уже ищет соперников");
             // место живого игрока важнее бота
             if (lobby.Total >= lobby.Settings.MaxPlayers && lobby.Bots.Count > 0) lobby.Bots.RemoveAt(lobby.Bots.Count - 1);
             if (lobby.Total >= lobby.Settings.MaxPlayers) throw new HubException("В лобби нет свободных мест");
@@ -145,12 +149,13 @@ public sealed partial class MatchManager
         lock (_lock)
         {
             var lobby = LeaderLobby(connectionId);
+            if (lobby.Public) throw new HubException("В общем лобби матч начинается через поиск соперников");
             if (lobby.InMatch) throw new HubException("Матч уже идёт");
             if (lobby.Total < LobbySettings.MinPlayers) throw new HubException("Нужно хотя бы двое: пригласи друга или поставь бота");
 
             var s = lobby.Settings;
             var match = new Match(Guid.NewGuid().ToString("N")[..8], s.Mode, s.Fast, s.Difficulty, new Random(_rnd.Next()), practice: true,
-                s.RulesFor(lobby.Total), lobby.Id, s.Theme);
+                s.RulesFor(lobby.Total), [lobby.Id], s.Theme);
 
             var slot = 0;
             int TeamOf(int seat) => match.Teams ? seat % GameRules.TeamCount : -1;
@@ -174,6 +179,41 @@ public sealed partial class MatchManager
             outbox.AddRange(LobbyStates(lobby));
         }
         return SendAsync(outbox);
+    }
+
+    /// <summary>Общее лобби: начать или отменить поиск соперников.</summary>
+    public Task SearchLobbyAsync(string connectionId, bool on)
+    {
+        List<Outgoing> outbox;
+        lock (_lock)
+        {
+            var lobby = LeaderLobby(connectionId);
+            if (!lobby.Public) throw new HubException("Поиск есть только в общем лобби");
+            if (lobby.InMatch) throw new HubException("Матч уже идёт");
+            lobby.SearchingSince = on ? Now : null;
+            lobby.Write(on ? "Ищем соперников" : "Поиск отменён");
+            outbox = LobbyStates(lobby);
+        }
+        return SendAsync(outbox);
+    }
+
+    /// <summary>Открытые общие лобби: в них можно войти без приглашения.</summary>
+    public object PublicLobbies()
+    {
+        lock (_lock)
+        {
+            return _lobbies.Values
+                .Where(l => l.Public && !l.InMatch && !l.SearchingSince.HasValue && l.Members.Count < l.Settings.MaxPlayers)
+                .Select(l => new
+                {
+                    id = l.Id,
+                    leader = l.Members.First(m => m.UserId == l.LeaderId).Name,
+                    size = l.Settings.MaxPlayers,
+                    players = l.Members.Count,
+                    fast = l.Settings.Fast,
+                })
+                .ToList();
+        }
     }
 
     /// <summary>Приглашения игрока: для кнопки друзей после подключения.</summary>
@@ -201,6 +241,61 @@ public sealed partial class MatchManager
         return lobby;
     }
 
+    /// <summary>Сводит команды одного формата; кто ждёт слишком долго, играет против ботов.</summary>
+    private void RunLobbySearch(List<Outgoing> outbox)
+    {
+        var waiting = _lobbies.Values.Where(l => l.SearchingSince.HasValue).OrderBy(l => l.SearchingSince).ToList();
+        while (waiting.Count > 0)
+        {
+            var first = waiting[0];
+            waiting.RemoveAt(0);
+            var rival = waiting.FirstOrDefault(l => l.Settings.MaxPlayers == first.Settings.MaxPlayers && l.Settings.Fast == first.Settings.Fast);
+            if (rival is not null) waiting.Remove(rival);
+            else if (Now - first.SearchingSince < GameRules.BotAfterSeconds) continue;
+            StartTeamMatch(first, rival, outbox);
+        }
+    }
+
+    /// <summary>Матч общих лобби: команда на команду, пустые места — боты.</summary>
+    private void StartTeamMatch(Lobby home, Lobby? away, List<Outgoing> outbox)
+    {
+        var s = home.Settings;
+        var lobbies = away is null ? new List<Lobby> { home } : [home, away];
+        var match = new Match(Guid.NewGuid().ToString("N")[..8], s.Mode, s.Fast, s.Difficulty, new Random(_rnd.Next()), practice: true,
+            s.Mode.Rules() with { TeamSize = s.MaxPlayers }, lobbies.Select(l => l.Id).ToList(), s.Theme);
+
+        var slot = 0;
+        for (var team = 0; team < GameRules.TeamCount; team++)
+        {
+            var members = team < lobbies.Count ? lobbies[team].Members : [];
+            foreach (var m in members)
+            {
+                match.Players.Add(new Player { Slot = slot++, Name = m.Name, ConnectionId = m.ConnectionId, UserId = m.UserId, Skin = m.Skin, Team = team });
+                _matchByConnection[m.ConnectionId] = match;
+            }
+            for (var i = members.Count; i < s.MaxPlayers; i++)
+            {
+                var name = FreeBotName(match.Players.Select(p => p.Name).ToHashSet());
+                match.Players.Add(new Player { Slot = slot++, Name = name, Skin = Skins.SliderIds[_rnd.Next(Skins.SliderIds.Length)], Team = team });
+            }
+        }
+
+        _matches.Add(match);
+        foreach (var p in match.Players.Where(p => !p.IsBot))
+            outbox.Add(new Outgoing([p.ConnectionId!], "matchStart", match.StartPayload(p.Slot)));
+        foreach (var lobby in lobbies)
+        {
+            lobby.SearchingSince = null;
+            lobby.InMatch = true;
+            lobby.Write(away is null ? "Соперников нет, играем против ботов" : "Соперники найдены");
+            outbox.AddRange(LobbyStates(lobby));
+        }
+    }
+
+    private static string FreeBotName(HashSet<string> taken) =>
+        BotNames.FirstOrDefault(n => !taken.Contains(n))
+        ?? Enumerable.Range(1, LobbySettings.MaxLobbyPlayers).Select(i => $"Бот №{i}").First(n => !taken.Contains(n));
+
     /// <summary>Подгоняет число ботов под запрошенное и свободные места.</summary>
     private void FitBots(Lobby lobby, int count)
     {
@@ -210,9 +305,7 @@ public sealed partial class MatchManager
         var heroes = Skins.All.Where(s => s.Slot == Skins.Hero).Select(s => s.Id).ToArray();
         while (lobby.Bots.Count < wanted)
         {
-            var taken = lobby.Bots.Select(b => b.Name).ToHashSet();
-            var name = BotNames.FirstOrDefault(n => !taken.Contains(n))
-                ?? Enumerable.Range(1, LobbySettings.MaxLobbyPlayers).Select(i => $"Бот №{i}").First(n => !taken.Contains(n));
+            var name = FreeBotName(lobby.Bots.Select(b => b.Name).ToHashSet());
             lobby.Bots.Add(new LobbyBot(name, Skins.SliderIds[_rnd.Next(Skins.SliderIds.Length)], heroes[_rnd.Next(heroes.Length)],
                 AccountEndpoints.AvatarColors[_rnd.Next(AccountEndpoints.AvatarColors.Length)]));
         }
@@ -222,6 +315,7 @@ public sealed partial class MatchManager
     {
         lobby.Members.Remove(member);
         _lobbyByConnection.Remove(member.ConnectionId);
+        lobby.SearchingSince = null; // команда изменилась
 
         if (lobby.Members.Count == 0)
         {
@@ -249,9 +343,12 @@ public sealed partial class MatchManager
     /// <summary>Матч лобби закончился: игроки могут собираться снова.</summary>
     private void LobbyMatchEnded(Match match, List<Outgoing> outbox)
     {
-        if (match.LobbyId is null || !_lobbies.TryGetValue(match.LobbyId, out var lobby)) return;
-        lobby.InMatch = false;
-        outbox.AddRange(LobbyStates(lobby));
+        foreach (var id in match.LobbyIds)
+        {
+            if (!_lobbies.TryGetValue(id, out var lobby)) continue;
+            lobby.InMatch = false;
+            outbox.AddRange(LobbyStates(lobby));
+        }
     }
 
     /// <summary>Каждому участнику своё состояние: в нём отмечено, кто он и лидер ли.</summary>
@@ -262,6 +359,8 @@ public sealed partial class MatchManager
     private static object LobbyPayload(Lobby lobby, LobbyMember me) => new
     {
         id = lobby.Id,
+        isPublic = lobby.Public,
+        searching = lobby.SearchingSince.HasValue,
         leader = me.UserId == lobby.LeaderId,
         inMatch = lobby.InMatch,
         total = lobby.Total,

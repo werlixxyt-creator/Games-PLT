@@ -119,6 +119,7 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
                 outbox = [];
                 finished = [];
                 RunMatchmaking(outbox);
+                RunLobbySearch(outbox);
                 TickMatches(dt, outbox, finished);
             }
 

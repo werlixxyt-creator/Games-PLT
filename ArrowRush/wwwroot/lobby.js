@@ -1,6 +1,7 @@
 "use strict";
 
-// Лобби: лидер настраивает матч, зовёт друзей и ставит ботов, скины игроков парят рядами над полом.
+// Лобби: приватное — лидер настраивает матч, зовёт друзей и ставит ботов; общее — команда 2–5 игроков,
+// в неё можно войти из списка, и она ищет соперников. Скины игроков парят рядами над полом.
 // Всё состояние присылает сервер (MatchManager.Lobby.cs), здесь только показ и вызовы хаба.
 // Приглашения — вывеска сверху на несколько секунд и список в панели друзей.
 const lobby = (() => {
@@ -22,6 +23,8 @@ const lobby = (() => {
   const FORMATS = [[false, "Все против всех"], [true, "Команды"]];
   const MODS = [["classic", "Классика"], ["mirror", "Зеркало"], ["blind", "Вслепую"], ["hardcore", "Хардкор"]];
   const PACES = [[false, "Обычная"], [true, "Быстрая"]];
+  const SIZES = [[2, "2 на 2"], [3, "3 на 3"], [4, "4 на 4"], [5, "5 на 5"]];
+  const LIST_MS = 3000; // как часто обновляется список общих лобби
   const DIFFS = [["easy", "Лёгкая"], ["normal", "Нормальная"], ["hard", "Сложная"]];
 
   let o = null;       // { conn, show, screen — текущий экран, onChange — лидерство или участие изменились }
@@ -29,6 +32,7 @@ const lobby = (() => {
   let invites = [];   // [{ id, from, total, max }]
   let bannerFor = null;
   let bannerTimer = 0;
+  let searchStart = 0;  // когда началось ожидание соперников, performance.now
 
   /** Вызов хаба; текст HubException показывается в строке el. */
   async function call(el, method, ...args) {
@@ -57,7 +61,7 @@ const lobby = (() => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "lobby-chip" + (key === value ? " on" : "");
-      b.disabled = !cur.leader || cur.inMatch;
+      b.disabled = !cur.leader || cur.inMatch || cur.searching;
       if (swatch) {
         const dot = document.createElement("i");
         dot.style.background = swatch;
@@ -70,7 +74,9 @@ const lobby = (() => {
   }
 
   function renderSettings() {
-    const s = cur.settings, locked = !cur.leader || cur.inMatch;
+    const s = cur.settings, locked = !cur.leader || cur.inMatch || cur.searching;
+    for (const group of document.querySelectorAll("#screen-lobby [data-kind]")) group.hidden = (group.dataset.kind === "public") !== cur.isPublic;
+    chips("lobby-size", SIZES, s.maxPlayers, (maxPlayers) => push({ maxPlayers }));
     chips("lobby-format", FORMATS, s.teams, (teams) => push({ teams }));
     chips("lobby-mod", MODS, s.mode, (mode) => push({ mode }));
     chips("lobby-pace", PACES, s.fast, (fast) => push({ fast }));
@@ -138,8 +144,18 @@ const lobby = (() => {
     return fig;
   }
 
+  /** Свободное место в команде. */
+  function emptySeat(size) {
+    const seat = document.createElement("div");
+    seat.className = "fig";
+    seat.style.setProperty("--h", `${size}px`);
+    seat.innerHTML = `<div class="fig-name">Свободно</div><div class="fig-float"><div class="fig-empty"></div></div><div class="fig-shadow"></div>`;
+    return seat;
+  }
+
   function renderStage() {
-    const { players } = cur;
+    // в общем лобби видны и свободные места команды
+    const players = cur.isPublic ? [...cur.players, ...Array(cur.settings.maxPlayers - cur.players.length).fill(null)] : cur.players;
     const stage = $("lobby-stage");
     const { perRow } = ROWS.find((r) => players.length <= r.upTo);
     const rows = [];
@@ -152,7 +168,7 @@ const lobby = (() => {
       el.className = "fig-row";
       el.style.zIndex = rows.length - i;
       el.style.setProperty("--h", `${size * (1 - i * 0.05)}px`); // толщина пола по размеру скинов
-      el.append(...row.map((p) => figure(p, size * (1 - i * 0.05))));
+      el.append(...row.map((p) => (p ? figure(p, size * (1 - i * 0.05)) : emptySeat(size))));
       return el;
     }).reverse());
   }
@@ -160,7 +176,7 @@ const lobby = (() => {
   function render() {
     renderSettings();
     renderStage();
-    $("lobby-count").textContent = `Игроков: ${cur.total} из ${cur.settings.maxPlayers}`;
+    renderCount();
     $("lobby-log").replaceChildren(...cur.log.map((line) => {
       const el = document.createElement("div");
       el.textContent = line;
@@ -168,11 +184,19 @@ const lobby = (() => {
     }));
     $("btn-lobby-start").hidden = !cur.leader;
     $("btn-lobby-start").disabled = cur.inMatch;
+    $("btn-lobby-start").textContent = !cur.isPublic ? "Начать матч" : cur.searching ? "Отменить поиск" : "Найти соперников";
+  }
+
+  function renderCount() {
+    const seconds = Math.floor((performance.now() - searchStart) / 1000);
+    $("lobby-count").textContent = cur.searching ? `Ищем соперников… ${seconds} с`
+      : `${cur.isPublic ? "Команда" : "Игроков"}: ${cur.total} из ${cur.settings.maxPlayers}`;
   }
 
   function onState(state) {
     const was = cur;
     cur = state;
+    if (cur && cur.searching && !(was && was.searching)) searchStart = performance.now();
     if (!was || !cur || was.leader !== cur.leader) o.onChange();
     if (cur) {
       if (!was && o.screen() !== "game") o.show("lobby"); // размер скинов считается по видимой сцене
@@ -211,6 +235,41 @@ const lobby = (() => {
   }
 
   const accept = (id, el) => call(el, "JoinLobby", id);
+
+  // ---------- Список общих лобби ----------
+
+  async function loadPublic() {
+    let list;
+    try {
+      list = await o.conn.invoke("PublicLobbies");
+    } catch {
+      return;
+    }
+    $("lobbies-empty").hidden = list.length > 0;
+    $("lobbies-list").replaceChildren(...list.map((l) => {
+      const li = document.createElement("li");
+      li.className = "lobbies-row";
+      const name = document.createElement("span");
+      name.className = "lobbies-name";
+      name.textContent = l.leader;
+      const info = document.createElement("span");
+      info.className = "lobbies-info";
+      info.textContent = `${l.size} на ${l.size} · ${l.fast ? "быстрый темп" : "обычный темп"} · ${l.players} из ${l.size}`;
+      const join = document.createElement("button");
+      join.type = "button";
+      join.className = "btn primary small";
+      join.textContent = "Войти";
+      join.addEventListener("click", () => call($("lobbies-error"), "JoinLobby", l.id));
+      li.append(name, info, join);
+      return li;
+    }));
+  }
+
+  function openPublic() {
+    $("lobbies-error").textContent = "";
+    o.show("lobbies");
+    loadPublic();
+  }
   const decline = (id) => o.conn.invoke("DeclineInvite", id).catch(() => {});
 
   function init(options) {
@@ -219,11 +278,16 @@ const lobby = (() => {
     o.conn.on("lobbyInvites", onInvites);
     addEventListener("resize", () => { if (cur && o.screen() === "lobby") renderStage(); });
 
-    $("btn-lobby-create").addEventListener("click", () => call($("lobby-create-error"), "CreateLobby"));
+    $("btn-lobby-create").addEventListener("click", () => call($("lobby-create-error"), "CreateLobby", false));
+    $("btn-lobby-public").addEventListener("click", openPublic);
+    $("btn-lobbies-back").addEventListener("click", () => o.show("modes"));
+    $("btn-lobbies-create").addEventListener("click", () => call($("lobbies-error"), "CreateLobby", true));
+    setInterval(() => { if (o.screen() === "lobbies") loadPublic(); }, LIST_MS);
+    setInterval(() => { if (cur && cur.searching) renderCount(); }, 1000);
     $("btn-lobby-exit").addEventListener("click", async () => {
       await act("LeaveLobby");
     });
-    $("btn-lobby-start").addEventListener("click", () => act("StartLobby"));
+    $("btn-lobby-start").addEventListener("click", () => (cur.isPublic ? act("SearchLobby", !cur.searching) : act("StartLobby")));
     $("btn-lobby-invite").addEventListener("click", () => social.openList());
 
     const step = (id, delta) => $(id).addEventListener("click", () => push({ maxPlayers: cur.settings.maxPlayers + delta }));

@@ -148,7 +148,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#target"/></svg>Тренировка с ботом
         </button>
         <button id="btn-lobby-create" class="btn lobby-btn" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#team"/></svg>Создать лобби
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#lock"/></svg>Приватное лобби
+        </button>
+        <button id="btn-lobby-public" class="btn lobby-btn public" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#team"/></svg>Общее лобби
         </button>
         <button id="btn-rhythm" class="btn rhythm-btn">
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#note"/></svg>Свой трек: уровень под бит
@@ -209,12 +212,13 @@
       <div class="lobby-side">
         <h3>Настройки лобби</h3>
         <p id="lobby-hint" class="lobby-hint" hidden>Настройки меняет лидер</p>
-        <div class="lobby-group"><span>Режим</span><div id="lobby-format" class="lobby-chips"></div></div>
-        <div class="lobby-group"><span>Модификация</span><div id="lobby-mod" class="lobby-chips"></div></div>
+        <div class="lobby-group" data-kind="public"><span>Формат</span><div id="lobby-size" class="lobby-chips"></div></div>
+        <div class="lobby-group" data-kind="private"><span>Режим</span><div id="lobby-format" class="lobby-chips"></div></div>
+        <div class="lobby-group" data-kind="private"><span>Модификация</span><div id="lobby-mod" class="lobby-chips"></div></div>
         <div class="lobby-group"><span>Скорость игры</span><div id="lobby-pace" class="lobby-chips"></div></div>
-        <div class="lobby-group"><span>Сложность</span><div id="lobby-diff" class="lobby-chips"></div></div>
-        <div class="lobby-group"><span>Дизайн уровня</span><div id="lobby-theme" class="lobby-chips"></div></div>
-        <div class="lobby-group">
+        <div class="lobby-group" data-kind="private"><span>Сложность</span><div id="lobby-diff" class="lobby-chips"></div></div>
+        <div class="lobby-group" data-kind="private"><span>Дизайн уровня</span><div id="lobby-theme" class="lobby-chips"></div></div>
+        <div class="lobby-group" data-kind="private">
           <span>Мест в лобби</span>
           <div class="lobby-stepper">
             <button id="lobby-max-minus" type="button" aria-label="Меньше мест">−</button>
@@ -223,7 +227,8 @@
           </div>
           <input id="lobby-range" type="range" min="2" max="40" aria-label="Мест в лобби">
         </div>
-        <div class="lobby-group">
+        <p class="lobby-hint" data-kind="public">Зови друзей или жди игроков из списка. Пустые места займут боты. Если за 12 секунд другой команды не будет, сыграете против ботов.</p>
+        <div class="lobby-group" data-kind="private">
           <span>Боты</span>
           <div class="lobby-stepper">
             <button id="lobby-bots-minus" type="button" aria-label="Убрать бота">−</button>
@@ -251,6 +256,25 @@
           </button>
         </div>
         <div id="lobby-error" class="lobby-error" role="alert"></div>
+      </div>
+    </section>
+
+    <!-- СПИСОК ОБЩИХ ЛОББИ -->
+    <section id="screen-lobbies" class="screen">
+      <div class="topbar start">
+        <button id="btn-lobbies-back" class="btn ghost small">← Назад</button>
+      </div>
+      <h2>Общие лобби</h2>
+      <p class="muted">Собери команду от 2 на 2 до 5 на 5 или войди в чужую</p>
+      <button id="btn-lobbies-create" class="btn primary big">
+        <span>Создать команду</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#arrow"/></svg>
+      </button>
+      <div id="lobbies-error" class="conn bad" role="alert"></div>
+      <div class="lobbies-box glass">
+        <h3>Открытые команды</h3>
+        <ul id="lobbies-list" class="lobbies-list"></ul>
+        <p id="lobbies-empty" class="muted small">Пока никого нет. Создай свою команду.</p>
       </div>
     </section>
 

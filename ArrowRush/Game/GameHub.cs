@@ -39,7 +39,12 @@ public sealed class GameHub(MatchManager manager, AppDb db, UserManager<AppUser>
 
     // ---------- Лобби ----------
 
-    public async Task CreateLobby() => await manager.CreateLobbyAsync(await MeInLobbyAsync());
+    /// <param name="isPublic">Общее лобби: команда, в которую можно войти из списка.</param>
+    public async Task CreateLobby(bool isPublic) => await manager.CreateLobbyAsync(await MeInLobbyAsync(), isPublic);
+
+    public object PublicLobbies() => manager.PublicLobbies();
+
+    public Task SearchLobby(bool on) => manager.SearchLobbyAsync(Context.ConnectionId, on);
 
     public Task UpdateLobby(string? mode, bool teams, bool fast, string? difficulty, string? theme, int maxPlayers) =>
         manager.UpdateLobbyAsync(Context.ConnectionId, mode, teams, fast, difficulty, theme, maxPlayers);

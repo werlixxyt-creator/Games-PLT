@@ -35,7 +35,7 @@ const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
 // кайма следа персонажа по скину ползунков; цвета стрелок от скина не зависят
 const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16", ocean: "#3fb6ff", lava: "#ff6a2b", mint: "#6fffc4" };
 // экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
-const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby"]);
+const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "lobbies"]);
 // советы под витриной в меню
 const TIPS = [
   "В «Зеркале» держи стрелку, противоположную нарисованной.",
@@ -116,7 +116,7 @@ function targetOf(arrow) {
 // ---------- Экраны ----------
 
 function show(name) {
-  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "game", "rhythm", "results"]) {
+  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "lobbies", "game", "rhythm", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
   // ушли из «Своего трека» или из матча — музыку останавливаем (итоги сами гасят её плавно)
@@ -145,6 +145,7 @@ function setPlayable(ok) {
   $("btn-find").disabled = !ok;
   $("btn-practice").disabled = !ok;
   $("btn-lobby-create").disabled = !ok;
+  $("btn-lobby-public").disabled = !ok;
 }
 
 // ---------- Подключение к серверу ----------
