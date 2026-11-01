@@ -1,8 +1,9 @@
 "use strict";
 
 // Музыка игры, синтезируется прямо в браузере (Web Audio), без файлов.
-// Матчи: энергичный электронный бит; каждый матч — своя тональность и аккорды (от id матча),
-// во время отсчёта играет вступление без бочки, на «СТАРТ!» вступает полный бит.
+// Матчи: трек с разделами, как в уровнях GD: дроп, затишье, нарастание, второй дроп.
+// У каждого матча своя тональность, аккорды и мелодия (от id матча). Отсчёт — нарастание,
+// на «СТАРТ!» сразу бьёт дроп.
 // Меню: спокойные треки по кругу. И в меню, и в матчах можно поставить свой файл игрока
 // (он хранится в браузере — IndexedDB).
 const music = (() => {
@@ -12,8 +13,11 @@ const music = (() => {
   let duck = null;      // бас и арпеджио «приседают» на каждую бочку
   let delay = null;     // эхо для арпеджио
   let noise = null;     // буфер белого шума для барабанов
+  let meter = null;     // анализатор музыки матча: по нему сцена качается в такт
+  let meterData = null;
+  let meterAvg = 0;     // средняя громкость низов — удар считается от неё
   let timer = 0;
-  let song = null;      // { bpm, root, chords, step, next, dropAt }
+  let song = null;      // { bpm, root, chords, hook, step, next, part }
   let muted = false;
   try { muted = localStorage.getItem("arrowrush.music") === "off"; } catch { /* приватный режим */ }
 
@@ -28,15 +32,36 @@ const music = (() => {
     [0, 3, 10, 5],   // i – III – VII – iv
   ];
 
+  // разделы трека в тактах; после последнего — снова по кругу
+  const FORM = [["drop", 8], ["break", 2], ["build", 2], ["drop2", 8], ["verse", 4], ["build", 2]];
+  const FORM_BARS = FORM.reduce((sum, p) => sum + p[1], 0);
+  // ритмы мелодии на такт: 1 — нота
+  const HOOK_RHYTHMS = [
+    [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0],
+    [1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+    [1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0],
+  ];
+  const PENTATONIC = [0, 3, 5, 7, 10, 12, 15, 17, 19];
+
   /** AudioContext создаём по нажатию игрока — иначе браузер не даст играть звук. */
   function unlock() {
     if (!ctx) {
       ctx = new AudioContext();
       master = ctx.createGain();
       master.gain.value = muted ? 0 : VOLUME;
-      master.connect(ctx.destination);
+      // трек матча плотный — компрессор не даёт ему перегружать выход
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -9;
+      limiter.ratio.value = 6;
+      limiter.attack.value = 0.004;
+      limiter.release.value = 0.16;
+      master.connect(limiter).connect(ctx.destination);
+      meter = ctx.createAnalyser();
+      meter.fftSize = 1024;
+      meter.smoothingTimeConstant = 0.35;
+      meterData = new Uint8Array(meter.frequencyBinCount);
 
-      noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+      noise =ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const d = noise.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 
@@ -58,12 +83,12 @@ const music = (() => {
 
   // ---------- Инструменты ----------
 
-  function kick(t) {
+  function kick(t, level = 1) {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.frequency.setValueAtTime(160, t);
     o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
-    env(g, t, 0.002, 1, 0.28);
+    env(g, t, 0.002, level, 0.28);
     o.connect(g).connect(bus);
     o.start(t);
     o.stop(t + 0.35);
@@ -86,14 +111,14 @@ const music = (() => {
     s.stop(t + decay + 0.05);
   }
 
-  function snare(t) {
-    noiseHit(t, "highpass", 1400, 0.55, 0.16);
+  function snare(t, level = 1) {
+    noiseHit(t, "highpass", 1400, 0.55 * level, 0.16);
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.type = "triangle";
     o.frequency.setValueAtTime(220, t);
     o.frequency.exponentialRampToValueAtTime(140, t + 0.08);
-    env(g, t, 0.001, 0.35, 0.09);
+    env(g, t, 0.001, 0.35 * level, 0.09);
     o.connect(g).connect(bus);
     o.start(t);
     o.stop(t + 0.12);
@@ -132,6 +157,89 @@ const music = (() => {
     o.stop(t + 0.2);
   }
 
+  /** Жирный аккорд или удар: у каждой ноты три расстроенные пилы. */
+  function supersaw(t, notes, len, cutoff, peak) {
+    const f = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    f.type = "lowpass";
+    f.frequency.setValueAtTime(cutoff, t);
+    f.frequency.exponentialRampToValueAtTime(Math.max(300, cutoff * 0.35), t + len);
+    env(g, t, 0.006, peak, len);
+    f.connect(g);
+    g.connect(duck);
+    g.connect(delay);
+    for (const midi of notes) {
+      for (const cents of [-14, 0, 14]) {
+        const o = ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.value = freq(midi);
+        o.detune.value = cents;
+        o.connect(f);
+        o.start(t);
+        o.stop(t + len + 0.05);
+      }
+    }
+  }
+
+  /** Качающийся бас дропа: фильтр открывается rate раз в секунду, снизу держит чистый синус. */
+  function wobble(t, midi, len, rate) {
+    const saw = ctx.createOscillator();
+    const square = ctx.createOscillator();
+    const sub = ctx.createOscillator();
+    const lfo = ctx.createOscillator();
+    const depth = ctx.createGain();
+    const f = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    const subGain = ctx.createGain();
+    saw.type = "sawtooth";
+    square.type = "square";
+    sub.type = "sine";
+    saw.frequency.value = freq(midi);
+    square.frequency.value = freq(midi);
+    square.detune.value = 9;
+    sub.frequency.value = freq(midi);
+    lfo.frequency.value = rate;
+    depth.gain.value = 900;
+    f.type = "lowpass";
+    f.Q.value = 8;
+    f.frequency.value = 1050;
+    env(g, t, 0.006, 0.3, len);
+    env(subGain, t, 0.006, 0.42, len);
+    lfo.connect(depth).connect(f.frequency);
+    saw.connect(f);
+    square.connect(f);
+    f.connect(g).connect(duck);
+    sub.connect(subGain).connect(duck);
+    for (const o of [saw, square, sub, lfo]) {
+      o.start(t);
+      o.stop(t + len + 0.05);
+    }
+  }
+
+  /** Мелодия: две расстроенные пилы с быстрым затуханием. */
+  function lead(t, midi, len) {
+    const f = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    f.type = "lowpass";
+    f.frequency.setValueAtTime(5200, t);
+    f.frequency.exponentialRampToValueAtTime(1500, t + len);
+    env(g, t, 0.004, 0.13, len);
+    f.connect(g);
+    g.connect(duck);
+    g.connect(delay);
+    for (const cents of [-7, 7]) {
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = freq(midi);
+      o.detune.value = cents;
+      o.connect(f);
+      o.start(t);
+      o.stop(t + len + 0.05);
+    }
+  }
+
+  const crash = (t) => noiseHit(t, "highpass", 3500, 0.5, 1.5);
+
   /** Короткий взлёт шума перед «СТАРТ!». */
   function riser(t, len) {
     const s = ctx.createBufferSource();
@@ -153,26 +261,72 @@ const music = (() => {
 
   // ---------- Секвенсор ----------
 
-  /** Одна шестнадцатая: что в ней играет, зависит от позиции в такте и от того, был ли уже «дроп». */
+  /** Какой раздел играет на шаге n: до нуля — нарастание под отсчёт. */
+  function partAt(n) {
+    if (n < 0) return { name: "intro", bar: Math.floor(n / 16), left: Math.ceil(-n / 16) };
+    let bar = Math.floor(n / 16) % FORM_BARS;
+    for (const [name, bars] of FORM) {
+      if (bar < bars) return { name, bar, left: bars - bar };
+      bar -= bars;
+    }
+    return { name: "drop", bar: 0, left: 8 };
+  }
+
+  /** Дробь малого барабана: чем ближе к концу нарастания, тем чаще и громче — но тише дропа, чтобы он ударил. */
+  function roll(t, inBar, lastBar) {
+    if (inBar % (lastBar ? 1 : 2) === 0) snare(t, (lastBar ? 0.3 : 0.14) + (inBar / 16) * 0.2);
+  }
+
+  /** Одна шестнадцатая: что в ней играет, задаёт раздел трека. */
   function playStep(t, n) {
     const s = song;
-    const inBar = n % 16;
+    const inBar = ((n % 16) + 16) % 16;
     const bar = Math.floor(n / 16);
-    const chord = s.chords[bar % 4];
-    const main = t >= s.dropAt - 0.01;
-
-    if (main) {
-      if (inBar % 4 === 0) kick(t);
-      if (inBar === 4 || inBar === 12) snare(t);
-      // каждый 4-й такт в конце — дробь малого барабана
-      if (bar % 4 === 3 && inBar >= 12) snare(t);
-      if (inBar % 4 === 2) bass(t, s.root - 12 + chord, s.stepLen * 1.6);
-    }
-    hat(t, main && inBar % 4 === 2);
-
-    // арпеджио: тоника, терция, квинта, октава аккорда, вверх-вниз
+    const chord = s.chords[((bar % 4) + 4) % 4];
+    const part = partAt(n);
+    const beatLen = s.stepLen * 4;
+    const bassNote = s.root - 12 + chord;
+    const triad = [0, 3, 7].map((d) => s.root + 12 + chord + d);
     const shape = [0, 3, 7, 12, 15, 12, 7, 3];
-    arp(t, s.root + 12 + chord + shape[n % shape.length], main);
+    const arpNote = s.root + 12 + chord + shape[((n % 8) + 8) % 8];
+    const hookNote = s.hook[((n % 32) + 32) % 32];
+    if (inBar === 0) setTimeout(() => { if (song === s) s.part = part.name; }, Math.max(0, (t - ctx.currentTime) * 1000));
+
+    if (part.name === "drop" || part.name === "drop2") {
+      const second = part.name === "drop2";
+      if (n >= 0 && part.bar === 0 && inBar === 0) crash(t);
+      if (inBar % 4 === 0) kick(t);
+      if (inBar === 14 && bar % 2 === 1) kick(t);
+      if (inBar === 4 || inBar === 12) snare(t);
+      if (part.left === 1 && inBar >= 12) snare(t);
+      hat(t, inBar % 4 === 2);
+      if (inBar % 8 === 0) wobble(t, bassNote, beatLen * 1.9, (s.bpm / 60) * (bar % 2 ? 4 : 2));
+      if ([0, 3, 6, 10, 12].includes(inBar)) supersaw(t, triad, s.stepLen * 2.2, 5200, second ? 0.13 : 0.11);
+      if (hookNote !== null) lead(t, hookNote + (second ? 12 : 0), s.stepLen * 2.4);
+      if (second) arp(t, arpNote + 12, true);
+    } else if (part.name === "verse") {
+      if (inBar === 0 || inBar === 8 || inBar === 10) kick(t);
+      if (inBar === 4 || inBar === 12) snare(t);
+      if (inBar % 4 === 2) bass(t, bassNote, s.stepLen * 1.6);
+      hat(t, inBar % 4 === 2);
+      arp(t, arpNote, true);
+      if (hookNote !== null && bar % 2 === 1) lead(t, hookNote, s.stepLen * 2);
+    } else if (part.name === "break") {
+      // затишье: бочка уходит, остаются аккорд и приглушённое арпеджио
+      if (inBar === 0) supersaw(t, triad, beatLen * 3.6, 1100, 0.11);
+      if (inBar % 4 === 2) hat(t, false);
+      arp(t, arpNote, false);
+    } else {
+      // нарастание и отсчёт: дробь, бочка четвертями, в самом конце — вдох перед дропом
+      const lastBar = part.left === 1;
+      if (inBar === 0 && part.left === (part.name === "build" ? 2 : 1)) riser(t, s.stepLen * 16 * part.left - s.stepLen * 2);
+      if (!(lastBar && inBar >= 14)) {
+        roll(t, inBar, lastBar);
+        if (inBar % (lastBar ? 2 : 4) === 0) kick(t, 0.45);
+        hat(t, false);
+        arp(t, arpNote, lastBar);
+      }
+    }
   }
 
   function schedule() {
@@ -191,6 +345,7 @@ const music = (() => {
 
     bus = ctx.createGain();
     bus.connect(master);
+    bus.connect(meter);
     if (matchId === "custom" && files.match.name) {
       // свой трек; если файл не загрузился — встроенный бит, чтобы матч не прошёл в тишине
       const out = bus;
@@ -226,7 +381,24 @@ const music = (() => {
     return true;
   }
 
-  /** Встроенный бит матча: тональность и аккорды — от seed. */
+  /** Мелодия на два такта: один из ритмов и ход по пентатонике; null — пауза. */
+  function buildHook(seed, root) {
+    let r = seed % 233280;
+    const next = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+    const hook = [];
+    let at = 4;
+    for (let bar = 0; bar < 2; bar++) {
+      const rhythm = HOOK_RHYTHMS[Math.floor(next() * HOOK_RHYTHMS.length)];
+      for (const on of rhythm) {
+        if (!on) { hook.push(null); continue; }
+        at = Math.min(PENTATONIC.length - 1, Math.max(0, at + Math.round((next() - 0.5) * 5)));
+        hook.push(root + 24 + PENTATONIC[at]);
+      }
+    }
+    return hook;
+  }
+
+  /** Встроенный трек матча: тональность, аккорды и мелодия — от seed. */
   function startBeat(seed, fast, introSeconds) {
     duck = ctx.createGain();
     duck.connect(bus);
@@ -238,23 +410,73 @@ const music = (() => {
     delay.connect(fb).connect(delay);
     delay.connect(wet).connect(bus);
 
-    const bpm = fast ? 150 : 140;
+    const bpm = fast ? 174 : 160;
     const stepLen = 60 / bpm / 4;
     delay.delayTime.value = stepLen * 3; // эхо на точку-восьмую
 
-    const now = ctx.currentTime + 0.06;
+    // шаг 0 — ровно «СТАРТ!»: отсчёт идёт отрицательными шагами
+    const dropAt = ctx.currentTime + 0.06 + introSeconds;
+    const steps = Math.floor(introSeconds / stepLen);
+    const root = 45 + (seed % 7);                     // тоника от A2 до D#3
     song = {
       bpm,
       stepLen,
-      root: 45 + (seed % 7),                          // тоника от A2 до D#3
+      root,
       chords: PROGRESSIONS[Math.floor(seed / 7) % PROGRESSIONS.length],
-      step: 0,
-      next: now,
-      dropAt: now + introSeconds,
+      hook: buildHook(seed, root),
+      step: -steps,
+      next: dropAt - steps * stepLen,
+      part: "intro",
     };
-    if (introSeconds > 0.6) riser(song.dropAt - Math.min(1.5, introSeconds), Math.min(1.5, introSeconds));
     schedule();
     timer = setInterval(schedule, 25);
+  }
+
+  /**
+   * Сила удара в музыке матча, 0..1: насколько низы сейчас громче своего среднего.
+   * Сцена качается по этому числу; работает и со своим файлом игрока. Вызывать раз в кадр.
+   */
+  function energy() {
+    if (!bus || !meter) return 0;
+    meter.getByteFrequencyData(meterData);
+    const bins = 5; // до ~230 Гц
+    let sum = 0;
+    for (let i = 0; i < bins; i++) sum += meterData[i];
+    const v = sum / bins / 255;
+    const onset = Math.max(0, v - meterAvg);
+    meterAvg += (v - meterAvg) * 0.08;
+    return Math.min(1, onset * 3.5);
+  }
+
+  /** Заполненный ползунок: нота в тональности трека, серия ползунков поднимается по гамме. */
+  function ding(i) {
+    if (!ctx || muted) return;
+    const root = song ? song.root : 45;
+    const midi = root + 24 + PENTATONIC[i % PENTATONIC.length];
+    const t = ctx.currentTime + 0.005;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "triangle";
+    o.frequency.value = freq(midi);
+    env(g, t, 0.003, 0.2, 0.16);
+    o.connect(g).connect(master);
+    o.start(t);
+    o.stop(t + 0.22);
+  }
+
+  /** Ошибка: глухой удар вниз. */
+  function miss() {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime + 0.005;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(190, t);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.16);
+    env(g, t, 0.003, 0.22, 0.18);
+    o.connect(g).connect(master);
+    o.start(t);
+    o.stop(t + 0.24);
   }
 
   /** Плавно гасим музыку матча за fade секунд. */
@@ -583,8 +805,8 @@ const music = (() => {
   }
 
   return {
-    unlock, start, stop, jingle, setMuted, tap,
-    isMuted: () => muted, isPlaying: () => !!song,
+    unlock, start, stop, jingle, setMuted, tap, energy, ding, miss,
+    isMuted: () => muted, isPlaying: () => !!song, part: () => (song ? song.part : null),
     menu, setMenuTrack, setMatchTrack, setCustomFile,
     menuTracks: MENU_TRACKS, menuTrack: () => menuId, matchTrack: () => matchId,
     customName: (kind = "menu") => files[kind].name, isMenuPlaying: () => !!menuBus,

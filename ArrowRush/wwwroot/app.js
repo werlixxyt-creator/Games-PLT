@@ -913,14 +913,22 @@ function startMatch(d) {
   $("hud-tag").textContent = modeLabel(d.mode, d.fast, d.difficulty) + (d.practice ? " · тренировка" : "");
   $("hud-tag").style.setProperty("--c", MODES[d.mode].color);
 
-  // моя дорожка
+  // моя дорожка — сцена с траекторией; траектория от id матча, у всех одна
   const me = d.players.find((p) => p.slot === d.you);
-  $("my-track").className = trackClass(me.skin);
-  const myTrack = buildTrack($("my-track"), d.level);
-  myTrack.mine = true;
-  myTrack.skin = me.skin;
-  myTrack.badge = nameRow($("my-name"), { ...me, name: me.name + " (ты)" });
-  match.tracks.set(d.you, myTrack);
+  course.start({
+    seed: parseInt(d.matchId.slice(0, 8), 16) || 1,
+    level: d.level,
+    fast: d.fast,
+    blind: d.blind,
+    mirror: d.mirror,
+    colorOf: (arrow, i) => burstColor(me.skin, arrow, i),
+  });
+  match.tracks.set(d.you, {
+    mine: true,
+    skin: me.skin,
+    idx: -1,
+    badge: nameRow($("my-name"), { ...me, name: me.name + " (ты)" }),
+  });
 
   // соперники
   const opps = $("opponents");
@@ -1027,6 +1035,21 @@ function showResults(r) {
 
 // ---------- Отрисовка (60 fps) ----------
 
+/** Своя дорожка: сцена рисует её сама, здесь — только искры и удары по событиям. */
+function trackMine(track, idx, wrong, level) {
+  if (track.idx !== idx) {
+    const prev = track.idx;
+    track.idx = idx;
+    if (prev >= 0 && idx > prev) celebrate(track, prev, idx, level);
+  }
+  if (wrong && !track.wasWrong) {
+    fx.retrigger($("stage"), "hit");
+    course.hit();
+    music.miss();
+  }
+  track.wasWrong = wrong;
+}
+
 function renderTrack(track, idx, progress, wrong, holding, level) {
   if (track.idx !== idx) {
     const prev = track.idx;
@@ -1040,10 +1063,6 @@ function renderTrack(track, idx, progress, wrong, holding, level) {
     track.idx = idx;
     if (prev >= 0 && idx > prev) celebrate(track, prev, idx, level);
   }
-
-  // только что ошибся — тряска и красная вспышка
-  if (track.mine && wrong && !track.wasWrong) fx.retrigger($("stage"), "hit");
-  track.wasWrong = wrong;
 
   if (idx >= level.length) return;
 
@@ -1060,11 +1079,13 @@ function celebrate(track, from, to, level) {
   if (track.mine) {
     const speed = match.press;
     for (let i = from; i < Math.min(to, level.length); i++) {
-      const [x, y] = fx.anchor(track.sliders[i].el.querySelector(".bar"), true);
+      const [x, y] = course.point(i);
       fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
+      course.filled(i);
+      music.ding(i);
     }
     if (finished) {
-      const [x, y] = fx.anchor(track.root);
+      const [x, y] = fx.anchor($("stage"));
       fx.arrowsFrom(x, y, 24);
       fx.confetti(70);
     }
@@ -1130,6 +1151,8 @@ function render(now) {
   $("hud-time").textContent = Math.max(0, t).toFixed(1);
 
   const speed = match.press;
+  let myPos = 0, myWrong = false, myHolding = false;
+  const ghosts = [];
 
   for (const p of st.players) {
     const track = match.tracks.get(p.slot);
@@ -1169,7 +1192,16 @@ function render(now) {
       }
     }
 
-    renderTrack(track, idx, progress, wrong, holding, level);
+    if (isMe) {
+      trackMine(track, idx, wrong, level);
+      myPos = idx >= level.length ? level.length + 1 : idx + progress;
+      myWrong = wrong;
+      myHolding = holding;
+    } else {
+      renderTrack(track, idx, progress, wrong, holding, level);
+      const who = match.players.find((o) => o.slot === p.slot);
+      if (!p.left) ghosts.push({ pos: p.idx + p.p, color: fx.colors[p.slot % 4], name: who.name, out: p.out });
+    }
 
     if (p.done || p.out) {
       track.badge.hidden = false;
@@ -1178,6 +1210,8 @@ function render(now) {
     }
     if (track.box) track.box.classList.toggle("left", p.left || p.out);
   }
+
+  course.frame(now, { pos: myPos, wrong: myWrong, holding: myHolding, ghosts, energy: music.energy(), part: music.part() });
 
   // подсказки для меня
   const mine = st.players.find((p) => p.slot === match.you);
@@ -1207,7 +1241,7 @@ function render(now) {
       need.textContent = `Мимо! Осталось ошибок: ${Math.max(0, match.lives - pred.miss)}`;
       need.classList.add("bad");
     } else {
-      need.textContent = `Жми ${ARROW_CHAR[level[myIdx].arrow]}`;
+      need.textContent = match.mirror ? "Жми противоположную стрелку" : `Жми ${ARROW_CHAR[level[myIdx].arrow]}`;
     }
   } else {
     const target = 1 << targetOf(level[mine.idx].arrow);
