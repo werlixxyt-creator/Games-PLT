@@ -88,7 +88,7 @@ Data/AccountEndpoints.cs — регистрация, вход, выход, пр�
 Data/Skins.cs           — список скинов и условия их открытия
 wwwroot/                — клиент (index.html, style.css, app.js)
 wwwroot/course.js       — сцена матча: траектория, фон, персонаж
-wwwroot/scenes.js       — особые стили уровня: маяк, красно-синий мир, хоррор
+wwwroot/scenes.js       — особые стили уровня: маяк, красно-синий мир
 wwwroot/fx.js           — фон меню и эффекты на canvas
 wwwroot/music.js        — музыка на Web Audio, свои файлы в IndexedDB
 wwwroot/rhythm.js       — режим «Свой трек»

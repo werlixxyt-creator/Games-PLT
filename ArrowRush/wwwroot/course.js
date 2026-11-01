@@ -891,9 +891,7 @@ const course = (() => {
     applyCamera();
     const left = camX - viewW * PLAYER_AT - 120;
     const right = camX + viewW * (1 - PLAYER_AT) + 120;
-    if (scene) {
-      scenes.world(scene, ctx, view, { left, right }, (x) => wallAt(map.walls, x, map.walls.mid));
-    } else {
+    if (!scene) {
       drawWalls(left, right);
       drawDeco(left, right);
     }

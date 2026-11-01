@@ -2,9 +2,8 @@
 
 // Особые стили уровня: сцены, которые course.js может выбрать на весь матч вместо космоса со стенами.
 // Всё нарисовано кодом. Неподвижное рисуется один раз в отдельный холст и едет слоями
-// с разной скоростью, живое (свет, волны, руки) — каждый кадр.
-// У сцены три части: back — фон, world — предметы в координатах мира (под траекторией),
-// front — то, что закрывает траекторию снизу и сверху.
+// с разной скоростью, живое (свет, волны) — каждый кадр.
+// У сцены две части: back — фон и front — то, что закрывает траекторию снизу.
 // view: { w, h, camX, camY, scale, time, beat, heat }.
 const scenes = (() => {
   const VIEW_H = 720;
@@ -14,7 +13,6 @@ const scenes = (() => {
   const palettes = {
     lighthouse: { sky: [200, 19, 60], sky2: [255, 46, 74], neb: [255, 90, 60], neb2: [200, 20, 60], wall: [125, 15, 52], wall2: [255, 120, 80], glow: [255, 214, 196] },
     abyss: { sky: [155, 0, 0], sky2: [58, 0, 0], neb: [255, 40, 20], neb2: [10, 10, 230], wall: [2, 2, 142], wall2: [80, 200, 255], glow: [120, 215, 255] },
-    horror: { sky: [28, 10, 6], sky2: [10, 4, 2], neb: [190, 110, 50], neb2: [150, 20, 30], wall: [50, 24, 14], wall2: [255, 30, 60], glow: [255, 60, 80] },
   };
 
   // ---------- Слои ----------
@@ -438,179 +436,13 @@ const scenes = (() => {
     ctx.setLineDash([]);
   }
 
-  // ---------- Хоррор ----------
-
-  function paintCurtain(c, W, rand) {
-    for (let x = 0; x < W; x += 5) {
-      const fold = 0.5 + 0.5 * Math.sin((TAU * x * 11) / W) * Math.sin((TAU * x * 4) / W + 1);
-      c.fillStyle = `rgb(${24 + fold * 96},${10 + fold * 42},${5 + fold * 15})`;
-      c.fillRect(x, 0, 6, VIEW_H);
-    }
-    // корявые сучья
-    c.lineCap = "round";
-    for (let i = 0; i < 24; i++) {
-      const x = 120 + rand() * (W - 240), up = rand() < 0.5;
-      c.strokeStyle = rand() < 0.5 ? "rgba(150,100,60,.6)" : "rgba(16,6,3,.8)";
-      c.lineWidth = 2 + rand() * 5;
-      c.beginPath();
-      c.moveTo(x, up ? -6 : 726);
-      c.bezierCurveTo(x + (rand() - 0.5) * 230, up ? 110 : 610, x + (rand() - 0.5) * 230, up ? 190 : 530, x + (rand() - 0.5) * 160, up ? 150 + rand() * 90 : 570 - rand() * 90);
-      c.stroke();
-    }
-  }
-
-  function backHorror(ctx, v) {
-    const { w, h, beat } = v;
-    tile(ctx, layer("curtain", 1500, h, paintCurtain), 1500, v, 0.14);
-    // свет только посередине, по краям — темнота
-    const g = ctx.createRadialGradient(w * 0.42, h * 0.46, h * 0.08, w * 0.42, h * 0.46, w * 0.62);
-    g.addColorStop(0, `rgba(10,4,2,${0.12 - beat * 0.1})`);
-    g.addColorStop(0.55, "rgba(10,4,2,.52)");
-    g.addColorStop(1, "rgba(4,1,1,.94)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-  }
-
-  /** Рука с нарисованными костями; растёт снизу вверх, flip — сверху вниз. */
-  function hand(ctx, x, y, flip, size, grip) {
-    const purple = "#6a35d8";
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(size, flip ? -size : size);
-    ctx.fillStyle = purple;
-    ctx.beginPath();
-    ctx.moveTo(-26, 340);
-    ctx.bezierCurveTo(-30, 180, -44, 90, -48, 30);
-    ctx.quadraticCurveTo(-46, -22, 0, -24);
-    ctx.quadraticCurveTo(46, -22, 50, 30);
-    ctx.bezierCurveTo(44, 90, 34, 180, 30, 340);
-    ctx.fill();
-    ctx.strokeStyle = purple;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    const tips = [];
-    for (let i = 0; i < 5; i++) {
-      const a = -Math.PI / 2 + (i - 2) * (0.34 - grip * 0.14);
-      const len = (i === 0 || i === 4 ? 56 : 76) * (1 - grip * 0.24);
-      const bx = (i - 2) * 21, by = -14;
-      const ex = bx + Math.cos(a) * len, ey = by + Math.sin(a) * len;
-      ctx.lineWidth = 19;
-      ctx.beginPath();
-      ctx.moveTo(bx, by);
-      ctx.lineTo(ex, ey);
-      ctx.stroke();
-      tips.push([bx, by, ex, ey]);
-    }
-    // кости — рваные жёлтые и голубые черты
-    for (const [ax, ay, bx, by] of tips) {
-      for (const [color, off] of [["#d8ee3a", 0], ["#3fe0d0", 4]]) {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        for (let k = 0; k <= 6; k++) {
-          const t = k / 6, zig = (k % 2 ? 3 : -3) + off;
-          ctx.lineTo(ax + (bx - ax) * t + zig, 44 * (1 - t) + by * t + ay * 0);
-        }
-        ctx.stroke();
-      }
-    }
-    ctx.strokeStyle = "#d8ee3a";
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    for (let k = 0; k <= 9; k++) ctx.lineTo(k % 2 ? -7 : 7, 70 + k * 28);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function worldHorror(ctx, v, range, midAt) {
-    const { left, right } = range;
-    const STEP = 34;
-    // цепи вдоль коридора
-    for (const side of [-1, 1]) {
-      for (let k = Math.floor(left / STEP); k * STEP < right; k++) {
-        const x = k * STEP;
-        const y = midAt(x) + side * (255 + Math.sin(x * 0.0045 + side) * 26);
-        const dy = midAt(x + STEP) + side * (255 + Math.sin((x + STEP) * 0.0045 + side) * 26) - y;
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(Math.atan2(dy, STEP));
-        const flat = k % 2 === 0;
-        ctx.fillStyle = flat ? "#c08a78" : "#6a4238";
-        ctx.strokeStyle = "#1c0a06";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 22, flat ? 8 : 3.5, 0, 0, TAU);
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    // тёмные овалы, нанизанные на середину коридора
-    const EGG = 1300;
-    for (let k = Math.floor((left - 500) / EGG); k * EGG < right + 500; k++) {
-      const cx = k * EGG + 300;
-      const y = midAt(cx);
-      for (let i = -3; i <= 3; i++) {
-        const r = (1 - Math.abs(i) / 4) ** 2;
-        const x = cx + Math.sign(i) * (i * i * 18 + Math.abs(i) * 70);
-        ctx.fillStyle = "#0c0202";
-        ctx.strokeStyle = "#5a0c10";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.ellipse(x, y, 16 + 88 * r, 26 + 150 * r, 0, 0, TAU);
-        ctx.fill();
-        ctx.stroke();
-        if (i === 0) {
-          ctx.fillStyle = "#7a0c14";
-          ctx.beginPath();
-          ctx.ellipse(x, y, 60, 98, 0, 0, TAU);
-          ctx.fill();
-          ctx.fillStyle = "#0c0202";
-          ctx.beginPath();
-          ctx.arc(x, y, 30 + v.beat * 10, 0, TAU);
-          ctx.fill();
-        }
-      }
-    }
-
-    // руки тянутся из темноты и сжимаются в такт
-    const HAND = 640;
-    for (let k = Math.floor((left - 300) / HAND); k * HAND < right + 300; k++) {
-      const x = k * HAND + 120;
-      const flip = k % 2 === 0;
-      const reach = 262 + Math.sin(v.time * 1.4 + k) * 14;
-      hand(ctx, x, midAt(x) + (flip ? -reach : reach), flip, 1.05, Math.min(1, v.beat * 1.2));
-    }
-  }
-
-  function frontHorror(ctx, v) {
-    const { w, h, scale, time, beat } = v;
-    // красные трещины — кольца, сжимающиеся на ударах
-    ctx.strokeStyle = "#ff1030";
-    for (const [k, width] of [[0.4, 5], [0.58, 8]]) {
-      ctx.lineWidth = width * scale;
-      ctx.beginPath();
-      const R = w * k * (1 - beat * 0.035);
-      for (let i = 0; i <= 90; i++) {
-        const a = (i / 90) * TAU;
-        const r = R * (1 + 0.012 * Math.sin(a * 13 + time * 2) + (i % 2 ? 0.004 : -0.004));
-        ctx.lineTo(w * 0.5 + Math.cos(a) * r, h * 0.5 + Math.sin(a) * r * 0.86);
-      }
-      ctx.closePath();
-      ctx.stroke();
-    }
-  }
-
-  const BACK = { lighthouse: backLighthouse, abyss: backAbyss, horror: backHorror };
-  const WORLD = { horror: worldHorror };
-  const FRONT = { lighthouse: frontLighthouse, horror: frontHorror };
+  const BACK = { lighthouse: backLighthouse, abyss: backAbyss };
+  const FRONT = { lighthouse: frontLighthouse };
 
   return {
     names: Object.keys(BACK),
     palettes,
     back: (name, ctx, v) => BACK[name](ctx, v),
-    world: (name, ctx, v, range, midAt) => { if (WORLD[name]) WORLD[name](ctx, v, range, midAt); },
     front: (name, ctx, v) => { if (FRONT[name]) FRONT[name](ctx, v); },
   };
 })();
