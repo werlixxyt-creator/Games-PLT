@@ -660,5 +660,5 @@ const victory = (() => {
     else fn();
   }
 
-  return { play, after };
+  return { play, after, active: () => !!run };
 })();

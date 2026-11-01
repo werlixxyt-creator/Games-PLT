@@ -2133,3 +2133,37 @@ body[data-screen="lobby"] #app { max-width: none; padding: 0; }
   .lobby-main { height: 92vh; padding: 64px 10px 10px; }
   .lobby-logo { font-size: 22px; }
 }
+
+/* ---------- Наблюдение за соперником ---------- */
+
+.watch {
+  position: absolute;
+  top: 44px; left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+  padding: 4px 6px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  background: rgba(14, 10, 38, .85);
+  border: 2px solid var(--a3);
+  border-radius: 999px;
+  transform: translateX(-50%);
+}
+.watch b { color: var(--a3); }
+.watch span { overflow: hidden; text-overflow: ellipsis; }
+.watch button {
+  flex: none;
+  width: 28px; height: 28px;
+  font: 900 15px/1 var(--font-body);
+  color: var(--outline);
+  background: var(--a3);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+#screen-game .opp.watching { outline: 3px solid var(--a3); }

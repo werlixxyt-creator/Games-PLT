@@ -883,6 +883,14 @@ const course = (() => {
     camY = wallAt(map.walls, 0, map.walls.mid);
   }
 
+  /** Сцена переходит к другому игроку: его персонаж, скин ячеек и место на уровне. */
+  function follow({ hero, cell, trailOf, pos }) {
+    Object.assign(opts, { hero, cell, trailOf });
+    s = pos;
+    pops = [];
+    flash = Math.max(flash, 0.4);
+  }
+
   /** Ошибка игрока: тряска и красная вспышка. */
   function hit() {
     shake = 1;
@@ -1025,5 +1033,5 @@ const course = (() => {
     }
   }
 
-  return { start, frame, hit, filled, chart, point, paintHero };
+  return { start, follow, frame, hit, filled, chart, point, paintHero };
 })();

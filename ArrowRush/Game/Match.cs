@@ -18,6 +18,8 @@ public sealed class Player
     public string? UserId { get; init; }
     /// <summary>Скин ползунков — его видят и соперники.</summary>
     public string Skin { get; init; } = "classic";
+    /// <summary>Персонаж: его видят те, кто наблюдает за игроком.</summary>
+    public string Hero { get; init; } = "circle";
     /// <summary>Командные режимы: номер команды, 0 или 1. В остальных режимах -1.</summary>
     public int Team { get; init; } = -1;
     public bool IsBot => ConnectionId is null;
@@ -360,7 +362,7 @@ public sealed class Match
         idleDrain = _diff.IdleDrainPerSecond,
         wrongDrain = _diff.WrongDrainPerSecond,
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was }),
-        players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, team = p.Team }),
+        players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, hero = p.Hero, team = p.Team }),
     };
 
     public object StatePayload() => new

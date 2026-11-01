@@ -10,7 +10,7 @@ namespace ArrowRush.Game;
 /// </summary>
 public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory scopes, ILogger<MatchManager> log) : BackgroundService
 {
-    private sealed record QueuedPlayer(string ConnectionId, string UserId, string Name, string Skin, GameMode Mode, bool Fast, Difficulty Difficulty, double JoinedAt);
+    private sealed record QueuedPlayer(string ConnectionId, string UserId, string Name, string Skin, string Hero, GameMode Mode, bool Fast, Difficulty Difficulty, double JoinedAt);
     /// <param name="Users">To — id аккаунтов, а не подключений.</param>
     private sealed record Outgoing(IReadOnlyList<string> To, string Method, object? Payload, bool Users = false);
 
@@ -30,7 +30,7 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
     // ---------- Вызовы из GameHub ----------
 
     /// <param name="practice">Тренировка: матч с ботом сразу, без очереди и без записи в статистику.</param>
-    public Task FindMatchAsync(string connectionId, string userId, string name, string skin, GameMode mode, bool fast, Difficulty difficulty, bool practice)
+    public Task FindMatchAsync(string connectionId, string userId, string name, string skin, string hero, GameMode mode, bool fast, Difficulty difficulty, bool practice)
     {
         List<Outgoing> outbox;
         lock (_lock)
@@ -43,7 +43,7 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
                 throw new HubException("Ты уже ищешь матч или играешь в другой вкладке");
             if (_lobbyByConnection.ContainsKey(connectionId)) throw new HubException("Сначала выйди из лобби");
 
-            var me = new QueuedPlayer(connectionId, userId, name, skin, mode, fast, difficulty, Now);
+            var me = new QueuedPlayer(connectionId, userId, name, skin, hero, mode, fast, difficulty, Now);
             if (practice)
             {
                 outbox = [];
@@ -191,7 +191,7 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
         var slot = 0;
         foreach (var q in group)
         {
-            match.Players.Add(new Player { Slot = slot, Name = q.Name, ConnectionId = q.ConnectionId, UserId = q.UserId, Skin = q.Skin, Team = TeamOf(slot) });
+            match.Players.Add(new Player { Slot = slot, Name = q.Name, ConnectionId = q.ConnectionId, UserId = q.UserId, Skin = q.Skin, Hero = q.Hero, Team = TeamOf(slot) });
             _matchByConnection[q.ConnectionId] = match;
             slot++;
         }
@@ -206,6 +206,7 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
                 Slot = slot,
                 Name = botNames[bot],
                 Skin = Skins.SliderIds[_rnd.Next(Skins.SliderIds.Length)],
+                Hero = RandomHero(),
                 Team = TeamOf(slot),
             });
             slot++;
@@ -248,6 +249,12 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
     }
 
     // ---------- Вспомогательное ----------
+
+    private string RandomHero()
+    {
+        var heroes = Skins.All.Where(s => s.Slot == Skins.Hero).ToArray();
+        return heroes[_rnd.Next(heroes.Length)].Id;
+    }
 
     private async Task SaveAsync(List<MatchRecord> records)
     {

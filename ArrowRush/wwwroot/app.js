@@ -1067,6 +1067,11 @@ function nameRow(container, player) {
   return badge;
 }
 
+/** Кайма следа персонажа для скина ячеек. */
+function trailOf(skin) {
+  return (i) => (skin === "rainbow" ? fx.colors[i % 4] : SKIN_TRAIL[skin] || SKIN_TRAIL.classic);
+}
+
 function startMatch(d) {
   stopSearch();
   // у каждого матча своя мелодия: тональность и аккорды — от его id; бит вступает на «СТАРТ!»
@@ -1083,6 +1088,8 @@ function startMatch(d) {
     teams: d.teams,
     you: d.you,
     level: d.level,
+    players: new Map(d.players.map((p) => [p.slot, p])),
+    watch: null, // за кем наблюдаем: { slot, idx }
     idleDrain: d.idleDrain,
     wrongDrain: d.wrongDrain,
     stun: d.stun,
@@ -1092,6 +1099,7 @@ function startMatch(d) {
   combo = 0;
   $("combo").hidden = true;
   $("chart-banner").hidden = true;
+  $("watch").hidden = true;
 
   $("hud-lives-box").hidden = !d.lives;
   $("hud-tag").textContent = modeLabel(d.mode, d.fast, d.difficulty) + (d.lobby ? " · лобби" : d.practice ? " · тренировка" : "");
@@ -1108,7 +1116,7 @@ function startMatch(d) {
     theme: d.theme,
     cell: me.skin,
     hero: profile ? profile.equipped.hero : "circle",
-    trailOf: (i) => (me.skin === "rainbow" ? fx.colors[i % 4] : SKIN_TRAIL[me.skin] || SKIN_TRAIL.classic),
+    trailOf: trailOf(me.skin),
   });
   match.tracks.set(d.you, {
     mine: true,
@@ -1136,6 +1144,7 @@ function startMatch(d) {
     const count = document.createElement("span");
     bar.append(fill, count);
     box.append(nameEl, bar);
+    box.addEventListener("click", () => watchPlayer(p.slot));
     opps.appendChild(box);
 
     const badge = nameRow(nameEl, p);
@@ -1349,6 +1358,70 @@ function syncPrediction(server, now) {
   if (server.out) pred.out = true;
 }
 
+// ---------- Наблюдение за соперником ----------
+
+/** Кто ещё играет и за кем можно наблюдать. */
+function playingRivals(st) {
+  return st.players.filter((p) => p.slot !== match.you && !p.done && !p.out && !p.left);
+}
+
+/** Зажата ли у игрока нужная стрелка: так сцена показывает его ошибки и удержание. */
+function handsOf(p, t) {
+  if (match.press) return { wrong: p.stun, holding: false };
+  const mask = t < 0 ? 0 : p.held, target = 1 << targetOf(match.level[p.idx].arrow);
+  return { wrong: (mask & ~target) !== 0, holding: mask === target };
+}
+
+/** Сцена переходит к этому игроку. */
+function startWatching(p) {
+  const who = match.players.get(p.slot);
+  match.watch = { slot: p.slot, idx: p.idx };
+  course.follow({ hero: who.hero, cell: who.skin, trailOf: trailOf(who.skin), pos: p.idx + p.p });
+  $("watch-name").textContent = who.name;
+  $("watch").hidden = false;
+  for (const [slot, track] of match.tracks) if (track.box) track.box.classList.toggle("watching", slot === p.slot);
+}
+
+/**
+ * Игрок выбыл или финишировал, а матч идёт: показываем игру лидера среди оставшихся.
+ * Сцена победы идёт первой. Кого выбрал игрок, того не сменяем, пока он сам не закончит.
+ * Возвращает снимок того, за кем наблюдаем, или null.
+ */
+function updateWatch(st) {
+  const mine = st.players.find((p) => p.slot === match.you);
+  if (!mine || !(mine.done || mine.out) || victory.active()) return null;
+  const rivals = playingRivals(st);
+  if (rivals.length === 0) return null;
+
+  let p = match.watch && rivals.find((r) => r.slot === match.watch.slot);
+  if (!p) {
+    p = rivals.reduce((a, b) => (b.idx + b.p > a.idx + a.p ? b : a));
+    startWatching(p);
+  }
+  // ячейки, которые он прошёл за этот кадр, лопаются в его скине
+  for (let i = match.watch.idx; i < p.idx; i++) course.filled(i);
+  match.watch.idx = p.idx;
+  return p;
+}
+
+/** Выбрать игрока на панели снизу. */
+function watchPlayer(slot) {
+  if (!match || !match.watch) return;
+  const p = playingRivals(lastState).find((r) => r.slot === slot);
+  if (p) startWatching(p);
+}
+
+/** Следующий или предыдущий из тех, кто ещё играет. */
+function stepWatch(dir) {
+  if (!match || !match.watch) return;
+  const rivals = playingRivals(lastState);
+  const i = rivals.findIndex((r) => r.slot === match.watch.slot);
+  if (rivals.length > 1) startWatching(rivals[(i + dir + rivals.length) % rivals.length]);
+}
+
+$("watch-prev").addEventListener("click", () => stepWatch(-1));
+$("watch-next").addEventListener("click", () => stepWatch(1));
+
 function renderLives() {
   const left = Math.max(0, match.lives - pred.miss);
   $("hud-lives").textContent = "♥".repeat(left) + "♡".repeat(match.lives - left);
@@ -1425,7 +1498,7 @@ function render(now) {
       myHolding = holding;
     } else {
       renderOpponent(track, idx, progress, wrong, level);
-      if (track.mate && !p.left && mates.length < MAX_MATES_DRAWN) mates.push({ slot: p.slot, pos: p.idx + p.p, name: track.name, color: MATE_COLOR });
+      if (track.mate && !p.left && mates.length < MAX_MATES_DRAWN && !(match.watch && match.watch.slot === p.slot)) mates.push({ slot: p.slot, pos: p.idx + p.p, name: track.name, color: MATE_COLOR });
     }
 
     if (p.done || p.out) {
@@ -1436,23 +1509,29 @@ function render(now) {
     if (track.box) track.box.classList.toggle("left", p.left || p.out);
   }
 
-  course.frame(now, { pos: myPos, wrong: myWrong, holding: myHolding, mates, energy: music.energy(), part: music.part() });
+  // сцена победы начинается раньше наблюдения
+  const mine = st.players.find((p) => p.slot === match.you);
+  if (mine && mine.done && mine.place === 1 && !match.teams) celebrateWin();
+  const watched = updateWatch(st);
+  const view = watched ? { pos: watched.idx + watched.p, ...handsOf(watched, t) } : { pos: myPos, wrong: myWrong, holding: myHolding };
+  course.frame(now, { ...view, mates, energy: music.energy(), part: music.part() });
 
   // подсказки для меня
-  const mine = st.players.find((p) => p.slot === match.you);
   if (!mine) return;
-  if (mine.done && mine.place === 1 && !match.teams) celebrateWin();
   // при удержании ошибки считает только сервер
   if (!speed) { pred.miss = mine.miss; pred.out = mine.out; }
   if (match.lives) renderLives();
 
   const myIdx = speed ? pred.idx : mine.idx;
   const myDone = mine.done || myIdx >= level.length;
-  $("hud-count").textContent = `${Math.min(myIdx + (myDone ? 0 : 1), level.length)} / ${level.length}`;
+  const shownIdx = watched ? watched.idx : myIdx;
+  $("hud-count").textContent = `${Math.min(shownIdx + (myDone && !watched ? 0 : 1), level.length)} / ${level.length}`;
 
   const need = $("need");
   need.classList.remove("bad");
-  if (myDone) {
+  if (watched) {
+    need.textContent = "";
+  } else if (myDone) {
     need.textContent = `Финиш! Ждём остальных…`;
   } else if (pred.out || mine.out) {
     need.textContent = "Ошибки кончились — ты выбыл. Ждём остальных…";
@@ -1532,6 +1611,10 @@ window.addEventListener("keydown", (e) => {
   e.preventDefault();
   if (screen === "rhythm") {
     if (!e.repeat) rhythm.press(a); // в ритм-режиме считается только само нажатие
+    return;
+  }
+  if (match && match.watch) {
+    if (!e.repeat && (a === 0 || a === 2)) stepWatch(a === 0 ? -1 : 1); // ← → — другой игрок
     return;
   }
   pressArrow(a);

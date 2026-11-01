@@ -21,11 +21,11 @@ public sealed class GameHub(MatchManager manager, AppDb db, UserManager<AppUser>
     public async Task FindMatch(string? mode, bool fast, string? difficulty, bool practice)
     {
         var userId = Context.UserIdentifier!;
-        // ник и скин ползунков берём из базы: соперники увидят их, а ник мог измениться после подключения
-        var me = await db.Users.Where(u => u.Id == userId).Select(u => new { u.UserName, u.SliderSkin }).FirstAsync();
+        // ник и скины берём из базы: соперники увидят их, а ник мог измениться после подключения
+        var me = await db.Users.Where(u => u.Id == userId).Select(u => new { u.UserName, u.SliderSkin, u.HeroSkin }).FirstAsync();
 
         await manager.FindMatchAsync(Context.ConnectionId, userId, me.UserName!,
-            Skins.Equipped(Skins.Slider, me.SliderSkin), GameModes.Parse(mode), fast, Difficulties.Parse(difficulty), practice);
+            Skins.Equipped(Skins.Slider, me.SliderSkin), Skins.Equipped(Skins.Hero, me.HeroSkin), GameModes.Parse(mode), fast, Difficulties.Parse(difficulty), practice);
     }
 
     public Task CancelSearch() => manager.CancelSearchAsync(Context.ConnectionId);

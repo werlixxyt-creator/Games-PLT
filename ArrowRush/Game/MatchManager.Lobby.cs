@@ -161,13 +161,13 @@ public sealed partial class MatchManager
             int TeamOf(int seat) => match.Teams ? seat % GameRules.TeamCount : -1;
             foreach (var m in lobby.Members)
             {
-                match.Players.Add(new Player { Slot = slot, Name = m.Name, ConnectionId = m.ConnectionId, UserId = m.UserId, Skin = m.Skin, Team = TeamOf(slot) });
+                match.Players.Add(new Player { Slot = slot, Name = m.Name, ConnectionId = m.ConnectionId, UserId = m.UserId, Skin = m.Skin, Hero = m.Hero, Team = TeamOf(slot) });
                 _matchByConnection[m.ConnectionId] = match;
                 slot++;
             }
             foreach (var b in lobby.Bots)
             {
-                match.Players.Add(new Player { Slot = slot, Name = b.Name, Skin = b.Skin, Team = TeamOf(slot) });
+                match.Players.Add(new Player { Slot = slot, Name = b.Name, Skin = b.Skin, Hero = b.Hero, Team = TeamOf(slot) });
                 slot++;
             }
 
@@ -270,13 +270,13 @@ public sealed partial class MatchManager
             var members = team < lobbies.Count ? lobbies[team].Members : [];
             foreach (var m in members)
             {
-                match.Players.Add(new Player { Slot = slot++, Name = m.Name, ConnectionId = m.ConnectionId, UserId = m.UserId, Skin = m.Skin, Team = team });
+                match.Players.Add(new Player { Slot = slot++, Name = m.Name, ConnectionId = m.ConnectionId, UserId = m.UserId, Skin = m.Skin, Hero = m.Hero, Team = team });
                 _matchByConnection[m.ConnectionId] = match;
             }
             for (var i = members.Count; i < s.MaxPlayers; i++)
             {
                 var name = FreeBotName(match.Players.Select(p => p.Name).ToHashSet());
-                match.Players.Add(new Player { Slot = slot++, Name = name, Skin = Skins.SliderIds[_rnd.Next(Skins.SliderIds.Length)], Team = team });
+                match.Players.Add(new Player { Slot = slot++, Name = name, Skin = Skins.SliderIds[_rnd.Next(Skins.SliderIds.Length)], Hero = RandomHero(), Team = team });
             }
         }
 
@@ -302,11 +302,10 @@ public sealed partial class MatchManager
         var wanted = Math.Clamp(count, 0, lobby.Settings.MaxPlayers - lobby.Members.Count);
         if (lobby.Bots.Count > wanted) lobby.Bots.RemoveRange(wanted, lobby.Bots.Count - wanted);
 
-        var heroes = Skins.All.Where(s => s.Slot == Skins.Hero).Select(s => s.Id).ToArray();
         while (lobby.Bots.Count < wanted)
         {
             var name = FreeBotName(lobby.Bots.Select(b => b.Name).ToHashSet());
-            lobby.Bots.Add(new LobbyBot(name, Skins.SliderIds[_rnd.Next(Skins.SliderIds.Length)], heroes[_rnd.Next(heroes.Length)],
+            lobby.Bots.Add(new LobbyBot(name, Skins.SliderIds[_rnd.Next(Skins.SliderIds.Length)], RandomHero(),
                 AccountEndpoints.AvatarColors[_rnd.Next(AccountEndpoints.AvatarColors.Length)]));
         }
     }
