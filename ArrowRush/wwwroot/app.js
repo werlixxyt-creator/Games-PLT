@@ -130,6 +130,7 @@ function show(name) {
   if (name === "auth" || name === "game" || name === "rhythm") social.close();
   fx.setCalm(name === "game" || name === "rhythm");
   if (name === "menu") refreshProfile();
+  if (name === "lobby") lobby.refresh();
 }
 
 /** Строка о связи с сервером — в меню и на экране выбора режима. */

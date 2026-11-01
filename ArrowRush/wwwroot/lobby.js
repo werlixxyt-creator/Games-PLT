@@ -162,6 +162,7 @@ const lobby = (() => {
     // в общем лобби видны и свободные места команды
     const players = cur.isPublic ? [...cur.players, ...Array(cur.settings.maxPlayers - cur.players.length).fill(null)] : cur.players;
     const stage = $("lobby-stage");
+    if (!stage.clientHeight) return; // экран скрыт, например идёт матч: размер посчитаем, когда он откроется
     const { perRow } = ROWS.find((r) => players.length <= r.upTo);
     const rows = [];
     for (let i = 0; i < players.length; i += perRow) rows.push(players.slice(i, i + perRow));
@@ -342,6 +343,7 @@ const lobby = (() => {
 
   return {
     init, reset, sync, accept, decline, loadPublic,
+    refresh: () => { if (cur) render(); }, // экран лобби снова виден
     active: () => !!cur,
     canInvite: () => !!cur && cur.leader,
     invite: (name, el) => call(el, "InviteToLobby", name),
