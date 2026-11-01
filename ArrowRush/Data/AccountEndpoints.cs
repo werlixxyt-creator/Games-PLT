@@ -15,9 +15,14 @@ public static class AccountEndpoints
     public const int MaxNameLength = 16;
     public const int MinPasswordLength = 6;
     public const int MaxPasswordLength = 64;
+    public const int MaxAboutLength = 160;
+
+    /// <summary>Цвета аватара на выбор; первый — по умолчанию.</summary>
+    public static readonly string[] AvatarColors = ["#ff4f9a", "#22c7f0", "#7ee03a", "#ffb31f", "#a77bff", "#ff7a4d", "#2fd6a8", "#ffffff"];
 
     public sealed record Credentials(string? UserName, string? Password);
     public sealed record SkinChoice(string? Slot, string? Id);
+    public sealed record ProfileEdit(string? UserName, string? About, string? Color);
 
     /// <summary>
     /// Итоги одного режима и темпа. Kills и Deaths — как в К/Д: сколько соперников игрок обошёл и сколько обошли его.
@@ -34,7 +39,12 @@ public static class AccountEndpoints
         api.MapPost("/logout", Logout);
         api.MapGet("/me", Me).RequireAuthorization();
         api.MapPost("/skin", SetSkin).RequireAuthorization();
+        api.MapPost("/profile", EditProfile).RequireAuthorization();
     }
+
+    /// <summary>Цвет аватара для показа: пусто или неизвестный — по умолчанию.</summary>
+    public static string AvatarColor(string? stored) =>
+        AvatarColors.Contains(stored) ? stored! : AvatarColors[0];
 
     private static async Task<IResult> Register(Credentials body, UserManager<AppUser> users, SignInManager<AppUser> signIn)
     {
@@ -114,31 +124,17 @@ public static class AccountEndpoints
                     g.Where(p => p.FinishTime > 0).Select(p => p.Sliders / p.FinishTime!.Value).DefaultIfEmpty(0).Max());
             });
 
-        var recent = await mine
-            .OrderByDescending(p => p.MatchRecordId)
-            .Take(10)
-            .Select(p => new
-            {
-                p.Match.Mode,
-                p.Match.Fast,
-                p.Match.Difficulty,
-                p.Match.PlayedAt,
-                p.Won,
-                p.Place,
-                Players = p.Match.Participants.Count,
-                p.FinishTime,
-                p.Sliders,
-                Total = p.Match.SliderCount,
-                p.Left,
-            })
-            .ToListAsync();
-
         var achievements = await LoadAchievementsAsync(db, userId!);
 
         return Results.Ok(new
         {
             userName = user.UserName,
-            streak = new { current = achievements.Streak, best = achievements.BestStreak },
+            about = user.About,
+            color = AvatarColor(user.AvatarColor),
+            avatarColors = AvatarColors,
+            // входящие заявки в друзья — значок на кнопке «Друзья»
+            incoming = await db.Friendships.CountAsync(f => f.ToId == userId && !f.Accepted),
+            streak =new { current = achievements.Streak, best = achievements.BestStreak },
             skins = Skins.All.Select(s => new
             {
                 slot = s.Slot,
@@ -162,22 +158,73 @@ public static class AccountEndpoints
                 m => new[] { false, true }.ToDictionary(
                     fast => fast ? "fast" : "normal",
                     fast => byMode.GetValueOrDefault((m, fast)) ?? new ModeStats(0, 0, 0, 0, 0, 0, 0, 0))),
-            recent = recent.Select(r => new
-            {
-                mode = r.Mode.ToWire(),
-                fast = r.Fast,
-                difficulty = r.Difficulty.ToWire(),
-                // SQLite теряет пометку UTC — возвращаем её, чтобы браузер показал местное время
-                playedAt = DateTime.SpecifyKind(r.PlayedAt, DateTimeKind.Utc),
-                won = r.Won,
-                place = r.Place,
-                players = r.Players,
-                time = r.FinishTime,
-                sliders = r.Sliders,
-                total = r.Total,
-                left = r.Left,
-            }),
+            recent = await LoadRecentAsync(db, userId!, 10),
         });
+    }
+
+    /// <summary>Последние матчи игрока в том виде, в каком их показывает клиент.</summary>
+    public static async Task<List<object>> LoadRecentAsync(AppDb db, string userId, int count)
+    {
+        var recent = await db.MatchParticipants
+            .Where(p => p.UserId == userId)
+            .OrderByDescending(p => p.MatchRecordId)
+            .Take(count)
+            .Select(p => new
+            {
+                p.Match.Mode,
+                p.Match.Fast,
+                p.Match.Difficulty,
+                p.Match.PlayedAt,
+                p.Won,
+                p.Place,
+                Players = p.Match.Participants.Count,
+                p.FinishTime,
+                p.Sliders,
+                Total = p.Match.SliderCount,
+                p.Left,
+            })
+            .ToListAsync();
+
+        return recent.Select(r => (object)new
+        {
+            mode = r.Mode.ToWire(),
+            fast = r.Fast,
+            difficulty = r.Difficulty.ToWire(),
+            // SQLite теряет пометку UTC — возвращаем её, чтобы браузер показал местное время
+            playedAt = DateTime.SpecifyKind(r.PlayedAt, DateTimeKind.Utc),
+            won = r.Won,
+            place = r.Place,
+            players = r.Players,
+            time = r.FinishTime,
+            sliders = r.Sliders,
+            total = r.Total,
+            left = r.Left,
+        }).ToList();
+    }
+
+    /// <summary>Правка своего профиля: ник, подпись и цвет аватара.</summary>
+    private static async Task<IResult> EditProfile(ProfileEdit body, ClaimsPrincipal principal, UserManager<AppUser> users, SignInManager<AppUser> signIn)
+    {
+        var user = await users.GetUserAsync(principal);
+        if (user is null) return Results.Unauthorized();
+
+        var name = (body.UserName ?? "").Trim();
+        // подпись — одна строка: переносы и управляющие символы убираем
+        var about = string.Concat((body.About ?? "").Where(c => !char.IsControl(c))).Trim();
+        if (ValidateName(name) is { } nameError) return Error(nameError);
+        if (about.Length > MaxAboutLength) return Error($"О себе — не длиннее {MaxAboutLength} символов");
+        if (!AvatarColors.Contains(body.Color)) return Error("Нет такого цвета");
+
+        user.About = about.Length > 0 ? about : null;
+        user.AvatarColor = body.Color;
+
+        var renamed = name != user.UserName;
+        var result = renamed ? await users.SetUserNameAsync(user, name) : await users.UpdateAsync(user);
+        if (!result.Succeeded) return Error(Translate(result.Errors.First()));
+
+        // при смене ника меняется метка безопасности: без новой cookie вход со временем слетит
+        if (renamed) await signIn.RefreshSignInAsync(user);
+        return Results.Ok(new { userName = user.UserName });
     }
 
     /// <summary>Надеть скин — только открытый.</summary>
@@ -203,7 +250,7 @@ public static class AccountEndpoints
     }
 
     /// <summary>Итоги по всем режимам и серии побед подряд (текущая и лучшая).</summary>
-    private static async Task<Achievements> LoadAchievementsAsync(AppDb db, string userId)
+    public static async Task<Achievements> LoadAchievementsAsync(AppDb db, string userId)
     {
         var results = await db.MatchParticipants
             .Where(p => p.UserId == userId)
@@ -240,6 +287,6 @@ public static class AccountEndpoints
         _ => e.Description,
     };
 
-    private static IResult Error(string message, int status = 400) =>
+    public static IResult Error(string message, int status = 400) =>
         Results.Json(new { error = message }, statusCode: status);
 }

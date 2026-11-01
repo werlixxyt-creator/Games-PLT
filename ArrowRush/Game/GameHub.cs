@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using ArrowRush.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -9,7 +8,7 @@ namespace ArrowRush.Game;
 /// <summary>
 /// Точка входа для клиентов (WebSocket через SignalR). Подключиться можно только после входа в аккаунт.
 /// Клиент вызывает эти методы, сервер отвечает событиями:
-/// queued, matchStart, state, matchEnd.
+/// queued, matchStart, state, matchEnd. Событие friends — изменились заявки или список друзей (см. SocialEndpoints).
 /// </summary>
 [Authorize]
 public sealed class GameHub(MatchManager manager, AppDb db) : Hub
@@ -21,11 +20,11 @@ public sealed class GameHub(MatchManager manager, AppDb db) : Hub
     public async Task FindMatch(string? mode, bool fast, string? difficulty, bool practice)
     {
         var userId = Context.UserIdentifier!;
-        // скин ползунков берём из базы: его увидят соперники
-        var skin = await db.Users.Where(u => u.Id == userId).Select(u => u.SliderSkin).FirstOrDefaultAsync();
+        // ник и скин ползунков берём из базы: соперники увидят их, а ник мог измениться после подключения
+        var me = await db.Users.Where(u => u.Id == userId).Select(u => new { u.UserName, u.SliderSkin }).FirstAsync();
 
-        await manager.FindMatchAsync(Context.ConnectionId, userId, Context.User!.FindFirstValue(ClaimTypes.Name)!,
-            Skins.Equipped(Skins.Slider, skin), GameModes.Parse(mode), fast, Difficulties.Parse(difficulty), practice);
+        await manager.FindMatchAsync(Context.ConnectionId, userId, me.UserName!,
+            Skins.Equipped(Skins.Slider, me.SliderSkin), GameModes.Parse(mode), fast, Difficulties.Parse(difficulty), practice);
     }
 
     public Task CancelSearch() => manager.CancelSearchAsync(Context.ConnectionId);

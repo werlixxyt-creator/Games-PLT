@@ -1603,3 +1603,95 @@ h3 {
     transition-duration: .001ms !important;
   }
 }
+
+/* ---------- Профиль и друзья ---------- */
+
+.chip-me {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 4px 0 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.chip-me:hover .profile-name { text-decoration: underline; }
+.friends-btn { position: relative; padding: 5px 9px; }
+.chip .friends-btn { padding: 5px 9px; }
+.friends-btn svg { width: 16px; height: 16px; }
+.friends-badge {
+  position: absolute;
+  top: -8px; right: -8px;
+  min-width: 19px;
+  padding: 0 4px;
+  font: 900 11px/15px var(--font-body);
+  color: #fff;
+  background: var(--bad);
+  border: 2px solid var(--outline);
+  border-radius: 999px;
+}
+.player-link {
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.player-link:hover { text-decoration: underline; }
+
+.people, .profile-card {
+  width: min(560px, 100%);
+  margin-top: 14px;
+  padding: 18px;
+}
+.people-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.people-list:not(:empty) { margin-top: 2px; }
+.people .field + .people-list:not(:empty) { margin-top: 12px; }
+.people .conn { margin-top: 8px; }
+.people .conn.bad { color: var(--bad); }
+.person { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.person .player-link { flex: 1; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person .btn { flex: none; }
+
+.pf-head { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.pf-avatar { width: 72px; height: 72px; font-size: 30px; border-width: 3px; }
+.pf-title { flex: 1; min-width: 0; }
+.pf-name {
+  font: 900 clamp(20px, 5vw, 28px)/1.2 var(--font-display);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pf-hero { flex: none; width: 58px; height: 58px; padding: 6px; background: #2a2150; border: 3px solid var(--outline); border-radius: 14px; }
+.pf-about { margin: 14px 0 0; overflow-wrap: anywhere; }
+.pf-about:empty { display: none; }
+.pf-about.empty { color: var(--muted); }
+.pf-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.pf-actions:empty { display: none; }
+.profile-card > .conn { margin-top: 10px; }
+.profile-card .conn.bad, .pf-edit .conn.bad { color: var(--bad); }
+.pf-edit { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.pf-count { margin: -8px 0 0; text-align: right; }
+.field textarea {
+  font: 800 16px/1.35 var(--font-body);
+  color: var(--text);
+  background: var(--panel-2);
+  border: 3px solid var(--outline);
+  border-radius: 14px;
+  padding: 11px 14px;
+  outline: none;
+  resize: none;
+}
+.field textarea:focus { background: #fff; box-shadow: 0 4px 0 var(--a0); }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { width: 34px; height: 34px; padding: 0; border: 3px solid var(--outline); border-radius: 50%; cursor: pointer; }
+.swatch.on { outline: 3px solid var(--a0); outline-offset: 2px; }
+
+#screen-profile .stats { width: min(560px, 100%); margin-top: 18px; }
+#screen-profile .history { width: min(560px, 100%); margin-top: 14px; padding: 14px; }

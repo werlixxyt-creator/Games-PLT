@@ -36,6 +36,9 @@
 - При победе на весь экран играет большая сцена. Её выбирают скины победы: «Шквал стрелок», «Сверхновая»,
   «Ледяной шторм» и «Гранд-финал». Сцену можно пропустить кликом, Enter, пробелом или Esc.
 - Скины ползунков и персонажа, сцены победы и эффекты серии побед открываются за матчи, победы и серии побед.
+- **Профиль:** открывается по нику в меню, в итогах матча и в списке друзей. Виден ник, подпись, дата
+  регистрации, итоги и 5 последних матчей. В своём профиле можно сменить ник, подпись и цвет аватара.
+- **Друзья:** игрока можно найти по нику и отправить заявку, значок на кнопке показывает новые заявки.
 - Играть можно только с аккаунтом (ник + пароль). Каждый матч сохраняется: в меню видны
   статистика с отдельной вкладкой на каждый режим, лучшая серия побед и 10 последних матчей.
 - **К/Д** в статистике: сколько соперников ты обошёл, делённое на то, сколько обошли тебя. Боты считаются
@@ -93,7 +96,8 @@ Game/MatchManager.cs    — очередь поиска, игровой цикл
 Game/GameHub.cs         — методы, которые вызывает клиент
 Data/AppDb.cs           — база: аккаунты, матчи, ключи шифрования cookie
 Data/Database.cs        — выбор базы: PostgreSQL (DATABASE_URL) или SQLite
-Data/AccountEndpoints.cs — регистрация, вход, выход, профиль, скины
+Data/AccountEndpoints.cs — регистрация, вход, выход, свой профиль, скины
+Data/SocialEndpoints.cs — чужие профили, поиск игроков, заявки в друзья
 Data/Skins.cs           — список скинов и условия их открытия
 wwwroot/                — клиент (index.html, style.css, app.js)
 wwwroot/course.js       — сцена матча: траектория, фон, персонаж
@@ -102,6 +106,7 @@ wwwroot/fx.js           — фон меню и эффекты на canvas
 wwwroot/victory.js      — большая сцена победы, у каждого скина своя
 wwwroot/music.js        — музыка на Web Audio, свои файлы в IndexedDB
 wwwroot/rhythm.js       — режим «Свой трек»
+wwwroot/social.js       — экраны профиля и друзей
 ```
 
 **Аккаунты.** Сделаны на ASP.NET Core Identity: пароли хранятся только как хеш (PBKDF2),
@@ -113,7 +118,12 @@ wwwroot/rhythm.js       — режим «Свой трек»
 
 HTTP API: `POST /api/account/register`, `POST /api/account/login` (тело `{ userName, password }`),
 `POST /api/account/logout`, `GET /api/account/me` (ник, статистика, скины, последние матчи),
-`POST /api/account/skin` (тело `{ slot, id }`, надеть открытый скин).
+`POST /api/account/skin` (тело `{ slot, id }`, надеть открытый скин),
+`POST /api/account/profile` (тело `{ userName, about, color }`, изменить свой профиль).
+
+Профили и друзья: `GET /api/account/players?q=` (поиск по началу ника), `GET /api/account/players/{ник}`,
+`GET /api/account/friends`, `POST /api/account/friends/request`, `/accept` и `/remove` (тело `{ userName }`).
+При изменении заявок второй игрок получает из хаба событие `friends`.
 Хаб `/hub` пускает только вошедших, ник берётся из аккаунта.
 
 Сервер авторитарный: клиент отправляет только маску зажатых стрелок (`Input`),
@@ -121,7 +131,7 @@ HTTP API: `POST /api/account/register`, `POST /api/account/login` (тело `{ u
 Поэтому напрямую подделать прогресс с клиента нельзя. Но весь уровень приходит клиенту
 в `matchStart`, а частота `Input` не ограничена, так что от автонажатий это не защищает.
 
-События сервер → клиент: `queued`, `matchStart`, `state`, `matchEnd`.
+События сервер → клиент: `queued`, `matchStart`, `state`, `matchEnd`, `friends`.
 Методы клиент → сервер: `FindMatch(mode, fast, difficulty, practice)`, `CancelSearch()`, `Input(mask)`, `LeaveMatch()`.
 Значения `mode`: `"classic"`, `"mirror"`, `"blind"`, `"hardcore"`, `"teams"`, `"teams5"`; `difficulty`: `"easy"`, `"normal"`, `"hard"`.
 

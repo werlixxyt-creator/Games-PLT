@@ -34,7 +34,7 @@ const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
 // кайма следа персонажа по скину ползунков; цвета стрелок от скина не зависят
 const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16" };
 // экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
-const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search"]);
+const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "friends", "profile"]);
 const UNLOCK_TEXT = {
   games: (n) => `Сыграй ${n} ${plural(n, "матч", "матча", "матчей")}`,
   wins: (n) => `Выиграй ${n} ${plural(n, "матч", "матча", "матчей")}`,
@@ -100,7 +100,7 @@ function targetOf(arrow) {
 // ---------- Экраны ----------
 
 function show(name) {
-  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "game", "rhythm", "results"]) {
+  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "friends", "profile", "game", "rhythm", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
   // ушли из «Своего трека» или из матча — музыку останавливаем (итоги сами гасят её плавно)
@@ -519,7 +519,8 @@ function renderStreak() {
 function applyProfile(p) {
   profile = p;
   $("profile-name").textContent = p.userName;
-  $("profile-avatar").textContent = p.userName.slice(0, 1).toUpperCase();
+  social.paintAvatar($("profile-avatar"), p.userName, p.color);
+  social.setIncoming(p.incoming);
   renderStats();
   renderStreak();
   const open = p.skins.filter((s) => s.unlocked).length;
@@ -528,36 +529,39 @@ function applyProfile(p) {
 
   const list = $("history-list");
   list.innerHTML = "";
-  p.recent.forEach((m, i) => {
-    const win = m.won;
-    const li = document.createElement("li");
-    li.style.setProperty("--i", i);
-
-    const place = document.createElement("span");
-    place.className = "res-place" + (win ? " win" : "");
-    place.textContent = m.place;
-
-    const what = document.createElement("span");
-    what.className = "res-name";
-    const text = document.createElement("span");
-    text.className = "n";
-    text.textContent = win ? (m.time != null ? `Победа · ${m.time.toFixed(2)} с` : `Победа · ${m.sliders}/${m.total}`)
-      : m.time != null ? `${m.place} из ${m.players} · ${m.time.toFixed(2)} с`
-      : m.left ? `Вышел · ${m.sliders}/${m.total}`
-      : `${m.place} из ${m.players} · ${m.sliders}/${m.total}`;
-    const tag = document.createElement("span");
-    tag.className = "tag-mode";
-    tag.textContent = modeLabel(m.mode, m.fast, m.difficulty).toLowerCase();
-    what.append(text, tag);
-
-    const when = document.createElement("span");
-    when.className = "res-time";
-    when.textContent = formatDate(new Date(m.playedAt));
-
-    li.append(place, what, when);
-    list.appendChild(li);
-  });
+  p.recent.forEach((m, i) => list.appendChild(historyItem(m, i)));
   $("history").hidden = p.recent.length === 0;
+}
+
+/** Строка истории матчей: в статистике и в профилях. */
+function historyItem(m, i) {
+  const win = m.won;
+  const li = document.createElement("li");
+  li.style.setProperty("--i", i);
+
+  const place = document.createElement("span");
+  place.className = "res-place" + (win ? " win" : "");
+  place.textContent = m.place;
+
+  const what = document.createElement("span");
+  what.className = "res-name";
+  const text = document.createElement("span");
+  text.className = "n";
+  text.textContent = win ? (m.time != null ? `Победа · ${m.time.toFixed(2)} с` : `Победа · ${m.sliders}/${m.total}`)
+    : m.time != null ? `${m.place} из ${m.players} · ${m.time.toFixed(2)} с`
+    : m.left ? `Вышел · ${m.sliders}/${m.total}`
+    : `${m.place} из ${m.players} · ${m.sliders}/${m.total}`;
+  const tag = document.createElement("span");
+  tag.className = "tag-mode";
+  tag.textContent = modeLabel(m.mode, m.fast, m.difficulty).toLowerCase();
+  what.append(text, tag);
+
+  const when = document.createElement("span");
+  when.className = "res-time";
+  when.textContent = formatDate(new Date(m.playedAt));
+
+  li.append(place, what, when);
+  return li;
 }
 
 // ---------- Скины ----------
@@ -588,6 +592,9 @@ $("btn-stats").addEventListener("click", () => {
   refreshProfile(); // только что сыгранный матч мог записаться уже после возврата в меню
 });
 $("btn-stats-back").addEventListener("click", () => show("menu"));
+
+social.init({ api, show, historyItem, me: () => profile, refresh: refreshProfile });
+$("btn-my-profile").addEventListener("click", () => social.open(profile.userName, "menu"));
 
 for (const t of document.querySelectorAll("#skin-tabs .tab")) {
   t.addEventListener("click", () => {
@@ -841,6 +848,8 @@ conn.on("queued", (d) => {
 });
 
 conn.on("matchStart", startMatch);
+
+conn.on("friends", () => social.changed(screen));
 
 conn.on("state", (s) => {
   if (!match) return;
@@ -1120,9 +1129,14 @@ function showResults(r) {
 
     const name = document.createElement("span");
     name.className = "res-name";
-    const n = document.createElement("span");
-    n.className = "n";
+    // у людей ник открывает профиль: отсюда удобно добавить соперника в друзья
+    const n = document.createElement(x.bot ? "span" : "button");
+    n.className = x.bot ? "n" : "n player-link";
     n.textContent = x.name;
+    if (!x.bot) {
+      n.type = "button";
+      n.addEventListener("click", () => social.open(x.name, "results"));
+    }
     name.appendChild(n);
     if (x.bot) {
       const tag = document.createElement("span");

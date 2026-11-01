@@ -16,6 +16,22 @@ public sealed class AppUser : IdentityUser
     public string? HeroSkin { get; set; }
     public string? WinSkin { get; set; }
     public string? StreakSkin { get; set; }
+
+    /// <summary>Подпись «о себе» в профиле.</summary>
+    public string? About { get; set; }
+    /// <summary>Цвет аватара из <see cref="AccountEndpoints.AvatarColors"/>, null — первый из них.</summary>
+    public string? AvatarColor { get; set; }
+}
+
+/// <summary>Заявка в друзья от From к To; принятая заявка — это дружба. На пару игроков одна запись.</summary>
+public sealed class Friendship
+{
+    public required string FromId { get; set; }
+    public AppUser From { get; set; } = null!;
+    public required string ToId { get; set; }
+    public AppUser To { get; set; } = null!;
+    public bool Accepted { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>Сыгранный матч.</summary>
@@ -61,6 +77,7 @@ public sealed class AppDb(DbContextOptions<AppDb> options)
 {
     public DbSet<MatchRecord> Matches => Set<MatchRecord>();
     public DbSet<MatchParticipant> MatchParticipants => Set<MatchParticipant>();
+    public DbSet<Friendship> Friendships => Set<Friendship>();
 
     /// <summary>Ключи шифрования cookie — в базе, чтобы после перезапуска сервера не разлогинивало.</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -80,6 +97,14 @@ public sealed class AppDb(DbContextOptions<AppDb> options)
             e.Property(p => p.Name).HasMaxLength(32);
             e.HasIndex(p => p.UserId);
             e.HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<Friendship>(e =>
+        {
+            e.HasKey(f => new { f.FromId, f.ToId });
+            e.HasIndex(f => f.ToId);
+            e.HasOne(f => f.From).WithMany().HasForeignKey(f => f.FromId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(f => f.To).WithMany().HasForeignKey(f => f.ToId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

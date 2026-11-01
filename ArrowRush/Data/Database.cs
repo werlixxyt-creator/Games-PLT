@@ -51,6 +51,19 @@ public static class Database
         AddColumnIfMissing(db, "AspNetUsers", "HeroSkin", "TEXT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "WinSkin", "TEXT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "StreakSkin", "TEXT NULL");
+        AddColumnIfMissing(db, "AspNetUsers", "About", "TEXT NULL");
+        AddColumnIfMissing(db, "AspNetUsers", "AvatarColor", "TEXT NULL");
+        // EnsureCreated не добавляет и новые таблицы; SQLite принимает типы PostgreSQL
+        db.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "Friendships" (
+                "FromId" TEXT NOT NULL REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+                "ToId" TEXT NOT NULL REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+                "Accepted" BOOLEAN NOT NULL,
+                "CreatedAt" TIMESTAMPTZ NOT NULL,
+                PRIMARY KEY ("FromId", "ToId")
+            )
+            """);
+        db.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_Friendships_ToId\" ON \"Friendships\" (\"ToId\")");
         // частицы на победу заменены большими сценами: надетый скин переходит в свою замену
         foreach (var (before, after) in new[] { ("confetti", "rush"), ("stars", "nova"), ("snow", "frost"), ("fireworks", "finale") })
             db.ExecuteSql($"UPDATE \"AspNetUsers\" SET \"WinSkin\" = {after} WHERE \"WinSkin\" = {before}");
