@@ -28,15 +28,27 @@ public enum GameMode
     Teams = 5,
     /// <summary>То же, что <see cref="Teams"/>, но команды по пять человек и уровень длиннее.</summary>
     Teams5 = 6,
+    /// <summary>Уровень вдвое короче.</summary>
+    Sprint = 7,
+    /// <summary>Уровень в три раза длиннее.</summary>
+    Marathon = 8,
+    /// <summary>Видно только несколько ячеек вперёд.</summary>
+    Fog = 9,
+    /// <summary>Ошибка отбрасывает на несколько ячеек назад.</summary>
+    Setback = 10,
+    /// <summary>Первая ошибка выбивает из матча.</summary>
+    OneLife = 11,
 }
 
 /// <summary>
-/// Правила режима. Mirror — правильная стрелка противоположна нарисованной. Blind — клиент прячет следующие стрелки.
+/// Правила режима. Mirror — правильная стрелка противоположна нарисованной.
+/// Sight &gt; 0 — сколько ячеек видно, считая текущую: дальше клиент прячет стрелки.
+/// Setback &gt; 0 — на сколько ячеек отбрасывает ошибка (и пауз за ошибку нет).
 /// Lives &gt; 0 — столько ошибок можно сделать до выбывания (и пауз за ошибку нет).
 /// TeamSize &gt; 0 — игроки делятся на две команды такого размера, матч заканчивается на первом финише;
 /// пустые места занимают боты. LevelScale — во сколько раз уровень длиннее обычного (и лимит времени тоже).
 /// </summary>
-public sealed record ModeRules(string Wire, bool Mirror = false, bool Blind = false, int Lives = 0, int TeamSize = 0, int LevelScale = 1)
+public sealed record ModeRules(string Wire, bool Mirror = false, int Sight = 0, int Lives = 0, int Setback = 0, int TeamSize = 0, double LevelScale = 1)
 {
     public bool Teams => TeamSize > 0;
 
@@ -50,10 +62,15 @@ public static class GameModes
     {
         [GameMode.Classic] = new("classic"),
         [GameMode.Mirror] = new("mirror", Mirror: true),
-        [GameMode.Blind] = new("blind", Blind: true),
+        [GameMode.Blind] = new("blind", Sight: 1),
         [GameMode.Hardcore] = new("hardcore", Lives: GameRules.HardcoreLives),
         [GameMode.Teams] = new("teams", TeamSize: 2),
         [GameMode.Teams5] = new("teams5", TeamSize: 5, LevelScale: 4),
+        [GameMode.Sprint] = new("sprint", LevelScale: 0.5),
+        [GameMode.Marathon] = new("marathon", LevelScale: 3),
+        [GameMode.Fog] = new("fog", Sight: GameRules.FogSight),
+        [GameMode.Setback] = new("setback", Setback: GameRules.SetbackCells),
+        [GameMode.OneLife] = new("onelife", Lives: 1),
     };
 
     public static ModeRules Rules(this GameMode mode) => All[mode];
@@ -75,11 +92,11 @@ public static class LevelGenerator
 {
     /// <param name="fast">Быстрый темп: ползунок — одно нажатие, зато их больше.</param>
     /// <param name="scale">Во сколько раз уровень длиннее обычного.</param>
-    public static Slider[] Generate(bool fast, DifficultyRules d, Random rnd, int scale = 1)
+    public static Slider[] Generate(bool fast, DifficultyRules d, Random rnd, double scale = 1)
     {
-        var count = scale * (fast
+        var count = (int)Math.Round(scale * (fast
             ? rnd.Next(d.FastMinSliders, d.FastMaxSliders + 1)
-            : rnd.Next(d.MinSliders, d.MaxSliders + 1));
+            : rnd.Next(d.MinSliders, d.MaxSliders + 1)));
         var sliders = new Slider[count];
 
         for (var i = 0; i < count; i++)

@@ -10,7 +10,9 @@ public sealed record LobbyBot(string Name, string Skin, string Hero, string Colo
 public sealed record LobbySettings(GameMode Mode, bool Teams, bool Fast, Difficulty Difficulty, string Theme, int MaxPlayers)
 {
     /// <summary>Модификации, которые можно выбрать; команды включаются отдельно.</summary>
-    public static readonly GameMode[] Modes = [GameMode.Classic, GameMode.Mirror, GameMode.Blind, GameMode.Hardcore];
+    public static readonly GameMode[] Modes =
+        [GameMode.Classic, GameMode.Mirror, GameMode.Blind, GameMode.Fog, GameMode.Hardcore, GameMode.OneLife,
+         GameMode.Setback, GameMode.Sprint, GameMode.Marathon];
 
     /// <summary>Дизайны уровня, как в course.js; "auto" — случайный.</summary>
     public static readonly string[] Themes = ["auto", "violet", "ocean", "neon", "night", "lighthouse", "abyss"];

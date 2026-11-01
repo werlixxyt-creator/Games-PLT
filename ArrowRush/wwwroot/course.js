@@ -42,7 +42,7 @@ const course = (() => {
   let cssW = 0, cssH = 0, dpr = 1, scale = 1, viewW = 1280;
 
   let map = null;       // { segs, sections, deco, ... } из build()
-  let opts = null;      // { level, fast, blind, mirror, hero, trailOf }
+  let opts = null;      // { level, fast, sight, mirror, hero, trailOf }
   let s = 0;            // где персонаж на экране: номер ползунка + доля
   let lastNow = 0, time = 0;
   let camX = 0, camY = 0, tilt = 0;
@@ -63,6 +63,9 @@ const course = (() => {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
+
+  /** Ячейка дальше, чем видно в этом режиме. */
+  const hiddenCell = (i) => opts.sight > 0 && i - Math.floor(s) >= opts.sight;
 
   /** Какую стрелку показать: ячейки за чартом выглядят обычными, пока чарт не пройден. */
   function arrowOf(i) {
@@ -575,7 +578,7 @@ const course = (() => {
 
     ctx.setLineDash(cells.dash(opts.cell));
     for (let i = cur; i < last && i < n; i++) {
-      const hidden = opts.blind && i > cur;
+      const hidden = hiddenCell(i);
       ctx.globalAlpha = i === cur ? 0.62 : 0.3;
       ctx.strokeStyle = hidden ? "#8c88b4" : COLORS[arrowOf(i)];
       ctx.lineWidth = width - 6;
@@ -608,7 +611,7 @@ const course = (() => {
     const pts = map.segs[i], p = pts[pts.length - 1];
     const arrow = arrowOf(i);
     const color = COLORS[arrow]; // цвет стрелки зависит только от направления
-    const hidden = opts.blind && !current;
+    const hidden = hiddenCell(i);
     const r = (opts.fast ? 25 : 33) * (current ? 1.26 + beat * 0.12 : 1);
 
     ctx.save();
@@ -856,7 +859,7 @@ const course = (() => {
 
   // ---------- Что вызывает app.js ----------
 
-  /** @param o { seed, level, fast, blind, mirror, theme — дизайн из лобби, cell — скин ячеек, hero — скин персонажа, trailOf(i) — кайма следа } */
+  /** @param o { seed, level, fast, sight — сколько ячеек видно (0 — все), mirror, theme — дизайн из лобби, cell — скин ячеек, hero — скин персонажа, trailOf(i) — кайма следа } */
   function start(o) {
     opts = o;
     // ячейки за чартом запоминают, какой чарт их меняет

@@ -21,7 +21,7 @@ const lobby = (() => {
     ["lighthouse", "Маяк", "#ff2e4a"], ["abyss", "Бездна", "#02028e"],
   ];
   const FORMATS = [[false, "Все против всех"], [true, "Команды"]];
-  const MODS = [["classic", "Классика"], ["mirror", "Зеркало"], ["blind", "Вслепую"], ["hardcore", "Хардкор"]];
+  const MODS = [["classic", "Классика"], ["mirror", "Зеркало"], ["blind", "Вслепую"], ["fog", "Туман"], ["hardcore", "Хардкор"], ["onelife", "Один шанс"], ["setback", "Откат"], ["sprint", "Спринт"], ["marathon", "Марафон"]];
   const PACES = [[false, "Обычная"], [true, "Быстрая"]];
   const SIZES = [[2, "2 на 2"], [3, "3 на 3"], [4, "4 на 4"], [5, "5 на 5"]];
   const LIST_MS = 3000; // как часто обновляется список общих лобби

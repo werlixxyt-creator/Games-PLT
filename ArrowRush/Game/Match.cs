@@ -200,9 +200,9 @@ public sealed class Match
         {
             Advance(p);
         }
-        else if (_rules.Lives > 0)
+        else if (Punishes)
         {
-            Miss(p);
+            Slip(p);
         }
         else
         {
@@ -210,10 +210,21 @@ public sealed class Match
         }
     }
 
-    /// <summary>«Хардкор»: ещё одна ошибка; последняя выбивает из матча.</summary>
-    private void Miss(Player p)
+    /// <summary>Ошибка стоит не паузы: режим считает её сам.</summary>
+    private bool Punishes => _rules.Lives > 0 || _rules.Setback > 0;
+
+    /// <summary>«Откат»: ячейки назад. «Хардкор» и «Один шанс»: ещё одна ошибка, последняя выбивает из матча.</summary>
+    private void Slip(Player p)
     {
-        if (++p.Mistakes >= _rules.Lives) p.Out = true;
+        if (_rules.Setback > 0)
+        {
+            p.Index = Math.Max(0, p.Index - _rules.Setback);
+            p.Progress = 0;
+        }
+        else if (++p.Mistakes >= _rules.Lives)
+        {
+            p.Out = true;
+        }
     }
 
     /// <summary>
@@ -227,11 +238,11 @@ public sealed class Match
         if (pressed == 0) return;
 
         if (Fast) Press(p, pressed);
-        else if (_rules.Lives > 0 && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Miss(p);
+        else if (Punishes && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Slip(p);
     }
 
-    /// <summary>Как часто бот ошибается: зависит от сложности; в «Хардкоре» он осторожнее, иначе почти всегда выбывает.</summary>
-    private double BotMistakeChance(double usual) => (_rules.Lives > 0 ? 0.03 : usual) * _diff.BotMistakes;
+    /// <summary>Как часто бот ошибается: зависит от сложности; где ошибка дорога, он осторожнее, иначе почти всегда выбывает.</summary>
+    private double BotMistakeChance(double usual) => (_rules.Lives == 1 ? 0.01 : Punishes ? 0.03 : usual) * _diff.BotMistakes;
 
     /// <summary>Сколько бот «замечает» новую стрелку: на лёгкой — дольше, на сложной — быстрее.</summary>
     private double BotReactionTime(double spread) => (0.2 + _rnd.NextDouble() * spread) * _diff.BotReaction;
@@ -339,8 +350,9 @@ public sealed class Match
         lobby = LobbyIds.Count > 0,
         theme = Theme,
         mirror = _rules.Mirror,
-        blind = _rules.Blind,
+        sight = _rules.Sight,
         lives = _rules.Lives,
+        setback = _rules.Setback,
         teams = Teams,
         you = yourSlot,
         countdown = GameRules.CountdownSeconds,

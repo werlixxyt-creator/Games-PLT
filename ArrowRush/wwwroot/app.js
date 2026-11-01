@@ -12,7 +12,12 @@ const MODES = {
   classic: { name: "Классика", icon: "bar", color: "var(--a1)", desc: "Без особых правил." },
   mirror: { name: "Зеркало", icon: "mirror", color: "var(--a0)", desc: "Жми стрелку, противоположную нарисованной: ← значит →, ↑ значит ↓." },
   blind: { name: "Вслепую", icon: "eye", color: "var(--a3)", desc: "Видна только текущая стрелка, следующие спрятаны." },
-  hardcore: { name: "Хардкор", icon: "heart", color: "var(--bad)", desc: "Без пауз за ошибку, но три ошибки — и ты выбыл." },
+  fog: { name: "Туман", icon: "fog", color: "#9fb4d8", desc: "Видно только 3 ячейки вперёд, дальше стрелки скрыты." },
+  hardcore: { name: "Хардкор", icon: "heart", color: "var(--bad)", noStun: true, desc: "Без пауз за ошибку, но три ошибки — и ты выбыл." },
+  onelife: { name: "Один шанс", icon: "one", color: "#c8102e", noStun: true, desc: "Без пауз за ошибку, но первая же ошибка — и ты выбыл." },
+  setback: { name: "Откат", icon: "back", color: "#a77bff", noStun: true, desc: "Без пауз за ошибку, но она отбрасывает на 3 ячейки назад." },
+  sprint: { name: "Спринт", icon: "bolt", color: "#ff7a4d", desc: "Уровень вдвое короче: всё решает скорость." },
+  marathon: { name: "Марафон", icon: "flag", color: "#2fd6a8", desc: "Уровень в 3 раза длиннее, времени тоже больше." },
   teams: { name: "2 на 2", icon: "team", color: "var(--a2)", seats: 4, desc: "Две команды по двое: чей игрок финишировал первым, та команда и победила." },
   teams5: { name: "5 на 5", icon: "team", color: "var(--gold)", seats: 10, desc: "Две команды по пять человек, уровень в 4 раза длиннее. Чей игрок финишировал первым, та команда и победила." },
 };
@@ -422,7 +427,7 @@ setDifficulty(difficulty);
 function renderModeInfo() {
   for (const slide of document.querySelectorAll("#mode-stage .mode-slide")) {
     const mode = slide.dataset.gameMode;
-    const paceDesc = pace === "fast" && mode !== "hardcore" ? PACES.fast.desc + " Ошибка — пауза." : PACES[pace].desc;
+    const paceDesc = pace === "fast" && !MODES[mode].noStun ? PACES.fast.desc + " Ошибка — пауза." : PACES[pace].desc;
     slide.querySelector(".slide-desc").textContent = `${MODES[mode].desc} ${paceDesc}`;
     const s = profile && profile.stats[mode][pace];
     slide.querySelector(".slide-meta").textContent = !s ? "" : s.games ? `Побед: ${s.wins} из ${s.games}` : "Ещё не играл";
@@ -459,7 +464,12 @@ const STAT_EXTRA = {
   classic: (s) => [[s.finishes, "финишей"], [paceText(s), "лучший темп"]],
   mirror: (s) => [[paceText(s), "лучший темп"], [s.sliders, "ползунков"]],
   blind: (s) => [[s.finishes, "финишей"], [s.sliders, "ползунков"]],
+  fog: (s) => [[s.finishes, "финишей"], [s.sliders, "ползунков"]],
   hardcore: (s) => [[s.finishes, "дошёл до конца"], [s.games - s.finishes, "не дошёл"]],
+  onelife: (s) => [[s.finishes, "дошёл до конца"], [s.games - s.finishes, "не дошёл"]],
+  setback: (s) => [[s.finishes, "финишей"], [paceText(s), "лучший темп"]],
+  sprint: (s) => [[paceText(s), "лучший темп"], [s.sliders, "ползунков"]],
+  marathon: (s) => [[s.finishes, "финишей"], [s.sliders, "ползунков"]],
   teams: (s) => [[s.carries, "финишировал первым"], [s.wins - s.carries, "вытащил напарник"]],
   teams5: (s) => [[s.carries, "финишировал первым"], [s.wins - s.carries, "вытащил напарник"]],
 };
@@ -1068,8 +1078,8 @@ function startMatch(d) {
     fromLobby: d.lobby,
     press: d.fast, // быстрый темп: ползунок — одно нажатие
     mirror: d.mirror,
-    blind: d.blind,
     lives: d.lives,
+    setback: d.setback,
     teams: d.teams,
     you: d.you,
     level: d.level,
@@ -1093,7 +1103,7 @@ function startMatch(d) {
     seed: parseInt(d.matchId.slice(0, 8), 16) || 1,
     level: d.level,
     fast: d.fast,
-    blind: d.blind,
+    sight: d.sight,
     mirror: d.mirror,
     theme: d.theme,
     cell: me.skin,
@@ -1332,8 +1342,9 @@ function showCombo() {
 /** Режимы с нажатиями: сверяем своё предсказание с сервером. */
 function syncPrediction(server, now) {
   if (server.done) pred.idx = match.level.length;
-  // сервер впереди — догоняем сразу; расходимся в другую сторону — ждём, пока дойдут последние нажатия
-  else if (server.idx > pred.idx || (server.idx !== pred.idx && now - pred.lastPress > 400)) pred.idx = server.idx;
+  // сервер впереди — догоняем сразу; расходимся в другую сторону — ждём, пока дойдут последние нажатия.
+  // В «Откате» после ошибки сервер какое-то время ещё впереди, поэтому там всегда ждём
+  else if (server.idx !== pred.idx && ((server.idx > pred.idx && !match.setback) || now - pred.lastPress > 400)) pred.idx = server.idx;
   if (server.miss > pred.miss) pred.miss = server.miss;
   if (server.out) pred.out = true;
 }
@@ -1453,7 +1464,7 @@ function render(now) {
       need.textContent = "Не та стрелка! Пауза…";
       need.classList.add("bad");
     } else if (now < pred.hitUntil) {
-      need.textContent = `Мимо! Осталось ошибок: ${Math.max(0, match.lives - pred.miss)}`;
+      need.textContent = match.setback ? `Мимо! Назад на ${match.setback}` : `Мимо! Осталось ошибок: ${Math.max(0, match.lives - pred.miss)}`;
       need.classList.add("bad");
     } else {
       need.textContent = match.mirror ? "Жми противоположную стрелку" : `Жми ${ARROW_CHAR[level[myIdx].arrow]}`;
@@ -1563,7 +1574,8 @@ function predictPress(bit) {
   } else {
     combo = 0;
     pred.hitUntil = now + 300;
-    if (!match.lives) pred.stunUntil = now + match.stun * 1000;
+    if (match.setback) pred.idx = Math.max(0, pred.idx - match.setback);
+    else if (!match.lives) pred.stunUntil = now + match.stun * 1000;
     else if (++pred.miss >= match.lives) pred.out = true;
   }
   showCombo();

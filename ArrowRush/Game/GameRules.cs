@@ -35,6 +35,14 @@ public static class GameRules
     // Режим «Хардкор»: без пауз за ошибку, но ошибки ограничены
     /// <summary>Столько ошибок — и игрок выбывает.</summary>
     public const int HardcoreLives = 3;
+
+    // Режим «Туман»
+    /// <summary>Сколько ячеек видно, считая текущую.</summary>
+    public const int FogSight = 3;
+
+    // Режим «Откат»
+    /// <summary>На сколько ячеек отбрасывает ошибка.</summary>
+    public const int SetbackCells = 3;
 }
 
 /// <summary>Сложность уровня. В базе хранится числом, клиенту передаётся строкой.</summary>
