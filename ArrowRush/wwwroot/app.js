@@ -982,6 +982,7 @@ function startMatch(d) {
   pred = newPrediction();
   combo = 0;
   $("combo").hidden = true;
+  $("chart-banner").hidden = true;
 
   $("hud-lives-box").hidden = !d.lives;
   $("hud-tag").textContent = modeLabel(d.mode, d.fast, d.difficulty) + (d.practice ? " · тренировка" : "");
@@ -1135,7 +1136,10 @@ function trackMine(track, idx, wrong, level) {
   if (track.idx !== idx) {
     const prev = track.idx;
     track.idx = idx;
-    if (prev >= 0 && idx > prev) celebrate(track, prev, idx, level);
+    if (prev >= 0 && idx > prev) {
+      celebrate(track, prev, idx, level);
+      for (let i = prev; i < Math.min(idx, level.length); i++) if (level[i].chart) chartPassed(i);
+    }
   }
   if (wrong && !track.wasWrong) {
     fx.retrigger($("stage"), "hit");
@@ -1143,6 +1147,18 @@ function trackMine(track, idx, wrong, level) {
     music.miss();
   }
   track.wasWrong = wrong;
+}
+
+/** Пройден чарт: следующие ячейки на экране игрока стали одинаковыми. */
+function chartPassed(i) {
+  const banner = $("chart-banner");
+  banner.textContent = "ЧАРТ! Следующие 10 — одинаковые";
+  banner.hidden = false;
+  fx.retrigger(banner, "pop");
+  clearTimeout(banner._hide);
+  banner._hide = setTimeout(() => { banner.hidden = true; }, 1800);
+  course.chart(i);
+  music.jingle(true);
 }
 
 /** Соперник: полоса прогресса на весь уровень. */

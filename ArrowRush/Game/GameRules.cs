@@ -25,6 +25,13 @@ public static class GameRules
     /// <summary>Сколько матч ещё идёт после финиша первого игрока.</summary>
     public const double AfterFirstFinishSeconds = 30;
 
+    // Ячейка «Чарт»: следующие ячейки становятся одинаковыми
+    public const int ChartCells = 10;
+    /// <summary>Сколько обычных ячеек минимум между чартами; верхняя граница зависит от темпа.</summary>
+    public const int ChartMinGap = 5;
+    public const int ChartMaxGap = 12;
+    public const int ChartMaxGapFast = 30;
+
     // Режим «Хардкор»: без пауз за ошибку, но ошибки ограничены
     /// <summary>Столько ошибок — и игрок выбывает.</summary>
     public const int HardcoreLives = 3;

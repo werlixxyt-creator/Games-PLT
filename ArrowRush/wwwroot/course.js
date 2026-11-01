@@ -51,6 +51,7 @@ const course = (() => {
   let palette = THEMES[0];
   let flash = 0, shake = 0, beat = 0, heat = 0, lastPart = null;
   let parts = [];       // пиксели
+  let reached = 0;      // номер ползунка, на котором сейчас игрок
   let mateShown = new Map(); // где напарники на экране: slot → номер ползунка + доля
 
   /** Повторяемый генератор случайных чисел: один и тот же матч — одна и та же траектория. */
@@ -61,6 +62,12 @@ const course = (() => {
       t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
+  }
+
+  /** Какую стрелку показать: ячейки за чартом выглядят обычными, пока чарт не пройден. */
+  function arrowOf(i) {
+    const cell = opts.level[i];
+    return cell.was !== null && reached <= cell.chartAt ? cell.was : cell.arrow;
   }
 
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -557,7 +564,7 @@ const course = (() => {
     for (let i = cur; i < last && i < n; i++) {
       const hidden = opts.blind && i > cur;
       ctx.globalAlpha = i === cur ? 0.62 : 0.3;
-      ctx.strokeStyle = hidden ? "#8c88b4" : COLORS[opts.level[i].arrow];
+      ctx.strokeStyle = hidden ? "#8c88b4" : COLORS[arrowOf(i)];
       ctx.lineWidth = width - 6;
       trace(Math.max(s, i + 0.03), i + 0.97);
       ctx.stroke();
@@ -585,7 +592,7 @@ const course = (() => {
 
   function drawKey(i, current, progress, wrong) {
     const pts = map.segs[i], p = pts[pts.length - 1];
-    const arrow = opts.level[i].arrow;
+    const arrow = arrowOf(i);
     const color = COLORS[arrow]; // цвет стрелки зависит только от направления
     const hidden = opts.blind && !current;
     const r = (opts.fast ? 25 : 33) * (current ? 1.26 + beat * 0.12 : 1);
@@ -634,6 +641,23 @@ const course = (() => {
       ctx.arc(0, 0, r + 20, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+
+    if (opts.level[i].chart) {
+      // чарт виден издалека: золотое кольцо и подпись, в том числе во «Вслепую»
+      ctx.strokeStyle = "#ffc93c";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.arc(0, 0, r + 9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = "900 17px Unbounded, sans-serif";
+      ctx.textAlign = "center";
+      ctx.lineWidth = 5;
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = OUTLINE;
+      ctx.strokeText("ЧАРТ", 0, r + 36);
+      ctx.fillStyle = "#ffc93c";
+      ctx.fillText("ЧАРТ", 0, r + 36);
     }
 
     if (hidden) {
@@ -833,6 +857,13 @@ const course = (() => {
   /** @param o { seed, level, fast, blind, mirror, hero — скин персонажа, trailOf(i) — кайма следа } */
   function start(o) {
     opts = o;
+    // ячейки за чартом запоминают, какой чарт их меняет
+    let chartAt = -1;
+    o.level.forEach((cell, i) => {
+      if (cell.chart) chartAt = i;
+      cell.chartAt = chartAt;
+    });
+    reached = 0;
     map = build(o.level, o.fast, o.seed);
     s = 0;
     parts = [];
@@ -861,6 +892,17 @@ const course = (() => {
     return [r.left + cssW * PLAYER_AT + (p[0] - camX) * scale, r.top + cssH / 2 + (p[1] - camY) * scale];
   }
 
+  /** Чарт пройден: следующие ячейки стали одинаковыми — вспышка и пиксели на каждой из них. */
+  function chart(i) {
+    flash = Math.max(flash, 0.35);
+    shake = Math.max(shake, 0.4);
+    const color = COLORS[opts.level[i + 1].arrow];
+    for (let k = i + 1; k < opts.level.length && opts.level[k].was !== null && opts.level[k].chartAt === i; k++) {
+      const p = map.segs[k][map.segs[k].length - 1];
+      pixels(p[0], p[1], 8, color);
+    }
+  }
+
   /** Ползунок заполнен: разлёт пикселей в мире. */
   function filled(i) {
     const pts = map.segs[Math.min(i, map.segs.length - 1)], p = pts[pts.length - 1];
@@ -886,6 +928,7 @@ const course = (() => {
 
     const n = map.segs.length;
     const target = Math.min(o.pos, n + 1);
+    reached = Math.floor(target);
     s += (target - s) * (1 - Math.exp(-dt * (opts.fast ? 24 : 34)));
     if (Math.abs(target - s) < 0.001) s = target;
 
@@ -973,5 +1016,5 @@ const course = (() => {
     }
   }
 
-  return { start, frame, hit, filled, point, paintHero };
+  return { start, frame, hit, filled, chart, point, paintHero };
 })();

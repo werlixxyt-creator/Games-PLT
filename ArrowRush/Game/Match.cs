@@ -337,7 +337,7 @@ public sealed class Match
         stun = _diff.FastWrongStunSeconds,
         idleDrain = _diff.IdleDrainPerSecond,
         wrongDrain = _diff.WrongDrainPerSecond,
-        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds }),
+        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was }),
         players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, team = p.Team }),
     };
 

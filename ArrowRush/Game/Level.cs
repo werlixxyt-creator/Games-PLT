@@ -64,8 +64,12 @@ public static class GameModes
     public static GameMode Parse(string? mode) => All.FirstOrDefault(kv => kv.Value.Wire == mode).Key;
 }
 
-/// <summary>Один ползунок: какая стрелка нарисована и сколько секунд он заполняется (в быстром темпе — 0).</summary>
-public sealed record Slider(Arrow Arrow, double FillSeconds);
+/// <summary>
+/// Один ползунок: какая стрелка нарисована и сколько секунд он заполняется (в быстром темпе — 0).
+/// Chart — ячейка «Чарт». Was — у ячеек за чартом: какой стрелкой она выглядит, пока чарт не пройден.
+/// Считается всегда Arrow: дойти до этих ячеек раньше чарта нельзя.
+/// </summary>
+public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null);
 
 public static class LevelGenerator
 {
@@ -94,6 +98,27 @@ public static class LevelGenerator
             sliders[i] = new Slider(arrow, Math.Round(seconds, 2));
         }
 
+        AddCharts(sliders, fast, rnd);
         return sliders;
+    }
+
+    /// <summary>Расставляет чарты: за каждым идут одинаковые ячейки, прежняя стрелка остаётся в Was.</summary>
+    private static void AddCharts(Slider[] sliders, bool fast, Random rnd)
+    {
+        var maxGap = fast ? GameRules.ChartMaxGapFast : GameRules.ChartMaxGap;
+        var lastStart = sliders.Length - GameRules.ChartCells - 1;
+        if (lastStart < 1) return;
+
+        var at = rnd.Next(1, Math.Min(maxGap, lastStart + 1));
+        while (at <= lastStart)
+        {
+            sliders[at] = sliders[at] with { Chart = true };
+            var same = (Arrow)rnd.Next(4);
+            for (var i = at + 1; i <= at + GameRules.ChartCells; i++)
+            {
+                sliders[i] = sliders[i] with { Arrow = same, Was = sliders[i].Arrow };
+            }
+            at += GameRules.ChartCells + 1 + rnd.Next(GameRules.ChartMinGap, maxGap);
+        }
     }
 }

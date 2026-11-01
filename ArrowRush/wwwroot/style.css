@@ -1192,6 +1192,22 @@ h3 {
   100% { transform: scale(1); }
 }
 
+/* сообщение о пройденном чарте */
+.chart-banner {
+  position: absolute;
+  top: 118px;
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  text-align: center;
+  font: 900 24px var(--font-display);
+  color: var(--gold);
+  -webkit-text-stroke: 2px #0e0a26;
+  paint-order: stroke fill;
+  pointer-events: none;
+}
+.chart-banner.pop { animation: combo-pop .3s var(--ease-back); }
+
 /* соперники */
 .opponents {
   margin-top: 16px;
