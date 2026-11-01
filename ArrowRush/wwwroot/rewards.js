@@ -1,11 +1,11 @@
 "use strict";
 
-// Ежедневные и еженедельные награды: блок слева в меню, как новости в CS2.
+// Ежедневные и еженедельные награды: колонка плиток слева в меню, как в CS2.
 // Прогресс и звёзды считает сервер (Data/Rewards.cs), здесь только показ и кнопка «Забрать».
 const rewards = (() => {
   const $ = (id) => document.getElementById(id);
 
-  let o = null;     // { api, refresh — перечитать профиль: звёзды открывают скины }
+  let o = null;     // { api, me — текущий профиль, refresh — перечитать его: звёзды открывают скины }
   let data = null;  // ответ /api/account/rewards
 
   function resetText(iso) {
@@ -21,43 +21,61 @@ const rewards = (() => {
     const name = document.createElement("span");
     name.className = "reward-name";
     name.textContent = t.name;
-    const stars = document.createElement("span");
-    stars.className = "reward-stars";
-    stars.textContent = `+${t.stars} ★`;
-    li.append(name, stars);
+    li.appendChild(name);
 
     if (t.claimed) {
       const got = document.createElement("span");
-      got.className = "reward-got";
-      got.textContent = "✓ получено";
+      got.className = "reward-stars";
+      got.textContent = "✓";
       li.appendChild(got);
     } else if (done) {
       const claim = document.createElement("button");
       claim.type = "button";
-      claim.className = "btn primary small";
-      claim.textContent = "Забрать";
+      claim.className = "reward-claim";
+      claim.textContent = `Забрать ${t.stars} ★`;
       claim.addEventListener("click", () => take(t, claim));
       li.appendChild(claim);
     } else {
+      const stars = document.createElement("span");
+      stars.className = "reward-stars";
+      stars.textContent = `+${t.stars} ★`;
       const bar = document.createElement("span");
       bar.className = "reward-bar";
       const fill = document.createElement("i");
       fill.style.width = `${(t.have / t.need) * 100}%`;
-      const count = document.createElement("b");
+      bar.appendChild(fill);
+      const count = document.createElement("span");
+      count.className = "reward-count";
       count.textContent = `${t.have} / ${t.need}`;
-      bar.append(fill, count);
-      li.appendChild(bar);
+      li.append(stars, bar, count);
     }
     return li;
+  }
+
+  function renderPeriod(id, period) {
+    const claimed = period.tasks.filter((t) => t.claimed).length;
+    $(id).replaceChildren(...period.tasks.map(taskRow));
+    $(id + "-reset").textContent = resetText(period.resetsAt);
+    $(id + "-done").textContent = `${claimed} из ${period.tasks.length}`;
+  }
+
+  /** Плитка со следующим скином за звёзды; когда открыты все, показывает последний. */
+  function renderNext() {
+    const skins = o.me().skins.filter((s) => s.by === "stars");
+    const next = skins.find((s) => !s.unlocked);
+    const skin = next || skins[skins.length - 1];
+    course.paintHero($("reward-next-hero"), skin.id);
+    $("reward-next-name").textContent = skin.name;
+    $("reward-next-need").textContent = next ? `Собери ${next.need} ★` : "Все награды открыты";
+    $("reward-next-bar").style.width = `${Math.min(100, (data.stars / skin.need) * 100)}%`;
   }
 
   function render() {
     if (!data) return;
     fx.countUp($("reward-stars"), data.stars);
-    $("reward-day").replaceChildren(...data.day.tasks.map(taskRow));
-    $("reward-week").replaceChildren(...data.week.tasks.map(taskRow));
-    $("reward-day-reset").textContent = resetText(data.day.resetsAt);
-    $("reward-week-reset").textContent = resetText(data.week.resetsAt);
+    renderPeriod("reward-day", data.day);
+    renderPeriod("reward-week", data.week);
+    renderNext();
   }
 
   async function load() {

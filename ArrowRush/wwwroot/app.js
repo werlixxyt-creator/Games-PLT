@@ -597,7 +597,7 @@ $("btn-stats").addEventListener("click", () => {
 $("btn-stats-back").addEventListener("click", () => show("menu"));
 
 social.init({ api, historyItem, me: () => profile, refresh: refreshProfile });
-rewards.init({ api, refresh: refreshProfile });
+rewards.init({ api, me: () => profile, refresh: refreshProfile });
 
 for (const t of document.querySelectorAll("#skin-tabs .tab")) {
   t.addEventListener("click", () => {
