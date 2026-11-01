@@ -45,6 +45,7 @@ public static class Database
         // бывший режим «Скорость» (1) — теперь «Классика» в быстром темпе
         db.ExecuteSqlRaw("UPDATE \"Matches\" SET \"Mode\" = 0, \"Fast\" = TRUE WHERE \"Mode\" = 1");
         AddColumnIfMissing(db, "AspNetUsers", "SliderSkin", "TEXT NULL");
+        AddColumnIfMissing(db, "AspNetUsers", "HeroSkin", "TEXT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "WinSkin", "TEXT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "StreakSkin", "TEXT NULL");
     }

@@ -27,7 +27,9 @@ const DIFFS = {
   hard: { name: "сложная", desc: "Больше ползунков, заполняются быстрее, штрафы и паузы жёстче, бот почти не ошибается." },
 };
 
-const SKIN_SLOTS = ["slider", "win", "streak", "music"];
+const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
+// кайма следа персонажа по скину ползунков; цвета стрелок от скина не зависят
+const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16" };
 // экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
 const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search"]);
 const UNLOCK_TEXT = {
@@ -549,6 +551,19 @@ function fxPreview(skin, table = FX_PREVIEW) {
   return tile;
 }
 
+/** Персонаж на плитке — рисует тот же код, что и в матче. */
+function heroPreview(id) {
+  const tile = document.createElement("div");
+  tile.className = "fx-tile";
+  tile.style.setProperty("--c", "#2a2150");
+  const canvas = document.createElement("canvas");
+  canvas.className = "hero-preview";
+  canvas.width = canvas.height = 84;
+  course.paintHero(canvas, id);
+  tile.appendChild(canvas);
+  return tile;
+}
+
 /** Проигрывает эффект скина над элементом. */
 function playSkinFx(slot, id, el, power = 1) {
   const [x, y] = fx.anchor(el);
@@ -571,7 +586,7 @@ function renderSkins() {
 
     const preview = document.createElement("div");
     preview.className = "skin-preview";
-    preview.appendChild(s.slot === "slider" ? sliderPreview(s.id) : fxPreview(s));
+    preview.appendChild(s.slot === "slider" ? sliderPreview(s.id) : s.slot === "hero" ? heroPreview(s.id) : fxPreview(s));
     if (!s.unlocked) preview.insertAdjacentHTML("beforeend", `<span class="skin-lock"><svg viewBox="0 0 24 24"><use href="#lock"/></svg></span>`);
 
     const name = document.createElement("div");
@@ -593,7 +608,7 @@ function renderSkins() {
 
     const buttons = document.createElement("div");
     buttons.className = "skin-buttons";
-    if (s.slot !== "slider") {
+    if (s.slot === "win" || s.slot === "streak") {
       const look = document.createElement("button");
       look.className = "btn ghost small";
       look.textContent = "Посмотреть";
@@ -880,7 +895,6 @@ function startMatch(d) {
     lives: d.lives,
     you: d.you,
     level: d.level,
-    players: d.players,
     idleDrain: d.idleDrain,
     wrongDrain: d.wrongDrain,
     stun: d.stun,
@@ -902,7 +916,8 @@ function startMatch(d) {
     fast: d.fast,
     blind: d.blind,
     mirror: d.mirror,
-    colorOf: (arrow, i) => burstColor(me.skin, arrow, i),
+    hero: profile ? profile.equipped.hero : "circle",
+    trailOf: (i) => (me.skin === "rainbow" ? fx.colors[i % 4] : SKIN_TRAIL[me.skin] || SKIN_TRAIL.classic),
   });
   match.tracks.set(d.you, {
     mine: true,
@@ -919,10 +934,8 @@ function startMatch(d) {
     box.className = "opp glass";
     const nameEl = document.createElement("div");
     nameEl.className = "track-name";
-    // цвет полосы — как у персонажа соперника на траектории
     const bar = document.createElement("div");
     bar.className = "opp-bar";
-    bar.style.setProperty("--c", fx.colors[p.slot % 4]);
     const fill = document.createElement("i");
     const count = document.createElement("span");
     bar.append(fill, count);
@@ -1118,7 +1131,6 @@ function render(now) {
 
   const speed = match.press;
   let myPos = 0, myWrong = false, myHolding = false;
-  const ghosts = [];
 
   for (const p of st.players) {
     const track = match.tracks.get(p.slot);
@@ -1165,8 +1177,6 @@ function render(now) {
       myHolding = holding;
     } else {
       renderOpponent(track, idx, progress, wrong, level);
-      const who = match.players.find((o) => o.slot === p.slot);
-      if (!p.left) ghosts.push({ pos: p.idx + p.p, color: fx.colors[p.slot % 4], name: who.name, out: p.out });
     }
 
     if (p.done || p.out) {
@@ -1177,7 +1187,7 @@ function render(now) {
     if (track.box) track.box.classList.toggle("left", p.left || p.out);
   }
 
-  course.frame(now, { pos: myPos, wrong: myWrong, holding: myHolding, ghosts, energy: music.energy(), part: music.part() });
+  course.frame(now, { pos: myPos, wrong: myWrong, holding: myHolding, energy: music.energy(), part: music.part() });
 
   // подсказки для меня
   const mine = st.players.find((p) => p.slot === match.you);

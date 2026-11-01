@@ -13,6 +13,7 @@ public sealed class AppUser : IdentityUser
 
     /// <summary>Надетые скины (Id из <see cref="Skins"/>), null — по умолчанию.</summary>
     public string? SliderSkin { get; set; }
+    public string? HeroSkin { get; set; }
     public string? WinSkin { get; set; }
     public string? StreakSkin { get; set; }
 }

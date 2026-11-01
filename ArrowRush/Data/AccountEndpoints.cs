@@ -123,6 +123,7 @@ public static class AccountEndpoints
             equipped = new Dictionary<string, string>
             {
                 [Skins.Slider] = Skins.Equipped(Skins.Slider, user.SliderSkin),
+                [Skins.Hero] = Skins.Equipped(Skins.Hero, user.HeroSkin),
                 [Skins.Win] = Skins.Equipped(Skins.Win, user.WinSkin),
                 [Skins.StreakSlot] = Skins.Equipped(Skins.StreakSlot, user.StreakSkin),
             },
@@ -165,6 +166,7 @@ public static class AccountEndpoints
         switch (skin.Slot)
         {
             case Skins.Slider: user.SliderSkin = skin.Id; break;
+            case Skins.Hero: user.HeroSkin = skin.Id; break;
             case Skins.Win: user.WinSkin = skin.Id; break;
             case Skins.StreakSlot: user.StreakSkin = skin.Id; break;
         }

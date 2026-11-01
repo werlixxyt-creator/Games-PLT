@@ -12,7 +12,7 @@ public enum Unlock
 }
 
 /// <summary>
-/// Скин. Slot — куда он надевается: ползунки, эффект победы или эффект серии побед.
+/// Скин. Slot — куда он надевается: ползунки, персонаж, эффект победы или эффект серии побед.
 /// Как скин выглядит, знает только клиент (по Id), сервер решает, открыт ли он.
 /// </summary>
 public sealed record Skin(string Slot, string Id, string Name, Unlock By = Unlock.Free, int Need = 0);
@@ -35,6 +35,7 @@ public sealed record Achievements(int Games, int Wins, int Sliders, int Streak, 
 public static class Skins
 {
     public const string Slider = "slider";
+    public const string Hero = "hero";
     public const string Win = "win";
     public const string StreakSlot = "streak";
 
@@ -47,6 +48,13 @@ public static class Skins
         new(Slider, "pixel", "Пиксели", Unlock.Sliders, 300),
         new(Slider, "gold", "Золото", Unlock.Wins, 15),
         new(Slider, "rainbow", "Радуга", Unlock.Streak, 5),
+
+        new(Hero, "circle", "Кружок"),
+        new(Hero, "cube", "Куб", Unlock.Games, 3),
+        new(Hero, "arrow", "Стрелка", Unlock.Wins, 3),
+        new(Hero, "ship", "Корабль", Unlock.Wins, 10),
+        new(Hero, "spike", "Шипастый", Unlock.Sliders, 1000),
+        new(Hero, "star", "Звезда", Unlock.Streak, 4),
 
         new(Win, "confetti", "Конфетти"),
         new(Win, "stars", "Звездопад", Unlock.Wins, 1),

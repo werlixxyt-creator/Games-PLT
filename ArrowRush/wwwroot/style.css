@@ -292,11 +292,12 @@ h3 {
 .tabs.three { grid-template-columns: repeat(3, minmax(0, 1fr)); width: min(500px, 100%); }
 .tabs.three::before { width: calc((100% - 16px) / 3); }
 /* minmax(0, 1fr): колонки строго равные, даже если надпись длинная — иначе подложка съезжает */
-.tabs.four { grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(620px, 100%); }
-.tabs.four .tab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-inline: 4px; }
+.tabs.five { grid-template-columns: repeat(5, minmax(0, 1fr)); width: min(720px, 100%); }
+.tabs.five .tab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-inline: 4px; }
 .skin-card.equipped.playing::after { content: "ИГРАЕТ"; }
-.tabs.four::before { width: calc((100% - 20px) / 4); }
+.tabs.five::before { width: calc((100% - 24px) / 5); }
 .tabs[data-active="3"]::before { transform: translateX(calc(300% + 12px)); }
+.tabs[data-active="4"]::before { transform: translateX(calc(400% + 16px)); }
 
 /* «играет сейчас» на карточке музыки — прыгающий эквалайзер */
 .eq-bars { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 3px; align-items: flex-end; height: 22px; }
@@ -837,6 +838,7 @@ h3 {
   animation: float 3s ease-in-out infinite;
 }
 .fx-tile svg { width: 38px; height: 38px; }
+.fx-tile .hero-preview { width: 58px; height: 58px; }
 
 /* ---------- Поиск ---------- */
 
@@ -1143,7 +1145,8 @@ body[data-screen="game"] #app { max-width: 1500px; padding-bottom: 20px; }
   border-radius: 999px;
   background: var(--panel-2);
 }
-.opp-bar i { display: block; height: 100%; background: var(--c); transition: width 80ms linear; }
+/* цвет соперников один и не совпадает ни с одной стрелкой */
+.opp-bar i { display: block; height: 100%; background: #9b7bff; transition: width 80ms linear; }
 .opp-bar span {
   position: absolute;
   inset: 0;

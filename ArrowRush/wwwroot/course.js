@@ -3,9 +3,9 @@
 // Сцена матча в духе Geometry Dash: ползунки изогнуты вдоль траектории, по которой летит персонаж.
 // Ползунок — участок пути, стрелка стоит в его конце: держишь стрелку — летишь к ней.
 // Логику считает сервер, здесь только картинка. Траектория строится из id матча,
-// поэтому у всех игроков она одинаковая и соперники летят по ней же.
+// поэтому у всех игроков она одинаковая. На ней только свой персонаж: прогресс соперников — на панели снизу.
 // Участки пути идут секциями, у каждой своя форма пути и своя палитра; между ними — портал.
-// Персонаж при этом всегда один и тот же.
+// Персонаж при этом не меняется, а цвет стрелки зависит только от её направления.
 const course = (() => {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const css = getComputedStyle(document.documentElement);
@@ -40,7 +40,7 @@ const course = (() => {
   let cssW = 0, cssH = 0, dpr = 1, scale = 1, viewW = 1280;
 
   let map = null;       // { segs, sections, deco, ... } из build()
-  let opts = null;      // { level, fast, blind, mirror, colorOf }
+  let opts = null;      // { level, fast, blind, mirror, hero, trailOf }
   let s = 0;            // где персонаж на экране: номер ползунка + доля
   let lastNow = 0, time = 0;
   let camX = 0, camY = 0, tilt = 0;
@@ -220,8 +220,38 @@ const course = (() => {
     return p;
   }
 
-  // персонаж один на весь уровень, смотрит вправо
-  const ICON = new Path2D("M-26 -17 L32 0 L-26 17 L-13 0 Z");
+  /** Многоугольник-звезда: чётные вершины на радиусе a, нечётные на b. */
+  function starPath(points, a, b) {
+    const p = new Path2D();
+    const step = Math.PI / points;
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 ? b : a;
+      p.lineTo(Math.cos(i * step - Math.PI / 2) * r, Math.sin(i * step - Math.PI / 2) * r);
+    }
+    p.closePath();
+    return p;
+  }
+
+  /** Кольцо: внешний круг с вырезом, заливается по правилу evenodd. */
+  function ringPath(outer, inner) {
+    const p = new Path2D();
+    p.arc(0, 0, outer, 0, Math.PI * 2);
+    p.moveTo(inner, 0);
+    p.arc(0, 0, inner, 0, Math.PI * 2);
+    return p;
+  }
+
+  // скины персонажа: форма, цвет (не из цветов стрелок) и как он крутится.
+  // Какие скины есть и чем открываются — решает сервер (Data/Skins.cs), здесь только их вид.
+  // nose — смотрит по ходу полёта, иначе вращается сам по себе; у всех форм нос справа
+  const HEROES = {
+    circle: { path: ringPath(24, 9), color: "#ff2448" },
+    cube: { path: new Path2D("M-21 -21 H21 V21 H-21 Z M-9 -9 V9 H9 V-9 Z"), color: "#ffffff" },
+    arrow: { path: new Path2D("M-26 -17 L32 0 L-26 17 L-13 0 Z"), color: "#ff2448", nose: true },
+    ship: { path: new Path2D("M36 3 L-4 -15 L-27 -24 L-17 -5 L-31 -2 L-17 8 L-27 24 L-3 17 Z"), color: "#ffffff", nose: true },
+    spike: { path: starPath(7, 31, 19), color: "#ff2448" },
+    star: { path: starPath(5, 33, 14), color: "#ffd84d" },
+  };
 
   // ---------- Частицы ----------
 
@@ -519,10 +549,9 @@ const course = (() => {
     ctx.stroke();
 
     for (let i = cur; i < last && i < n; i++) {
-      const color = opts.colorOf(opts.level[i].arrow, i);
       const hidden = opts.blind && i > cur;
       ctx.globalAlpha = i === cur ? 0.62 : 0.3;
-      ctx.strokeStyle = hidden ? "#8c88b4" : color;
+      ctx.strokeStyle = hidden ? "#8c88b4" : COLORS[opts.level[i].arrow];
       ctx.lineWidth = width - 6;
       trace(Math.max(s, i + 0.03), i + 0.97);
       ctx.stroke();
@@ -530,18 +559,18 @@ const course = (() => {
     ctx.globalAlpha = 1;
   }
 
-  /** След за персонажем: толстая белая лента, как у волны в GD. */
+  /** След за персонажем: толстая белая лента с каймой цвета скина ползунков. */
   function drawTrail() {
     const tail = Math.max(0, s - (opts.fast ? 12 : 4));
-    const cur = Math.min(Math.floor(s), map.segs.length - 1);
+    const n = map.segs.length;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = opts.colorOf(opts.level[cur].arrow, cur);
     ctx.lineWidth = opts.fast ? 22 : 30;
-    ctx.globalAlpha = 0.65;
-    trace(tail, s);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    for (let i = Math.floor(tail); i <= Math.min(Math.floor(s), n); i++) {
+      ctx.strokeStyle = opts.trailOf(Math.min(i, n - 1));
+      trace(Math.max(tail, i), Math.min(s, i + 1));
+      ctx.stroke();
+    }
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = opts.fast ? 13 : 20;
     trace(tail, s);
@@ -551,7 +580,7 @@ const course = (() => {
   function drawKey(i, current, progress, wrong) {
     const pts = map.segs[i], p = pts[pts.length - 1];
     const arrow = opts.level[i].arrow;
-    const color = opts.colorOf(arrow, i);
+    const color = COLORS[arrow]; // цвет стрелки зависит только от направления
     const hidden = opts.blind && !current;
     const r = (opts.fast ? 25 : 33) * (current ? 1.26 + beat * 0.12 : 1);
 
@@ -568,8 +597,8 @@ const course = (() => {
       ctx.stroke();
     }
 
-    ctx.fillStyle = hidden ? "#3a3560" : color;
-    ctx.strokeStyle = OUTLINE;
+    ctx.fillStyle = hidden ? "#3a3560" : "#0e0a26";
+    ctx.strokeStyle = hidden ? "#8c88b4" : color;
     ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
@@ -612,7 +641,7 @@ const course = (() => {
       ctx.rotate(ROT[arrow]);
       ctx.scale(k, k);
       ctx.translate(-12, -12);
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = color;
       ctx.strokeStyle = OUTLINE;
       ctx.lineWidth = 2.4;
       ctx.lineJoin = "round";
@@ -652,34 +681,22 @@ const course = (() => {
     if (map.endX < right + 300) drawPortal(map.endX, map.endY, [255, 255, 255], 190);
   }
 
-  function drawIcon(x, y, angle, color, size, alpha = 1) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.globalAlpha = alpha;
-    ctx.rotate(angle);
-    ctx.scale(size, size);
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 8;
-    ctx.stroke(ICON);
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 4;
-    ctx.stroke(ICON);
-    ctx.fillStyle = color;
-    ctx.fill(ICON);
-    ctx.restore();
-  }
-
-  function drawGhosts(ghosts) {
-    for (const g of ghosts) {
-      const pos = clamp(g.pos, 0, map.segs.length + 1);
-      const p = at(pos);
-      drawIcon(p.x, p.y, p.a, g.color, 0.72, g.out ? 0.2 : 0.55);
-      ctx.fillStyle = "rgba(255,255,255,.8)";
-      ctx.font = "800 15px Nunito, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(g.name, p.x, p.y - 36);
-    }
+  function drawHero(c, id, x, y, angle, size) {
+    const hero = HEROES[id] || HEROES.circle;
+    c.save();
+    c.translate(x, y);
+    c.rotate(hero.nose ? angle : time * 5);
+    c.scale(size, size);
+    c.lineJoin = "round";
+    c.strokeStyle = "#fff";
+    c.lineWidth = 8;
+    c.stroke(hero.path);
+    c.strokeStyle = OUTLINE;
+    c.lineWidth = 4;
+    c.stroke(hero.path);
+    c.fillStyle = hero.color;
+    c.fill(hero.path, "evenodd");
+    c.restore();
   }
 
   function sectionAt(pos) {
@@ -763,7 +780,7 @@ const course = (() => {
 
   // ---------- Что вызывает app.js ----------
 
-  /** @param o { seed, level, fast, blind, mirror, colorOf(arrow, i) } */
+  /** @param o { seed, level, fast, blind, mirror, hero — скин персонажа, trailOf(i) — кайма следа } */
   function start(o) {
     opts = o;
     map = build(o.level, o.fast, o.seed);
@@ -797,11 +814,18 @@ const course = (() => {
   /** Ползунок заполнен: разлёт пикселей в мире. */
   function filled(i) {
     const pts = map.segs[Math.min(i, map.segs.length - 1)], p = pts[pts.length - 1];
-    pixels(p[0], p[1], opts.fast ? 10 : 22, opts.colorOf(opts.level[i].arrow, i));
+    pixels(p[0], p[1], opts.fast ? 10 : 22, COLORS[opts.level[i].arrow]);
+  }
+
+  /** Превью скина персонажа на экране скинов. */
+  function paintHero(target, id) {
+    const c = target.getContext("2d");
+    c.clearRect(0, 0, target.width, target.height);
+    drawHero(c, id, target.width / 2, target.height / 2, 0, target.width / 84);
   }
 
   /**
-   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, ghosts: [{ pos, color, name, out }],
+   * Кадр. o: { pos — номер ползунка + доля, wrong, holding,
    * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null }.
    */
   function frame(now, o) {
@@ -855,7 +879,7 @@ const course = (() => {
     tilt += (tiltTo - tilt) * (1 - Math.exp(-dt * 1.6));
 
     const cur = Math.floor(s);
-    const color = s < n ? opts.colorOf(opts.level[cur].arrow, cur) : "#fff";
+    const color = opts.trailOf(Math.min(cur, n - 1));
     if (!reduce && s < n && (o.holding || Math.random() < 0.3)) {
       pixel(me.x - 20, me.y + (Math.random() - 0.5) * 16, -80 - Math.random() * 120, (Math.random() - 0.5) * 70, 0.4 + Math.random() * 0.5, 4 + Math.random() * 7, Math.random() < 0.5 ? "#fff" : color);
     }
@@ -877,14 +901,13 @@ const course = (() => {
       const last = visibleRange(right);
       for (let i = last - 1; i >= cur; i--) drawKey(i, i === cur, s - cur, o.wrong);
     }
-    drawGhosts(o.ghosts);
     drawParts(dt);
 
     // у финишного портала персонаж уменьшается и исчезает
     const gone = clamp(n + 1 - s, 0, 1);
     if (gone > 0.02) {
       const jitter = o.wrong && !reduce ? (Math.random() - 0.5) * 7 : 0;
-      drawIcon(me.x + jitter, me.y + jitter, me.a, color, (o.holding ? 1.14 : 1) * gone, 1);
+      drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter, me.a, (o.holding ? 1.14 : 1) * gone);
     }
     ctx.restore();
 
@@ -900,5 +923,5 @@ const course = (() => {
     }
   }
 
-  return { start, frame, hit, filled, point };
+  return { start, frame, hit, filled, point, paintHero };
 })();
