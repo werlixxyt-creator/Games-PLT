@@ -585,6 +585,7 @@ h3 {
   overflow: hidden;
   background: var(--panel-2);
 }
+@keyframes fill-loop { 0% { height: 0; } 80%, 100% { height: 100%; } }
 .mc-bar i {
   position: absolute;
   inset: auto 0 0;
@@ -592,7 +593,6 @@ h3 {
   background: var(--c);
   animation: fill-loop 1.8s var(--ease-out) infinite;
 }
-@keyframes fill-loop { 0% { height: 0; } 80%, 100% { height: 100%; } }
 
 .nav-arrow {
   position: relative;
@@ -834,23 +834,6 @@ h3 {
 .skin-buttons { display: flex; gap: 8px; margin-top: auto; }
 .skin-buttons .btn { flex: 1; padding: 7px 6px; font-size: 13px; white-space: nowrap; box-shadow: 0 4px 0 var(--outline); }
 
-/* мини-дорожка в превью: ползунки сами заполняются по очереди */
-.track.mini { height: 96px; width: 144px; gap: 7px; }
-.track.mini .slider { opacity: 1; transform: none; gap: 5px; }
-.track.mini .slider .bar { animation: none; border-width: 2px; }
-.track.mini .slider .key { height: 18px; }
-.track.mini .slider .key svg { width: 15px; height: 15px; animation: none; }
-.track.mini .slider .fill { height: 0; }
-.track.mini .slider .fill, .skin-candy.mini .slider .fill, .skin-rainbow.mini .slider .fill {
-  animation-name: fill-loop, var(--skin-anim, none);
-  animation-duration: 2.4s, 1s;
-  animation-timing-function: var(--ease-out), linear;
-  animation-iteration-count: infinite;
-  animation-delay: calc(var(--k) * .3s), 0s;
-}
-.skin-candy.mini { --skin-anim: candy; }
-.skin-rainbow.mini { --skin-anim: rainbow; }
-
 .fx-tile {
   --c: var(--a2);
   width: 78px; height: 78px;
@@ -866,6 +849,10 @@ h3 {
 }
 .fx-tile svg { width: 38px; height: 38px; }
 .fx-tile .hero-preview { width: 58px; height: 58px; }
+.cell-tile { --c: #2a2150; overflow: hidden; }
+.skin-preview .cell-tile { background: none; border: 0; box-shadow: none; }
+.cell-preview { width: 100%; height: 100%; }
+.skin-preview .cell-tile { width: 118px; height: 118px; }
 
 /* ---------- Поиск ---------- */
 
@@ -1081,71 +1068,7 @@ h3 {
 .place-badge.out { background: var(--bad); color: var(--on-bg); }
 @keyframes pop-in { from { transform: scale(0); opacity: 0; } }
 
-/* дорожка из ползунков */
-.track {
-  display: flex;
-  gap: 8px;
-  height: 250px;
-}
-.slider {
-  --c: var(--a0);
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  opacity: .5;
-  transition: opacity .2s, transform .3s var(--ease-back);
-}
-.slider .bar {
-  position: relative;
-  flex: 1;
-  border-radius: 12px;
-  background: var(--room-2);
-  border: 3px solid #0e0a26;
-  overflow: hidden;
-  transition: border-color .2s;
-}
-.slider .fill {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 0%;
-  background: var(--c);
-  box-shadow: inset 0 -8px 0 rgba(0, 0, 0, .15);
-}
-/* светлая кромка заполнения */
-.slider .fill::before {
-  content: "";
-  position: absolute;
-  left: 0; right: 0; top: 0;
-  height: 4px;
-  background: rgba(255, 255, 255, .75);
-}
-.slider .key {
-  height: 36px;
-  display: grid;
-  place-items: center;
-  color: var(--c);
-}
-.slider .key svg { width: 28px; height: 28px; transition: transform .2s var(--ease-back); stroke: #0e0a26; stroke-width: 2px; paint-order: stroke; }
-
-.slider.done { opacity: 1; }
-.slider.done .fill { height: 100%; animation: flash .4s ease-out; }
-.slider.done .fill::before { display: none; }
-.slider.done .key svg { animation: key-pop .35s var(--ease-back); }
-@keyframes flash { from { filter: brightness(1.8); } }
-@keyframes key-pop { 40% { transform: scale(1.5) translateY(-4px); } }
-
-.slider.current { opacity: 1; transform: translateY(-6px); }
-.slider.current .bar { border-color: var(--on-bg); }
-.slider.current .key svg { animation: pulse .8s ease-in-out infinite; }
-.slider.current.holding .fill { filter: brightness(1.15); }
-.slider.current.holding .key svg { animation: none; transform: scale(.85) translateY(2px); }
-.slider.current.wrong .bar { border-color: var(--bad); animation: jitter .2s linear infinite; }
-.slider.current.wrong .key { color: var(--bad); }
-
 @keyframes pulse { 50% { transform: scale(1.22); } }
-@keyframes jitter { 25% { translate: -2px 0; } 75% { translate: 2px 0; } }
 
 .need {
   margin-top: 14px;
@@ -1468,46 +1391,6 @@ h3 {
 
 /* ---------- Режимы в игре ---------- */
 
-/* ---------- Скины ползунков ---------- */
-
-/* Неон: тёмная колба, светящееся заполнение */
-.skin-neon .slider .bar { background: #07051a; border-color: color-mix(in srgb, var(--c) 60%, #07051a); }
-.skin-neon .slider .fill { background: color-mix(in srgb, var(--c) 75%, white); box-shadow: 0 0 16px var(--c); }
-
-/* Карамель: бегущие полоски */
-.skin-candy .slider .fill {
-  background: repeating-linear-gradient(-45deg, var(--c) 0 8px, color-mix(in srgb, var(--c) 40%, white) 8px 16px);
-  background-size: 22.6px 22.6px;
-  animation: candy .8s linear infinite;
-}
-.skin-candy .slider .bar { border-radius: 999px; }
-@keyframes candy { to { background-position: 22.6px 0; } }
-
-/* Пиксели: заполнение квадратными ступеньками */
-.skin-pixel .slider .bar { border-radius: 3px; }
-.skin-ocean .slider .fill { background: linear-gradient(90deg, #0d4fa8, #3fb6ff); }
-.skin-lava .slider .fill { background: linear-gradient(90deg, #c8102e, #ff6a2b, #ffd23f); }
-.skin-mint .slider .fill { background: linear-gradient(90deg, #1fbf8f, #b8ffe6); }
-.skin-pixel .slider .fill {
-  box-shadow: none;
-  -webkit-mask: repeating-linear-gradient(to top, #000 0 9px, transparent 9px 12px);
-  mask: repeating-linear-gradient(to top, #000 0 9px, transparent 9px 12px);
-}
-.skin-pixel .slider .fill::before { display: none; }
-
-/* Золото: все ползунки золотые с бликом */
-.skin-gold .slider .fill {
-  background: linear-gradient(90deg, #c98a0c, #ffd54a 40%, #fff2b0 50%, #ffd54a 60%, #c98a0c);
-}
-
-/* Радуга: переливается по кругу */
-.skin-rainbow .slider .fill {
-  background: linear-gradient(0deg, var(--a0), var(--a1), var(--a3), var(--a2), var(--a0));
-  background-size: 100% 300%;
-  animation: rainbow 2s linear infinite;
-}
-@keyframes rainbow { to { background-position: 0 300%; } }
-
 /* ---------- Результаты ---------- */
 
 #screen-results { padding-top: 10px; }
@@ -1580,8 +1463,6 @@ h3 {
   .hub { gap: 14px; }
   .hub-side { width: 90px; }
   .hub-sub { display: none; }
-  .track { height: 190px; gap: 5px; }
-  .slider .key svg { width: 20px; height: 20px; }
   /* шапка игры в одну строку: плашку режима прячем, кнопку «Выйти» сжимаем */
   .hud { gap: 14px; padding: 8px 12px; }
   #hud-tag, #rh-title { display: none; }

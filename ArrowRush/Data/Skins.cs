@@ -14,7 +14,7 @@ public enum Unlock
 }
 
 /// <summary>
-/// Скин. Slot — куда он надевается: ползунки, персонаж, эффект победы или эффект серии побед.
+/// Скин. Slot — куда он надевается: ячейки (slider), персонаж, эффект победы или эффект серии побед.
 /// Как скин выглядит, знает только клиент (по Id), сервер решает, открыт ли он.
 /// </summary>
 public sealed record Skin(string Slot, string Id, string Name, Unlock By = Unlock.Free, int Need = 0);

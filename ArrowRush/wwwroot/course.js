@@ -13,9 +13,6 @@ const course = (() => {
   const css = getComputedStyle(document.documentElement);
   const COLORS = [0, 1, 2, 3].map((i) => css.getPropertyValue("--a" + i).trim());
   const OUTLINE = css.getPropertyValue("--outline").trim() || "#1d1340";
-  // стрелки: 0 ← 1 ↑ 2 → 3 ↓; символ смотрит вверх
-  const ROT = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
-  const ARROW = new Path2D("M12 3 L21 13 H15.5 V21 H8.5 V13 H3 Z");
 
   // мир: единицы, высота экрана всегда VIEW_H, x растёт по ходу полёта
   const VIEW_H = 720;
@@ -27,6 +24,7 @@ const course = (() => {
   const GAP = 215;           // от пути до стен коридора
   const CELL = 40;           // шаг стен коридора
   const TO_PORTAL = 340;     // от последнего ползунка до финишного портала
+  const POP_SECONDS = 0.35;  // как долго лопается заполненная ячейка
 
   const KINDS = ["wave", "ship", "ball", "dash"];
   const THEME_IDS = ["violet", "ocean", "neon", "night"]; // как THEMES; лобби выбирает дизайн по этим именам
@@ -52,6 +50,7 @@ const course = (() => {
   let palette = THEMES[0];
   let flash = 0, shake = 0, beat = 0, heat = 0, lastPart = null;
   let parts = [];       // пиксели
+  let pops = [];        // заполненные ячейки лопаются: { x, y, r, color, k }
   let reached = 0;      // номер ползунка, на котором сейчас игрок
   let mateShown = new Map(); // где напарники на экране: slot → номер ползунка + доля
 
@@ -556,7 +555,7 @@ const course = (() => {
     return Math.min(n, i);
   }
 
-  /** Ползунки впереди: тёмная трубка, у текущего внутри заполнение цветом его стрелки. */
+  /** Дорога впереди: тёмная трубка, внутри цвет стрелки каждой ячейки; пунктир задаёт скин. */
   function drawRoad(right) {
     const n = map.segs.length;
     const cur = Math.floor(s);
@@ -574,6 +573,7 @@ const course = (() => {
     trace(s, last);
     ctx.stroke();
 
+    ctx.setLineDash(cells.dash(opts.cell));
     for (let i = cur; i < last && i < n; i++) {
       const hidden = opts.blind && i > cur;
       ctx.globalAlpha = i === cur ? 0.62 : 0.3;
@@ -582,10 +582,11 @@ const course = (() => {
       trace(Math.max(s, i + 0.03), i + 0.97);
       ctx.stroke();
     }
+    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   }
 
-  /** След за персонажем: толстая белая лента с каймой цвета скина ползунков. */
+  /** След за персонажем: толстая белая лента с каймой цвета скина ячеек. */
   function drawTrail() {
     const tail = Math.max(0, s - (opts.fast ? 12 : 4));
     const n = map.segs.length;
@@ -623,27 +624,12 @@ const course = (() => {
       ctx.stroke();
     }
 
-    ctx.fillStyle = hidden ? "#3a3560" : "#0e0a26";
-    ctx.strokeStyle = hidden ? "#8c88b4" : color;
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.strokeStyle = wrong && current ? "#ff3b5c" : "#fff";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
-    ctx.stroke();
+    cells.draw(ctx, {
+      skin: opts.cell, r, color, t: time, hidden,
+      k: current && !opts.fast ? progress : 0,
+      wrong: wrong && current,
+    });
 
-    if (current && !opts.fast) {
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 7;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.arc(0, 0, r + 11, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
-      ctx.stroke();
-    }
     if (current && opts.mirror) {
       // в «Зеркале» пунктир напоминает: жать надо наоборот
       ctx.strokeStyle = "#fff";
@@ -680,16 +666,7 @@ const course = (() => {
       ctx.textBaseline = "middle";
       ctx.fillText("?", 0, 2);
     } else {
-      const k = (r * 1.5) / 24;
-      ctx.rotate(ROT[arrow]);
-      ctx.scale(k, k);
-      ctx.translate(-12, -12);
-      ctx.fillStyle = color;
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 2.4;
-      ctx.lineJoin = "round";
-      ctx.stroke(ARROW);
-      ctx.fill(ARROW);
+      cells.arrow(ctx, r, arrow, current);
     }
     ctx.restore();
   }
@@ -804,6 +781,18 @@ const course = (() => {
     ctx.globalAlpha = 1;
   }
 
+  function drawPops(dt) {
+    for (let i = pops.length - 1; i >= 0; i--) {
+      const p = pops[i];
+      p.k += dt / POP_SECONDS;
+      if (p.k >= 1) { pops.splice(i, 1); continue; }
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      cells.pop(ctx, opts.cell, p.k, p.r, p.color, time);
+      ctx.restore();
+    }
+  }
+
   /** На дропе мимо летят полосы света. */
   function drawStreaks(w, h) {
     if (reduce || heat < 0.05) return;
@@ -867,7 +856,7 @@ const course = (() => {
 
   // ---------- Что вызывает app.js ----------
 
-  /** @param o { seed, level, fast, blind, mirror, theme — дизайн из лобби, hero — скин персонажа, trailOf(i) — кайма следа } */
+  /** @param o { seed, level, fast, blind, mirror, theme — дизайн из лобби, cell — скин ячеек, hero — скин персонажа, trailOf(i) — кайма следа } */
   function start(o) {
     opts = o;
     // ячейки за чартом запоминают, какой чарт их меняет
@@ -880,6 +869,7 @@ const course = (() => {
     map = build(o.level, o.fast, o.seed, o.theme);
     s = 0;
     parts = [];
+    pops = [];
     mateShown = new Map();
     section = 0;
     palette = map.colors;
@@ -916,10 +906,12 @@ const course = (() => {
     }
   }
 
-  /** Ползунок заполнен: разлёт пикселей в мире. */
+  /** Ячейка заполнена: она лопается в стиле скина, разлетаются пиксели. */
   function filled(i) {
     const pts = map.segs[Math.min(i, map.segs.length - 1)], p = pts[pts.length - 1];
-    pixels(p[0], p[1], opts.fast ? 10 : 22, COLORS[opts.level[i].arrow]);
+    const color = COLORS[opts.level[i].arrow];
+    pixels(p[0], p[1], opts.fast ? 10 : 22, color);
+    if (!reduce) pops.push({ x: p[0], y: p[1], r: opts.fast ? 31 : 41, color, k: 0 });
   }
 
   /** Превью скина персонажа на экране скинов. */
@@ -1005,6 +997,7 @@ const course = (() => {
       const last = visibleRange(right);
       for (let i = last - 1; i >= cur; i--) drawKey(i, i === cur, s - cur, o.wrong);
     }
+    drawPops(dt);
     drawMates(o.mates, dt);
     drawParts(dt);
 

@@ -5,7 +5,6 @@ const KEY_TO_ARROW = {
   ArrowLeft: 0, ArrowUp: 1, ArrowRight: 2, ArrowDown: 3,
   KeyA: 0, KeyW: 1, KeyD: 2, KeyS: 3,
 };
-const ROTATION = [-90, 0, 90, 180];
 const ARROW_CHAR = ["←", "↑", "→", "↓"];
 
 // порядок здесь — порядок карточек в меню; правила режимов присылает сервер в matchStart
@@ -32,7 +31,7 @@ const DIFFS = {
 const MATE_COLOR = "#2fd6a8"; // «2 на 2»: напарник на траектории и его полоса внизу
 const MAX_MATES_DRAWN = 4;    // в большой команде на траектории видны не все: иначе ники закроют уровень
 const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
-// кайма следа персонажа по скину ползунков; цвета стрелок от скина не зависят
+// кайма следа персонажа по скину ячеек; цвета стрелок от скина не зависят
 const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16", ocean: "#3fb6ff", lava: "#ff6a2b", mint: "#6fffc4" };
 // экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
 const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby"]);
@@ -60,7 +59,6 @@ const FX_PREVIEW = {
   rush: ["#arrow", "var(--a2)"], nova: ["✦", "var(--gold)"], frost: ["❄", "var(--a0)"], finale: ["✺", "var(--a3)"],
   flame: ["#flame", "var(--a2)"], electric: ["#bolt", "var(--a0)"], rainbow: ["◉", "var(--a1)"],
   sapphire: ["✦", "#4fa8ff"], redgiant: ["✦", "#ff3b3b"], frost2: ["❄", "#9fe3ff"], toxic: ["☣", "#b6ff3c"],
-  ocean: ["▰", "#3fb6ff"], lava: ["▰", "#ff6a2b"], mint: ["▰", "#6fffc4"],
 };
 
 function plural(n, one, few, many) {
@@ -685,21 +683,6 @@ for (const t of document.querySelectorAll("#skin-tabs .tab")) {
   });
 }
 
-/** Мини-дорожка из четырёх ползунков, которые сами заполняются, — превью скина ползунков. */
-function sliderPreview(skin) {
-  const track = document.createElement("div");
-  track.className = `track mini skin-${skin}`;
-  [1, 3, 0, 2].forEach((arrow, k) => {
-    const el = document.createElement("div");
-    el.className = "slider current";
-    el.style.setProperty("--c", `var(--a${arrow})`);
-    el.style.setProperty("--k", k);
-    el.innerHTML = `<div class="bar"><div class="fill"></div></div><div class="key">${arrowSvg(arrow)}</div>`;
-    track.appendChild(el);
-  });
-  return track;
-}
-
 /** Плитка-превью: значок и цвет из таблицы (по умолчанию — эффекты победы и серии). */
 function fxPreview(skin, table = FX_PREVIEW) {
   const [icon, color] = table[skin.id] || ["?", "var(--muted)"];
@@ -738,9 +721,18 @@ function playVictory(skin, sub) {
   victory.play(skin, { title: "ПОБЕДА!", sub, hero });
 }
 
-/** Значок скина для кнопки наград: персонаж рисуется, остальное — плитка эффекта. Иней занят скином победы. */
+/** Ячейка на плитке; animated — сама заполняется и лопается. */
+function cellTile(id, animated) {
+  const tile = document.createElement("div");
+  tile.className = "fx-tile cell-tile";
+  tile.appendChild(cells.preview(id, animated));
+  return tile;
+}
+
+/** Значок скина для кнопки наград: персонаж и ячейка рисуются, остальное — плитка эффекта. Иней занят скином победы. */
 function skinTile(s) {
   if (s.slot === "hero") return heroPreview(s.id);
+  if (s.slot === "slider") return cellTile(s.id, false);
   return fxPreview({ id: s.slot === "streak" && s.id === "frost" ? "frost2" : s.id });
 }
 
@@ -759,7 +751,7 @@ function renderSkins() {
 
     const preview = document.createElement("div");
     preview.className = "skin-preview";
-    preview.appendChild(s.slot === "slider" ? sliderPreview(s.id) : skinTile(s));
+    preview.appendChild(s.slot === "slider" ? cellTile(s.id, true) : skinTile(s));
     if (!s.unlocked) preview.insertAdjacentHTML("beforeend", `<span class="skin-lock"><svg viewBox="0 0 24 24"><use href="#lock"/></svg></span>`);
 
     const name = document.createElement("div");
@@ -1047,10 +1039,6 @@ function abortToMenu(message) {
 
 // ---------- Матч ----------
 
-function arrowSvg(arrow) {
-  return `<svg viewBox="0 0 24 24" style="rotate:${ROTATION[arrow]}deg"><use href="#arrow"/></svg>`;
-}
-
 function nameRow(container, player) {
   container.textContent = "";
   const name = document.createElement("span");
@@ -1108,6 +1096,7 @@ function startMatch(d) {
     blind: d.blind,
     mirror: d.mirror,
     theme: d.theme,
+    cell: me.skin,
     hero: profile ? profile.equipped.hero : "circle",
     trailOf: (i) => (me.skin === "rainbow" ? fx.colors[i % 4] : SKIN_TRAIL[me.skin] || SKIN_TRAIL.classic),
   });
@@ -1322,9 +1311,9 @@ function celebrate(track, from, to, level) {
   }
 }
 
-/** Цвет искр над заполненным ползунком — под скин ползунков. */
+/** Цвет искр над заполненной ячейкой — под её скин. */
 function burstColor(skin, arrow, i) {
-  if (skin === "gold") return "#f2ad16";
+  if (["gold", "ocean", "lava", "mint"].includes(skin)) return SKIN_TRAIL[skin];
   if (skin === "rainbow") return fx.colors[i % 4];
   return fx.colors[arrow];
 }
