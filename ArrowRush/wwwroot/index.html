@@ -113,6 +113,13 @@
       </div>
       <h2>Выбери режим</h2>
 
+      <div id="mode-tabs" class="tabs three mode-tabs" role="tablist" aria-label="Что делать" data-active="0">
+        <button type="button" class="tab active" data-tab="match" role="tab">Матч</button>
+        <button type="button" class="tab" data-tab="lobby" role="tab">Лобби</button>
+        <button type="button" class="tab" data-tab="track" role="tab">Свой трек</button>
+      </div>
+
+      <div id="mode-panel-match" class="mode-panel">
       <div class="carousel">
         <button id="mode-prev" class="nav-arrow prev" type="button" aria-label="Предыдущий режим">
           <svg viewBox="0 0 24 24" style="rotate:-90deg" aria-hidden="true"><use href="#arrow"/></svg>
@@ -139,27 +146,53 @@
       </div>
       <p id="diff-desc" class="diff-desc"></p>
 
-      <div class="mode-actions">
-        <button id="btn-find" class="btn primary big" disabled>
-          <span>Найти матч</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#arrow"/></svg>
-        </button>
-        <button id="btn-practice" class="btn ghost" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#target"/></svg>Тренировка с ботом
-        </button>
-        <button id="btn-lobby-create" class="btn lobby-btn" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#lock"/></svg>Приватное лобби
-        </button>
-        <button id="btn-lobby-public" class="btn lobby-btn public" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#team"/></svg>Общее лобби
-        </button>
-        <button id="btn-rhythm" class="btn rhythm-btn">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#note"/></svg>Свой трек: уровень под бит
-        </button>
+        <div class="mode-actions">
+          <button id="btn-find" class="btn primary big" disabled>
+            <span>Найти матч</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#arrow"/></svg>
+          </button>
+          <button id="btn-practice" class="btn ghost" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#target"/></svg>Тренировка с ботом
+          </button>
+        </div>
+        <p class="muted small keys-hint">← → — листать режимы, Enter — найти матч</p>
       </div>
+
+      <div id="mode-panel-lobby" class="mode-panel" hidden>
+        <div id="lobby-type" class="tabs lobby-type" role="radiogroup" aria-label="Тип лобби" data-active="0">
+          <button type="button" class="tab active" data-type="private" role="radio">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#lock"/></svg>Приватное
+          </button>
+          <button type="button" class="tab" data-type="public" role="radio">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#team"/></svg>Общее
+          </button>
+        </div>
+        <p id="lobby-type-desc" class="diff-desc"></p>
+        <div class="mode-actions">
+          <button id="btn-lobby-create" class="btn primary big" disabled>
+            <span>Создать лобби</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#arrow"/></svg>
+          </button>
+        </div>
+        <div id="lobby-create-error" class="conn bad" role="alert"></div>
+        <div id="lobbies-box" class="lobbies-box glass" hidden>
+          <h3>Открытые команды</h3>
+          <ul id="lobbies-list" class="lobbies-list"></ul>
+          <p id="lobbies-empty" class="muted small">Пока никого нет. Создай свою команду.</p>
+        </div>
+      </div>
+
+      <div id="mode-panel-track" class="mode-panel" hidden>
+        <p class="diff-desc">Выбери свой аудиофайл: браузер найдёт в нём удары и построит ритм-уровень. Файл никуда не загружается.</p>
+        <div class="mode-actions">
+          <button id="btn-rhythm" class="btn primary big">
+            <span>Выбрать файл</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#note"/></svg>
+          </button>
+        </div>
+      </div>
+
       <div class="conn" data-conn></div>
-      <div id="lobby-create-error" class="conn bad" role="alert"></div>
-      <p class="muted small keys-hint">← → — листать режимы, Enter — найти матч</p>
     </section>
 
     <!-- СТАТИСТИКА -->
@@ -256,25 +289,6 @@
           </button>
         </div>
         <div id="lobby-error" class="lobby-error" role="alert"></div>
-      </div>
-    </section>
-
-    <!-- СПИСОК ОБЩИХ ЛОББИ -->
-    <section id="screen-lobbies" class="screen">
-      <div class="topbar start">
-        <button id="btn-lobbies-back" class="btn ghost small">← Назад</button>
-      </div>
-      <h2>Общие лобби</h2>
-      <p class="muted">Собери команду от 2 на 2 до 5 на 5 или войди в чужую</p>
-      <button id="btn-lobbies-create" class="btn primary big">
-        <span>Создать команду</span>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#arrow"/></svg>
-      </button>
-      <div id="lobbies-error" class="conn bad" role="alert"></div>
-      <div class="lobbies-box glass">
-        <h3>Открытые команды</h3>
-        <ul id="lobbies-list" class="lobbies-list"></ul>
-        <p id="lobbies-empty" class="muted small">Пока никого нет. Создай свою команду.</p>
       </div>
     </section>
 

@@ -644,7 +644,7 @@ h3 {
 
 .mode-actions { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 20px; }
 .mode-actions .btn.big { min-width: min(320px, 90vw); }
-.keys-hint { margin-top: 14px !important; font-size: 12px; }
+.keys-hint { margin-top: 14px !important; font-size: 12px; color: rgba(255, 255, 255, .8); }
 
 /* ---------- Статистика ---------- */
 
@@ -1269,8 +1269,6 @@ h3 {
 
 /* ---------- Свой трек (ритм-режим) ---------- */
 
-.rhythm-btn { --face: var(--a2); }
-.rhythm-btn svg { width: 18px; height: 18px; }
 
 #screen-rhythm { align-items: stretch; }
 #rh-leave { margin-left: auto; }
@@ -2026,8 +2024,13 @@ body[data-screen="rewards"] #app { max-width: none; padding-left: 24px; padding-
 
 /* ---------- Лобби ---------- */
 
-.lobby-btn { --face: var(--a0); }
-.lobby-btn.public { --face: var(--a3); }
+/* вкладки экрана режимов */
+.mode-tabs { margin: 6px 0 18px; }
+.mode-panel { display: flex; flex-direction: column; align-items: center; width: 100%; animation: pop-up .25s var(--ease-out) both; }
+#btn-rhythm svg { rotate: none; }
+.lobby-type { width: min(420px, 100%); }
+.lobby-type .tab { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.lobby-type .tab svg { width: 16px; height: 16px; }
 .lobbies-box { width: min(640px, 100%); margin-top: 18px; padding: 16px; }
 .lobbies-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .lobbies-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--panel-2); border-radius: 10px; }

@@ -35,7 +35,7 @@ const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
 // кайма следа персонажа по скину ползунков; цвета стрелок от скина не зависят
 const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16", ocean: "#3fb6ff", lava: "#ff6a2b", mint: "#6fffc4" };
 // экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
-const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "lobbies"]);
+const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby"]);
 // советы под витриной в меню
 const TIPS = [
   "В «Зеркале» держи стрелку, противоположную нарисованной.",
@@ -116,7 +116,7 @@ function targetOf(arrow) {
 // ---------- Экраны ----------
 
 function show(name) {
-  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "lobbies", "game", "rhythm", "results"]) {
+  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "game", "rhythm", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
   // ушли из «Своего трека» или из матча — музыку останавливаем (итоги сами гасят её плавно)
@@ -145,7 +145,6 @@ function setPlayable(ok) {
   $("btn-find").disabled = !ok;
   $("btn-practice").disabled = !ok;
   $("btn-lobby-create").disabled = !ok;
-  $("btn-lobby-public").disabled = !ok;
 }
 
 // ---------- Подключение к серверу ----------
@@ -433,6 +432,23 @@ function renderModeInfo() {
 
 setGameMode(gameMode);
 setPace(pace);
+
+// вкладки экрана режимов: матч, лобби, свой трек
+let modeTab = "match";
+
+function setModeTab(tab) {
+  modeTab = tab;
+  const tabs = [...document.querySelectorAll("#mode-tabs .tab")];
+  tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
+  $("mode-tabs").dataset.active = tabs.findIndex((t) => t.dataset.tab === tab);
+  for (const name of ["match", "lobby", "track"]) $(`mode-panel-${name}`).hidden = name !== tab;
+  if (tab === "match") setGameMode(gameMode); // карусель меряется только видимой
+  if (tab === "lobby") lobby.loadPublic();
+}
+
+for (const t of document.querySelectorAll("#mode-tabs .tab")) {
+  t.addEventListener("click", () => setModeTab(t.dataset.tab));
+}
 
 let statTab = "all";     // открытая вкладка статистики: "all" или id режима
 
@@ -1483,7 +1499,8 @@ function pushInput() {
 
 // выбор режима: ←/→ (или A/D) листают, Enter — найти матч
 window.addEventListener("keydown", (e) => {
-  if (screen !== "modes" || e.repeat || e.target.matches("input, textarea")) return; // ник в панели печатается здесь же
+  // ник в панели печатается здесь же; карусель есть только на вкладке «Матч»
+  if (screen !== "modes" || modeTab !== "match" || e.repeat || e.target.matches("input, textarea")) return;
   const a = KEY_TO_ARROW[e.code];
   if (a === 0 || a === 2) {
     e.preventDefault();

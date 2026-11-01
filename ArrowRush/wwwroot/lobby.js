@@ -25,6 +25,10 @@ const lobby = (() => {
   const PACES = [[false, "Обычная"], [true, "Быстрая"]];
   const SIZES = [[2, "2 на 2"], [3, "3 на 3"], [4, "4 на 4"], [5, "5 на 5"]];
   const LIST_MS = 3000; // как часто обновляется список общих лобби
+  const TYPES = {
+    private: "Для своих: все настройки на твой выбор, до 40 игроков, друзья по приглашению и боты.",
+    public: "Команда от 2 на 2 до 5 на 5: зови друзей или принимай игроков из списка и ищи соперников.",
+  };
   const DIFFS = [["easy", "Лёгкая"], ["normal", "Нормальная"], ["hard", "Сложная"]];
 
   let o = null;       // { conn, show, screen — текущий экран, onChange — лидерство или участие изменились }
@@ -33,6 +37,7 @@ const lobby = (() => {
   let bannerFor = null;
   let bannerTimer = 0;
   let searchStart = 0;  // когда началось ожидание соперников, performance.now
+  let newType = "private"; // тип лобби, выбранный на вкладке «Лобби»
 
   /** Вызов хаба; текст HubException показывается в строке el. */
   async function call(el, method, ...args) {
@@ -240,6 +245,7 @@ const lobby = (() => {
 
   async function loadPublic() {
     let list;
+    if (o.conn.state !== signalR.HubConnectionState.Connected) return;
     try {
       list = await o.conn.invoke("PublicLobbies");
     } catch {
@@ -259,17 +265,27 @@ const lobby = (() => {
       join.type = "button";
       join.className = "btn primary small";
       join.textContent = "Войти";
-      join.addEventListener("click", () => call($("lobbies-error"), "JoinLobby", l.id));
+      join.addEventListener("click", () => call($("lobby-create-error"), "JoinLobby", l.id));
       li.append(name, info, join);
       return li;
     }));
   }
 
-  function openPublic() {
-    $("lobbies-error").textContent = "";
-    o.show("lobbies");
-    loadPublic();
+  /** Тип нового лобби: у общего под кнопкой виден список открытых команд. */
+  function setType(type) {
+    newType = type;
+    const tabs = [...document.querySelectorAll("#lobby-type .tab")];
+    tabs.forEach((t) => {
+      t.classList.toggle("active", t.dataset.type === type);
+      t.setAttribute("aria-checked", t.dataset.type === type);
+    });
+    $("lobby-type").dataset.active = tabs.findIndex((t) => t.dataset.type === type);
+    $("lobby-type-desc").textContent = TYPES[type];
+    $("lobbies-box").hidden = type !== "public";
+    $("lobby-create-error").textContent = "";
+    if (type === "public") loadPublic();
   }
+
   const decline = (id) => o.conn.invoke("DeclineInvite", id).catch(() => {});
 
   function init(options) {
@@ -278,11 +294,13 @@ const lobby = (() => {
     o.conn.on("lobbyInvites", onInvites);
     addEventListener("resize", () => { if (cur && o.screen() === "lobby") renderStage(); });
 
-    $("btn-lobby-create").addEventListener("click", () => call($("lobby-create-error"), "CreateLobby", false));
-    $("btn-lobby-public").addEventListener("click", openPublic);
-    $("btn-lobbies-back").addEventListener("click", () => o.show("modes"));
-    $("btn-lobbies-create").addEventListener("click", () => call($("lobbies-error"), "CreateLobby", true));
-    setInterval(() => { if (o.screen() === "lobbies") loadPublic(); }, LIST_MS);
+    $("btn-lobby-create").addEventListener("click", () => call($("lobby-create-error"), "CreateLobby", newType === "public"));
+    for (const t of document.querySelectorAll("#lobby-type .tab")) t.addEventListener("click", () => setType(t.dataset.type));
+    setType(newType);
+    // список виден только на вкладке «Лобби» с типом «Общее»
+    setInterval(() => {
+      if (o.screen() === "modes" && !$("mode-panel-lobby").hidden && newType === "public") loadPublic();
+    }, LIST_MS);
     setInterval(() => { if (cur && cur.searching) renderCount(); }, 1000);
     $("btn-lobby-exit").addEventListener("click", async () => {
       await act("LeaveLobby");
@@ -323,7 +341,7 @@ const lobby = (() => {
   }
 
   return {
-    init, reset, sync, accept, decline,
+    init, reset, sync, accept, decline, loadPublic,
     active: () => !!cur,
     canInvite: () => !!cur && cur.leader,
     invite: (name, el) => call(el, "InviteToLobby", name),
