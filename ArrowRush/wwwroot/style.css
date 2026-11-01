@@ -1773,18 +1773,14 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
   .panel-toggle:has(+ .panel.open) { display: none; }
 }
 
-/* ---------- Плитки слева, как в меню CS2 ---------- */
+/* ---------- Кнопки слева, как в меню CS2 ---------- */
 
 .rewards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 3px;
-  width: min(560px, 100%);
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  width: min(420px, 100%);
   margin-top: 28px;
-  background: var(--outline);
-  border: 3px solid var(--outline);
-  border-radius: var(--radius);
-  overflow: hidden;
 }
 .tile {
   --tile-a: #1579c9;
@@ -1792,60 +1788,89 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  padding: 10px 12px;
+  align-items: flex-start;
+  min-height: 92px;
+  padding: 9px 11px;
   overflow: hidden;
+  font: inherit;
   color: #fff;
+  text-align: left;
   background: linear-gradient(150deg, var(--tile-a), var(--tile-b));
+  border: 2px solid var(--outline);
+  border-radius: 8px;
+  box-shadow: 0 3px 0 var(--outline);
+  cursor: pointer;
+  transition: transform .15s var(--ease-out), box-shadow .15s, filter .15s;
 }
-.tile-week { --tile-a: #1d9a63; --tile-b: #07382f; }
+.tile:hover { filter: brightness(1.12); transform: translateY(-2px); box-shadow: 0 5px 0 var(--outline); }
+.tile:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--outline); }
+.tile:focus-visible { outline: 3px solid var(--a3); outline-offset: 2px; }
+.tile.ready { border-color: var(--a1); }
 .tile-next { --tile-a: #d9a441; --tile-b: #5c3412; }
-.tile-ad {
-  --tile-a: #33304d;
-  --tile-b: #16132b;
-  align-items: stretch;
-  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .05) 0 14px, transparent 14px 28px), linear-gradient(150deg, var(--tile-a), var(--tile-b));
-}
 .tile > * { position: relative; }
-.tile-art {
+.tile > .tile-art {
   position: absolute;
-  top: -14px; right: -18px;
-  width: 130px; height: 130px;
-  color: rgba(255, 255, 255, .13);
+  top: -8px; right: -12px;
+  width: 92px; height: 92px;
+  color: rgba(255, 255, 255, .14);
   rotate: 12deg;
 }
-.tile-hero { position: absolute; right: 6px; bottom: 16px; width: 84px; height: 84px; }
-.tile-label {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, .85);
+.tile > .tile-hero { position: absolute; top: 8px; right: 6px; width: 54px; height: 54px; }
+.tile > .tile-badge {
+  position: absolute;
+  top: 7px; right: 8px;
+  min-width: 20px;
+  padding: 0 4px;
+  font: 900 11px/16px var(--font-body);
+  text-align: center;
+  background: var(--bad);
+  border: 2px solid var(--outline);
+  border-radius: 999px;
 }
-.tile-label span:last-child { flex: none; text-transform: none; letter-spacing: 0; }
-.tile-title { font: 900 21px/1.15 var(--font-display); text-shadow: 0 2px 0 rgba(0, 0, 0, .35); margin: 3px 0 5px; }
-.tile-note { font-size: 13px; }
-.tile-next .reward-bar { margin-top: auto; width: calc(100% - 90px); }
+.tile-label { font-size: 10px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; color: rgba(255, 255, 255, .85); }
+.tile-title { font: 900 16px/1.2 var(--font-display); text-shadow: 0 2px 0 rgba(0, 0, 0, .35); margin-top: 2px; }
+.tile-note { font-size: 11px; font-weight: 800; }
+.tile > .reward-bar { width: calc(100% - 8px); height: 5px; margin-top: auto; }
+.star-total { color: var(--gold); text-transform: none; }
 .star-total b { font: inherit; font-variant-numeric: tabular-nums; }
 
-.reward-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.reward-window {
+  position: fixed;
+  top: 50%; left: 50%;
+  z-index: 3;
+  width: min(330px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 10px 14px 14px;
+  overflow-y: auto;
+  color: var(--on-bg);
+  background: var(--room);
+  border: 3px solid var(--outline);
+  border-radius: 12px;
+  box-shadow: 0 var(--depth) 0 var(--outline);
+  translate: -50% -50%;
+}
+.reward-head { display: flex; align-items: center; justify-content: space-between; font: 900 15px var(--font-display); }
+.reward-title { display: flex; align-items: baseline; justify-content: space-between; margin: 10px 0 6px; font-size: 13px; }
+.reward-title span { font-size: 12px; color: var(--muted-room); }
+.reward-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .reward {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 8px;
+  gap: 3px 8px;
   align-items: center;
-  font-size: 12px;
+  padding: 7px 9px;
+  font-size: 13px;
   font-weight: 800;
+  background: var(--room-2);
+  border-radius: 8px;
 }
+.reward.ready { box-shadow: inset 0 0 0 2px var(--a1); }
+.reward.claimed { opacity: .6; }
 .reward-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reward-stars { color: var(--gold); font-weight: 900; white-space: nowrap; text-shadow: 0 1px 0 rgba(0, 0, 0, .4); }
-.reward.claimed { opacity: .65; }
+.reward-stars { color: var(--gold); font-weight: 900; white-space: nowrap; }
 .reward-claim {
-  padding: 2px 9px;
-  font: 900 11px var(--font-body);
+  padding: 3px 10px;
+  font: 900 12px var(--font-body);
   color: var(--outline);
   background: var(--a1);
   border: 2px solid var(--outline);
@@ -1855,52 +1880,46 @@ body[data-screen="auth"] .panel-toggle, body[data-screen="game"] .panel-toggle, 
 .reward-claim:hover:not(:disabled) { filter: brightness(1.1); }
 .reward-bar { position: relative; display: block; height: 6px; overflow: hidden; background: rgba(0, 0, 0, .4); border-radius: 999px; }
 .reward-bar i { position: absolute; inset: 0 auto 0 0; background: var(--gold); border-radius: 999px; }
-.reward-count { font-size: 10px; line-height: 1; opacity: .85; font-variant-numeric: tabular-nums; }
-.rewards > .conn { grid-column: 1 / -1; margin: 0; padding: 6px; background: var(--room); }
+.reward-count { font-size: 11px; line-height: 1; color: var(--muted-room); font-variant-numeric: tabular-nums; }
+.reward-window .conn { margin-top: 8px; }
 
-/* табличка с «шурупами» по углам */
+/* табличка с «шурупами» по бокам */
 .ad-plate {
   position: relative;
-  margin: auto 0;
-  padding: 12px 22px;
-  font: 900 13px/1.3 var(--font-display);
+  grid-column: 1 / -1;
+  padding: 9px 20px;
+  font: 900 11px/1.3 var(--font-display);
   text-align: center;
   color: var(--outline);
   background: var(--gold);
-  border: 3px solid var(--outline);
-  border-radius: 10px;
-  box-shadow: 0 4px 0 var(--outline);
+  border: 2px solid var(--outline);
+  border-radius: 8px;
+  box-shadow: 0 3px 0 var(--outline);
   rotate: -1.2deg;
 }
 .ad-plate::before, .ad-plate::after {
   content: "";
   position: absolute;
   top: 50%;
-  width: 8px; height: 8px;
-  margin-top: -4px;
+  width: 6px; height: 6px;
+  margin-top: -3px;
   background: var(--outline);
   border-radius: 50%;
 }
-.ad-plate::before { left: 7px; }
-.ad-plate::after { right: 7px; }
+.ad-plate::before { left: 6px; }
+.ad-plate::after { right: 6px; }
 
-/* на широком экране — колонка вплотную к левому краю на всю высоту, логотип и кнопки у центра оставшегося места */
+/* на широком экране — маленькая колонка у левого края, окно наград открывается рядом с ней */
 @media (min-width: 1100px) {
   .rewards {
     position: fixed;
-    top: 0; bottom: 0; left: 0;
-    display: flex;
-    flex-direction: column;
-    width: 262px;
+    top: 16px; left: 16px;
+    grid-template-columns: 1fr;
+    width: 200px;
     margin: 0;
-    border-width: 0 3px 0 0;
-    border-radius: 0;
-    overflow-y: auto;
-    scrollbar-width: none;
   }
-  .tile { flex: 1 0 auto; }
-  .rewards > .conn { flex: none; }
-  body[data-screen="menu"] #app { max-width: none; padding-left: 284px; padding-right: 88px; }
-  #screen-menu .topbar { left: 284px; right: 88px; }
+  .reward-window { top: 16px; left: 228px; translate: none; }
+  body[data-screen="menu"] #app { max-width: none; padding-left: 232px; padding-right: 88px; }
+  #screen-menu .topbar { left: 232px; right: 88px; }
   #screen-menu .logo { font-size: clamp(46px, 7vw, 92px); }
 }

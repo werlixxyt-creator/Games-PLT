@@ -1,11 +1,11 @@
 "use strict";
 
-// Ежедневные и еженедельные награды: колонка плиток слева в меню, как в CS2.
+// Ежедневные и еженедельные награды: кнопки слева в меню, как в CS2, задания — в окне по кнопке «Награды».
 // Прогресс и звёзды считает сервер (Data/Rewards.cs), здесь только показ и кнопка «Забрать».
 const rewards = (() => {
   const $ = (id) => document.getElementById(id);
 
-  let o = null;     // { api, me — текущий профиль, refresh — перечитать его: звёзды открывают скины }
+  let o = null;     // { api, me — текущий профиль, refresh — перечитать его, openHeroes — экран персонажей }
   let data = null;  // ответ /api/account/rewards
 
   function resetText(iso) {
@@ -53,13 +53,22 @@ const rewards = (() => {
   }
 
   function renderPeriod(id, period) {
-    const claimed = period.tasks.filter((t) => t.claimed).length;
     $(id).replaceChildren(...period.tasks.map(taskRow));
     $(id + "-reset").textContent = resetText(period.resetsAt);
-    $(id + "-done").textContent = `${claimed} из ${period.tasks.length}`;
   }
 
-  /** Плитка со следующим скином за звёзды; когда открыты все, показывает последний. */
+  /** Кнопка «Награды»: сколько заданий закрыто и сколько наград ждёт. */
+  function renderSummary() {
+    const tasks = [...data.day.tasks, ...data.week.tasks];
+    const ready = tasks.filter((t) => t.have >= t.need && !t.claimed).length;
+    $("reward-summary").textContent = `${tasks.filter((t) => t.claimed).length} из ${tasks.length}`;
+    $("reward-hint").textContent = ready ? "Можно забрать" : `Новые — ${resetText(data.day.resetsAt)}`;
+    $("reward-badge").hidden = ready === 0;
+    $("reward-badge").textContent = ready;
+    $("btn-rewards").classList.toggle("ready", ready > 0);
+  }
+
+  /** Кнопка со следующим скином за звёзды; когда открыты все, показывает последний. */
   function renderNext() {
     const skins = o.me().skins.filter((s) => s.by === "stars");
     const next = skins.find((s) => !s.unlocked);
@@ -75,6 +84,7 @@ const rewards = (() => {
     fx.countUp($("reward-stars"), data.stars);
     renderPeriod("reward-day", data.day);
     renderPeriod("reward-week", data.week);
+    renderSummary();
     renderNext();
   }
 
@@ -105,8 +115,24 @@ const rewards = (() => {
     }
   }
 
+  function setWindow(open) {
+    $("reward-window").hidden = !open;
+    $("btn-rewards").setAttribute("aria-expanded", open);
+    $("reward-error").textContent = "";
+  }
+
   function init(options) {
     o = options;
+    $("btn-rewards").addEventListener("click", () => setWindow($("reward-window").hidden));
+    $("reward-close").addEventListener("click", () => setWindow(false));
+    $("btn-reward-next").addEventListener("click", o.openHeroes);
+    // клик мимо окна и Esc закрывают его
+    addEventListener("pointerdown", (e) => {
+      if (!$("reward-window").contains(e.target) && !$("btn-rewards").contains(e.target)) setWindow(false);
+    });
+    addEventListener("keydown", (e) => {
+      if (e.code === "Escape") setWindow(false);
+    });
     // пока открыто меню: обновляем обратный отсчёт и новый день, если он наступил
     setInterval(() => {
       if (!data || document.body.dataset.screen !== "menu") return;

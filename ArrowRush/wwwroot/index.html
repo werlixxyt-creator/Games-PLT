@@ -84,33 +84,37 @@
 
       <div id="conn-status" class="conn" data-conn>Подключение к серверу…</div>
 
-      <!-- колонка плиток слева, как в меню CS2 (rewards.js); на узком экране — под кнопками -->
+      <!-- кнопки слева, как в меню CS2 (rewards.js); на узком экране — под кнопками меню -->
       <aside class="rewards" aria-label="Награды">
-        <section class="tile tile-day">
+        <button id="btn-rewards" class="tile tile-day" type="button" aria-expanded="false">
           <svg class="tile-art" viewBox="0 0 24 24" aria-hidden="true"><use href="#flame"/></svg>
-          <div class="tile-label"><span>Ежедневные награды</span><span id="reward-day-reset"></span></div>
-          <div id="reward-day-done" class="tile-title"></div>
-          <ul id="reward-day" class="reward-list"></ul>
-        </section>
-        <section class="tile tile-week">
-          <svg class="tile-art" viewBox="0 0 24 24" aria-hidden="true"><use href="#chart"/></svg>
-          <div class="tile-label"><span>Еженедельные награды</span><span id="reward-week-reset"></span></div>
-          <div id="reward-week-done" class="tile-title"></div>
-          <ul id="reward-week" class="reward-list"></ul>
-        </section>
-        <section class="tile tile-next">
+          <span class="tile-label">Награды</span>
+          <span id="reward-summary" class="tile-title"></span>
+          <span id="reward-hint" class="tile-note"></span>
+          <b id="reward-badge" class="tile-badge" hidden></b>
+        </button>
+        <button id="btn-reward-next" class="tile tile-next" type="button">
           <canvas id="reward-next-hero" class="tile-hero" width="168" height="168" aria-hidden="true"></canvas>
-          <div class="tile-label"><span>Награда за звёзды</span><span class="star-total">★ <b id="reward-stars">0</b></span></div>
-          <div id="reward-next-name" class="tile-title"></div>
-          <div id="reward-next-need" class="tile-note"></div>
+          <span class="tile-label">За звёзды · <span class="star-total">★ <b id="reward-stars">0</b></span></span>
+          <span id="reward-next-name" class="tile-title"></span>
+          <span id="reward-next-need" class="tile-note"></span>
           <span class="reward-bar"><i id="reward-next-bar"></i></span>
-        </section>
-        <section class="tile tile-ad">
-          <div class="tile-label"><span>Реклама</span></div>
-          <div class="ad-plate">Тут могла быть ваша реклама</div>
-        </section>
-        <div id="reward-error" class="conn bad" role="alert"></div>
+        </button>
+        <div class="ad-plate">Тут могла быть ваша реклама</div>
       </aside>
+
+      <!-- окно наград открывается кнопкой «Награды» -->
+      <div id="reward-window" class="reward-window" role="dialog" aria-label="Награды" hidden>
+        <div class="reward-head">
+          <span>Награды</span>
+          <button id="reward-close" class="panel-close" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <div class="reward-title"><b>Ежедневные</b><span id="reward-day-reset"></span></div>
+        <ul id="reward-day" class="reward-list"></ul>
+        <div class="reward-title"><b>Еженедельные</b><span id="reward-week-reset"></span></div>
+        <ul id="reward-week" class="reward-list"></ul>
+        <div id="reward-error" class="conn bad" role="alert"></div>
+      </div>
     </section>
 
     <!-- ВЫБОР РЕЖИМА: режимы листаются влево-вправо -->
