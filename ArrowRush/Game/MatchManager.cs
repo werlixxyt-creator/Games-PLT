@@ -8,10 +8,11 @@ namespace ArrowRush.Game;
 /// Очередь поиска матча + все идущие матчи + игровой цикл (20 тиков в секунду).
 /// Все изменения состояния — под одним lock, отправка сообщений и запись в базу — уже вне его.
 /// </summary>
-public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory scopes, ILogger<MatchManager> log) : BackgroundService
+public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory scopes, ILogger<MatchManager> log) : BackgroundService
 {
     private sealed record QueuedPlayer(string ConnectionId, string UserId, string Name, string Skin, GameMode Mode, bool Fast, Difficulty Difficulty, double JoinedAt);
-    private sealed record Outgoing(IReadOnlyList<string> To, string Method, object Payload);
+    /// <param name="Users">To — id аккаунтов, а не подключений.</param>
+    private sealed record Outgoing(IReadOnlyList<string> To, string Method, object? Payload, bool Users = false);
 
     // в «5 на 5» ботов может понадобиться девять
     private static readonly string[] BotNames =
@@ -40,6 +41,7 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
             // один аккаунт — одно место: иначе можно играть против себя из второй вкладки
             if (_queue.Any(q => q.UserId == userId) || _matches.Any(m => m.Players.Any(p => p.UserId == userId && !p.Left)))
                 throw new HubException("Ты уже ищешь матч или играешь в другой вкладке");
+            if (_lobbyByConnection.ContainsKey(connectionId)) throw new HubException("Сначала выйди из лобби");
 
             var me = new QueuedPlayer(connectionId, userId, name, skin, mode, fast, difficulty, Now);
             if (practice)
@@ -87,6 +89,14 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
             outbox = QueueUpdates();
         }
         return SendAsync(outbox);
+    }
+
+    /// <summary>Игрок отключился: уходит из очереди, матча и лобби.</summary>
+    public Task DisconnectAsync(string connectionId)
+    {
+        List<Outgoing> outbox = [];
+        lock (_lock) LeaveLobby(connectionId, outbox);
+        return Task.WhenAll(SendAsync(outbox), LeaveAsync(connectionId));
     }
 
     // ---------- Игровой цикл ----------
@@ -228,6 +238,7 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
                 foreach (var c in to) _matchByConnection.Remove(c);
                 _matches.RemoveAt(i);
                 if (!match.Practice) finished.Add(match.ToRecord());
+                LobbyMatchEnded(match, outbox);
                 continue;
             }
 
@@ -266,5 +277,5 @@ public sealed class MatchManager(IHubContext<GameHub> hub, IServiceScopeFactory 
         .ToList();
 
     private Task SendAsync(List<Outgoing> outbox) =>
-        Task.WhenAll(outbox.Select(o => hub.Clients.Clients(o.To).SendAsync(o.Method, o.Payload)));
+        Task.WhenAll(outbox.Select(o => (o.Users ? hub.Clients.Users(o.To) : hub.Clients.Clients(o.To)).SendAsync(o.Method, o.Payload)));
 }

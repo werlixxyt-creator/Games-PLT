@@ -29,6 +29,7 @@ const course = (() => {
   const TO_PORTAL = 340;     // от последнего ползунка до финишного портала
 
   const KINDS = ["wave", "ship", "ball", "dash"];
+  const THEME_IDS = ["violet", "ocean", "neon", "night"]; // как THEMES; лобби выбирает дизайн по этим именам
 
   // палитры: небо сверху и снизу, два цвета туманности, стены, их узор, свет
   const THEMES = [
@@ -105,13 +106,19 @@ const course = (() => {
     return pts;
   }
 
-  function build(level, fast, seed) {
+  /** Номер стиля: выбранный в лобби или тот, что выпал. */
+  function styleOf(theme, rolled) {
+    const named = [...THEME_IDS, ...scenes.names].indexOf(theme);
+    return named >= 0 ? named : rolled;
+  }
+
+  function build(level, fast, seed, theme) {
     const rand = rng(seed);
     const segs = [], sections = [];
     const st = { up: rand() < 0.5 ? -1 : 1 };
     let x = 0, y = 0, kind = -1;
     // стиль один на весь уровень: номер меньше числа палитр — космос, иначе особая сцена
-    const style = Math.floor(rand() * (THEMES.length + scenes.names.length));
+    const style = styleOf(theme, Math.floor(rand() * (THEMES.length + scenes.names.length)));
     const scene = style < THEMES.length ? null : scenes.names[style - THEMES.length];
     const colors = scene ? scenes.palettes[scene] : THEMES[style];
 
@@ -860,7 +867,7 @@ const course = (() => {
 
   // ---------- Что вызывает app.js ----------
 
-  /** @param o { seed, level, fast, blind, mirror, hero — скин персонажа, trailOf(i) — кайма следа } */
+  /** @param o { seed, level, fast, blind, mirror, theme — дизайн из лобби, hero — скин персонажа, trailOf(i) — кайма следа } */
   function start(o) {
     opts = o;
     // ячейки за чартом запоминают, какой чарт их меняет
@@ -870,7 +877,7 @@ const course = (() => {
       cell.chartAt = chartAt;
     });
     reached = 0;
-    map = build(o.level, o.fast, o.seed);
+    map = build(o.level, o.fast, o.seed, o.theme);
     s = 0;
     parts = [];
     mateShown = new Map();

@@ -30,11 +30,12 @@ const DIFFS = {
 };
 
 const MATE_COLOR = "#2fd6a8"; // «2 на 2»: напарник на траектории и его полоса внизу
+const MAX_MATES_DRAWN = 4;    // в большой команде на траектории видны не все: иначе ники закроют уровень
 const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
 // кайма следа персонажа по скину ползунков; цвета стрелок от скина не зависят
 const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16", ocean: "#3fb6ff", lava: "#ff6a2b", mint: "#6fffc4" };
 // экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
-const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards"]);
+const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby"]);
 // советы под витриной в меню
 const TIPS = [
   "В «Зеркале» держи стрелку, противоположную нарисованной.",
@@ -115,7 +116,7 @@ function targetOf(arrow) {
 // ---------- Экраны ----------
 
 function show(name) {
-  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "rewards", "game", "rhythm", "results"]) {
+  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "game", "rhythm", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
   // ушли из «Своего трека» или из матча — музыку останавливаем (итоги сами гасят её плавно)
@@ -143,6 +144,7 @@ function setConn(text, kind) {
 function setPlayable(ok) {
   $("btn-find").disabled = !ok;
   $("btn-practice").disabled = !ok;
+  $("btn-lobby-create").disabled = !ok;
 }
 
 // ---------- Подключение к серверу ----------
@@ -159,6 +161,8 @@ conn.onreconnecting(() => {
 
 conn.onreconnected(() => {
   setPlayable(true);
+  lobby.reset(); // сервер считает, что мы вышли
+  lobby.sync();
   if (screen === "game" || screen === "search") {
     // после переподключения сервер считает, что мы вышли
     abortToMenu("Соединение прерывалось — матч отменён");
@@ -169,6 +173,7 @@ conn.onreconnected(() => {
 
 conn.onclose(() => {
   setPlayable(false);
+  lobby.reset();
   if (!online) return; // сами отключились при выходе из аккаунта
   setConn("Нет связи с сервером. Обнови страницу.", "bad");
 });
@@ -180,6 +185,7 @@ async function connect() {
     await conn.start();
     setConn("Подключено", "ok");
     setPlayable(true);
+    lobby.sync();
   } catch {
     // хаб пускает только вошедших — возможно, сессия истекла
     const me = await api("GET", "me").catch(() => null);
@@ -639,6 +645,7 @@ $("btn-stats").addEventListener("click", () => {
 $("btn-stats-back").addEventListener("click", () => show("menu"));
 
 social.init({ api, historyItem, me: () => profile, refresh: refreshProfile });
+lobby.init({ conn, show, screen: () => screen, onChange: () => social.loadFriends() });
 rewards.init({
   api,
   show,
@@ -933,7 +940,7 @@ conn.on("matchEnd", (r) => {
 $("btn-find").addEventListener("click", () => findMatch(false));
 $("btn-practice").addEventListener("click", () => findMatch(true));
 $("btn-again").addEventListener("click", () => findMatch(lastPractice));
-$("btn-menu").addEventListener("click", () => show("menu"));
+$("btn-menu").addEventListener("click", () => show(lobby.active() ? "lobby" : "menu"));
 
 $("btn-cancel").addEventListener("click", () => {
   conn.invoke("CancelSearch").catch(() => {});
@@ -965,7 +972,7 @@ for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => music.un
 $("btn-leave").addEventListener("click", () => {
   conn.invoke("LeaveMatch").catch(() => {});
   match = null;
-  show("menu");
+  show(lobby.active() ? "lobby" : "menu");
 });
 
 /** practice — тренировка: сервер сразу стартует матч с ботом, экран поиска не нужен. */
@@ -1052,6 +1059,7 @@ function startMatch(d) {
   match = {
     mode: d.mode,
     practice: d.practice,
+    fromLobby: d.lobby,
     press: d.fast, // быстрый темп: ползунок — одно нажатие
     mirror: d.mirror,
     blind: d.blind,
@@ -1070,7 +1078,7 @@ function startMatch(d) {
   $("chart-banner").hidden = true;
 
   $("hud-lives-box").hidden = !d.lives;
-  $("hud-tag").textContent = modeLabel(d.mode, d.fast, d.difficulty) + (d.practice ? " · тренировка" : "");
+  $("hud-tag").textContent = modeLabel(d.mode, d.fast, d.difficulty) + (d.lobby ? " · лобби" : d.practice ? " · тренировка" : "");
   $("hud-tag").style.setProperty("--c", MODES[d.mode].color);
 
   // моя дорожка — сцена с траекторией; траектория от id матча, у всех одна
@@ -1081,6 +1089,7 @@ function startMatch(d) {
     fast: d.fast,
     blind: d.blind,
     mirror: d.mirror,
+    theme: d.theme,
     hero: profile ? profile.equipped.hero : "circle",
     trailOf: (i) => (me.skin === "rainbow" ? fx.colors[i % 4] : SKIN_TRAIL[me.skin] || SKIN_TRAIL.classic),
   });
@@ -1096,6 +1105,7 @@ function startMatch(d) {
   opps.innerHTML = "";
   // соперников много — плотная панель: в один ряд напарники, в другой соперники
   $("screen-game").classList.toggle("crowd", d.players.length > 4);
+  $("screen-game").classList.toggle("horde", d.players.length > 10);
   // напарник — первым: его полоса другого цвета
   const isMate = (p) => d.teams && p.team === me.team;
   for (const p of d.players.filter((p) => p.slot !== d.you).sort((a, b) => isMate(b) - isMate(a))) {
@@ -1164,7 +1174,11 @@ function showResults(r) {
     : me && me.done
     ? `Твоё время: ${me.time.toFixed(2)} с`
     : me && me.out ? `Выбыл на ${me.sliders + 1}-м ползунке из ${r.total}`
-    : me ? `Заполнено ${me.sliders} из ${r.total} ползунков` : "") + (r.practice ? " · тренировка" : "");
+    : me ? `Заполнено ${me.sliders} из ${r.total} ползунков` : "") + (r.lobby ? " · лобби" : r.practice ? " · тренировка" : "");
+
+  // из лобби возвращаемся в него: новый матч запускает лидер
+  $("btn-again").hidden = r.lobby;
+  $("btn-menu").textContent = lobby.active() ? "В лобби" : "В меню";
 
   // серия побед: тренировка не считается; профиль обновим сразу, не дожидаясь сервера
   let streak = 0;
@@ -1393,7 +1407,7 @@ function render(now) {
       myHolding = holding;
     } else {
       renderOpponent(track, idx, progress, wrong, level);
-      if (track.mate && !p.left) mates.push({ slot: p.slot, pos: p.idx + p.p, name: track.name, color: MATE_COLOR });
+      if (track.mate && !p.left && mates.length < MAX_MATES_DRAWN) mates.push({ slot: p.slot, pos: p.idx + p.p, name: track.name, color: MATE_COLOR });
     }
 
     if (p.done || p.out) {

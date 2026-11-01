@@ -12,6 +12,8 @@ const social = (() => {
   let shown = null;     // открытый профиль: ответ сервера, null — виден список друзей
   let pickedColor = null;
   let searchTimer = 0;
+  let incoming = 0;     // заявок в друзья
+  let invites = [];     // приглашений в лобби
 
   /** Кружок с первой буквой ника. */
   function paintAvatar(el, name, color) {
@@ -268,7 +270,7 @@ const social = (() => {
       button("Принять", "primary", act("friends/accept", p)),
       button("Нет", "ghost", act("friends/remove", p))));
     fillList("outgoing-list", data.outgoing, (p) => personRow(p, button("Отменить", "ghost", act("friends/remove", p))));
-    fillList("friends-list", data.friends, (p) => personRow(p));
+    fillList("friends-list", data.friends, (p) => personRow(p, ...inviteButton(p)));
 
     $("incoming-box").hidden = data.incoming.length === 0;
     $("outgoing-box").hidden = data.outgoing.length === 0;
@@ -279,10 +281,50 @@ const social = (() => {
       paintAvatar(avatar, p.userName, p.color);
       return avatar;
     }));
+    incoming = data.incoming.length;
+    renderBadge();
+  }
+
+  function renderBadge() {
     for (const badge of document.querySelectorAll(".friends-badge")) {
-      badge.hidden = data.incoming.length === 0;
-      badge.textContent = data.incoming.length;
+      badge.hidden = incoming + invites.length === 0;
+      badge.textContent = incoming + invites.length;
     }
+  }
+
+  /** Лидер лобби зовёт друга кнопкой в списке. */
+  function inviteButton(p) {
+    if (!lobby.canInvite()) return [];
+    const b = button("Пригласить", "primary", async () => {
+      b.disabled = true;
+      if (await lobby.invite(p.userName, $("friend-error"))) b.textContent = "Отправлено";
+      else b.disabled = false;
+    });
+    return [b];
+  }
+
+  /** Приглашения в лобби: список в панели остаётся и после того, как вывеска скрылась. */
+  function setInvites(list) {
+    invites = list;
+    $("invite-box").hidden = list.length === 0;
+    $("invite-list").replaceChildren(...list.map((invite) => {
+      const li = document.createElement("li");
+      li.className = "person";
+      const text = document.createElement("span");
+      text.className = "invite-from";
+      text.textContent = `${invite.from} · ${invite.total} из ${invite.max}`;
+      li.append(text,
+        button("Войти", "primary", async () => { if (await lobby.accept(invite.id, $("friend-error"))) close(); }),
+        button("Нет", "ghost", () => lobby.decline(invite.id)));
+      return li;
+    }));
+    renderBadge();
+  }
+
+  /** Открывает список друзей: кнопка «Пригласить» в лобби. */
+  function openList() {
+    showList();
+    setOpen(true);
   }
 
   /** Поиск по мере ввода: ждём паузу, устаревший ответ отбрасываем. */
@@ -324,8 +366,7 @@ const social = (() => {
 
     $("panel-toggle").addEventListener("click", () => {
       if (isOpen() && !shown) return close();
-      showList();
-      setOpen(true);
+      openList();
     });
     $("panel-close").addEventListener("click", close);
     $("btn-my-profile").addEventListener("click", () => open(o.me().userName));
@@ -336,5 +377,5 @@ const social = (() => {
     $("pf-edit-about").addEventListener("input", renderCount);
   }
 
-  return { init, open, close, loadFriends, changed, paintAvatar };
+  return { init, open, openList, close, loadFriends, setInvites, changed, paintAvatar };
 })();

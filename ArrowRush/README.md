@@ -43,6 +43,9 @@
   Каждый день и каждую неделю задания сменяются, у всех игроков они одинаковые. Сутки и неделя (с понедельника)
   считаются по московскому времени. Тренировки и матчи, из которых игрок вышел, не считаются. Звёзды копятся и не
   тратятся, за них открываются скины всех видов. Задания настраиваются в `Data/Rewards.cs`.
+- **Лобби** создаётся на экране выбора режима. Лидер выбирает режим (все против всех или команды), модификацию,
+  скорость, сложность, дизайн уровня и число мест (до 40), зовёт друзей и ставит ботов. Приглашённый видит вывеску
+  сверху и запись в панели друзей. Матчи лобби не идут в статистику и задания.
 - Играть можно только с аккаунтом (ник + пароль). Каждый матч сохраняется: в меню видны
   статистика с отдельной вкладкой на каждый режим, лучшая серия побед и 10 последних матчей.
 - **К/Д** в статистике: сколько соперников ты обошёл, делённое на то, сколько обошли тебя. Боты считаются
@@ -97,6 +100,8 @@ Game/GameRules.cs       — все константы баланса
 Game/Level.cs           — генерация случайного уровня
 Game/Match.cs           — логика матча и бот
 Game/MatchManager.cs    — очередь поиска, игровой цикл 20 тиков/с
+Game/Lobby.cs           — лобби и его настройки
+Game/MatchManager.Lobby.cs — создание лобби, приглашения, запуск матча
 Game/GameHub.cs         — методы, которые вызывает клиент
 Data/AppDb.cs           — база: аккаунты, матчи, ключи шифрования cookie
 Data/Database.cs        — выбор базы: PostgreSQL (DATABASE_URL) или SQLite
@@ -113,6 +118,7 @@ wwwroot/music.js        — музыка на Web Audio, свои файлы в 
 wwwroot/rhythm.js       — режим «Свой трек»
 wwwroot/social.js       — панель друзей и профиля
 wwwroot/rewards.js      — кнопки в меню и экран наград
+wwwroot/lobby.js        — экран лобби и приглашения
 ```
 
 **Аккаунты.** Сделаны на ASP.NET Core Identity: пароли хранятся только как хеш (PBKDF2),
@@ -140,8 +146,10 @@ HTTP API: `POST /api/account/register`, `POST /api/account/login` (тело `{ u
 Поэтому напрямую подделать прогресс с клиента нельзя. Но весь уровень приходит клиенту
 в `matchStart`, а частота `Input` не ограничена, так что от автонажатий это не защищает.
 
-События сервер → клиент: `queued`, `matchStart`, `state`, `matchEnd`, `friends`, `stats`.
-Методы клиент → сервер: `FindMatch(mode, fast, difficulty, practice)`, `CancelSearch()`, `Input(mask)`, `LeaveMatch()`.
+События сервер → клиент: `queued`, `matchStart`, `state`, `matchEnd`, `friends`, `stats`, `lobby`, `lobbyInvites`.
+Методы клиент → сервер: `FindMatch(mode, fast, difficulty, practice)`, `CancelSearch()`, `Input(mask)`, `LeaveMatch()`,
+а для лобби `CreateLobby()`, `UpdateLobby(...)`, `SetLobbyBots(count)`, `InviteToLobby(userName)`, `JoinLobby(id)`,
+`DeclineInvite(id)`, `KickFromLobby(name)`, `LeaveLobby()`, `StartLobby()`, `LobbyInvites()`.
 Значения `mode`: `"classic"`, `"mirror"`, `"blind"`, `"hardcore"`, `"teams"`, `"teams5"`; `difficulty`: `"easy"`, `"normal"`, `"hard"`.
 
 Очередь и идущие матчи хранятся в памяти сервера, поэтому при деплое или перезапуске они обрываются

@@ -64,7 +64,11 @@ public sealed class Match
     private double? _firstFinishAt;
     private int? _winningTeam;
 
-    public Match(string id, GameMode mode, bool fast, Difficulty difficulty, Random rnd, bool practice = false)
+    /// <param name="rules">Правила лобби вместо обычных правил режима.</param>
+    /// <param name="lobbyId">Из какого лобби матч.</param>
+    /// <param name="theme">Дизайн уровня, выбранный в лобби; "auto" — случайный.</param>
+    public Match(string id, GameMode mode, bool fast, Difficulty difficulty, Random rnd, bool practice = false,
+        ModeRules? rules = null, string? lobbyId = null, string theme = "auto")
     {
         Id = id;
         Mode = mode;
@@ -72,7 +76,9 @@ public sealed class Match
         Difficulty = difficulty;
         Practice = practice;
         _rnd = rnd;
-        _rules = mode.Rules();
+        _rules = rules ?? mode.Rules();
+        LobbyId = lobbyId;
+        Theme = theme;
         _diff = difficulty.Rules();
         Level = LevelGenerator.Generate(fast, _diff, rnd, _rules.LevelScale);
     }
@@ -85,6 +91,8 @@ public sealed class Match
     public bool Teams => _rules.Teams;
     /// <summary>Тренировка с ботом: в базу не сохраняется.</summary>
     public bool Practice { get; }
+    public string? LobbyId { get; }
+    public string Theme { get; }
     public Slider[] Level { get; }
     public List<Player> Players { get; } = [];
     public MatchPhase Phase { get; private set; } = MatchPhase.Countdown;
@@ -328,6 +336,8 @@ public sealed class Match
         fast = Fast,
         difficulty = Difficulty.ToWire(),
         practice = Practice,
+        lobby = LobbyId is not null,
+        theme = Theme,
         mirror = _rules.Mirror,
         blind = _rules.Blind,
         lives = _rules.Lives,
@@ -376,6 +386,7 @@ public sealed class Match
         mode = Mode.ToWire(),
         fast = Fast,
         practice = Practice,
+        lobby = LobbyId is not null,
         teams = Teams,
         reason = EndReason,
         results = Standings()
