@@ -1,16 +1,18 @@
 "use strict";
 
-// Профили и друзья: экран профиля (свой можно редактировать), поиск игроков и заявки в друзья.
+// Панель справа, как в меню CS2: узкая полоса с аватарами разворачивается при наведении.
+// В ней поиск игроков, заявки и друзья, там же открывается профиль (свой можно редактировать).
 // Всё, что написал игрок (ник, «о себе»), выводится только через textContent.
 const social = (() => {
   const $ = (id) => document.getElementById(id);
   const ABOUT_MAX = 160;
+  const COLLAPSE_DELAY = 300; // мышь может на миг выскочить за край панели
 
-  let o = null;         // { api, show, me — текущий профиль, refresh — перечитать его, historyItem }
-  let shown = null;     // открытый профиль: ответ сервера
-  let backTo = "menu";  // куда ведёт «Назад» из профиля
+  let o = null;         // { api, me — текущий профиль, refresh — перечитать его, historyItem }
+  let shown = null;     // открытый профиль: ответ сервера, null — виден список друзей
   let pickedColor = null;
   let searchTimer = 0;
+  let collapseTimer = 0;
 
   /** Кружок с первой буквой ника. */
   function paintAvatar(el, name, color) {
@@ -40,25 +42,59 @@ const social = (() => {
     return b;
   }
 
+  // ---------- Панель ----------
+
+  const isOpen = () => $("panel").classList.contains("open");
+
+  function setOpen(on) {
+    clearTimeout(collapseTimer);
+    $("panel").classList.toggle("open", on);
+  }
+
+  /** Показывает список друзей вместо профиля. */
+  function showList() {
+    stopEdit();
+    shown = null;
+    $("panel-profile").hidden = true;
+    $("panel-list").hidden = false;
+  }
+
+  /** Сворачивает панель в полосу. */
+  function close() {
+    setOpen(false);
+    showList();
+    $("friend-search").value = "";
+    $("search-list").innerHTML = "";
+    $("friend-error").textContent = "";
+  }
+
+  /** Свёрнуть нельзя, пока игрок здесь чем-то занят: мышь могла просто уйти в сторону. */
+  const busy = () => shown !== null || $("friend-search").value !== "";
+
   // ---------- Профиль ----------
 
-  /** Открывает профиль игрока; from — экран, куда вернётся «Назад». */
-  async function open(name, from) {
-    backTo = from;
+  /** Открывает профиль игрока прямо в панели. */
+  async function open(name) {
     $("pf-error").textContent = "";
-    stopEdit(); // могли уйти отсюда кнопкой «Назад», не закончив правку
+    $("friend-error").textContent = "";
+    stopEdit();
+    setOpen(true);
     try {
       const r = await o.api("GET", "players/" + encodeURIComponent(name));
       if (!r.ok) {
-        if (from === "friends") $("friend-error").textContent = (r.data && r.data.error) || "Не получилось открыть профиль";
+        showList();
+        $("friend-error").textContent = (r.data && r.data.error) || "Не получилось открыть профиль";
         return;
       }
       shown = r.data;
     } catch {
+      $("friend-error").textContent = "Сервер недоступен";
       return;
     }
     render();
-    o.show("profile");
+    $("panel-list").hidden = true;
+    $("panel-profile").hidden = false;
+    $("panel").scrollTop = 0;
   }
 
   function render() {
@@ -96,7 +132,7 @@ const social = (() => {
     const box = $("pf-actions");
     box.innerHTML = "";
     const act = (path) => async () => {
-      if (await call(path, shown.userName, $("pf-error"))) await reload();
+      if (await call(path, shown.userName, $("pf-error"))) await Promise.all([reload(), loadFriends()]);
     };
 
     if (shown.relation === "self") {
@@ -127,7 +163,7 @@ const social = (() => {
     if (!shown) return;
     try {
       const r = await o.api("GET", "players/" + encodeURIComponent(shown.userName));
-      if (r.ok) { shown = r.data; render(); }
+      if (r.ok && shown) { shown = r.data; render(); }
     } catch { /* покажем то, что уже есть */ }
   }
 
@@ -196,26 +232,21 @@ const social = (() => {
 
   // ---------- Друзья ----------
 
-  async function openFriends() {
-    $("friend-error").textContent = "";
-    $("friend-search").value = "";
-    $("search-list").innerHTML = "";
-    o.show("friends");
-    await loadFriends();
-  }
-
-  /** Строка с игроком: аватар, ник (открывает профиль) и кнопки. */
+  /** Строка с игроком: аватар и ник открывают профиль, справа кнопки. */
   function personRow(p, ...buttons) {
     const li = document.createElement("li");
     li.className = "person";
-    const avatar = document.createElement("span");
+    const avatar = document.createElement("button");
+    avatar.type = "button";
     avatar.className = "avatar";
+    avatar.title = p.userName;
     paintAvatar(avatar, p.userName, p.color);
+    avatar.addEventListener("click", () => open(p.userName));
     const name = document.createElement("button");
     name.type = "button";
     name.className = "player-link";
     name.textContent = p.userName;
-    name.addEventListener("click", () => open(p.userName, "friends"));
+    name.addEventListener("click", () => open(p.userName));
     li.append(avatar, name, ...buttons);
     return li;
   }
@@ -235,22 +266,22 @@ const social = (() => {
     }
 
     const act = (path, p) => async () => {
-      if (await call(path, p.userName, $("friend-error"))) {
-        await loadFriends();
-        o.refresh();
-      }
+      if (await call(path, p.userName, $("friend-error"))) await loadFriends();
     };
 
     fillList("incoming-list", data.incoming, (p) => personRow(p,
       button("Принять", "primary", act("friends/accept", p)),
-      button("Отклонить", "ghost", act("friends/remove", p))));
+      button("Нет", "ghost", act("friends/remove", p))));
     fillList("outgoing-list", data.outgoing, (p) => personRow(p, button("Отменить", "ghost", act("friends/remove", p))));
     fillList("friends-list", data.friends, (p) => personRow(p));
 
     $("incoming-box").hidden = data.incoming.length === 0;
     $("outgoing-box").hidden = data.outgoing.length === 0;
     $("friends-empty").hidden = data.friends.length > 0;
-    setIncoming(data.incoming.length);
+    for (const badge of document.querySelectorAll(".friends-badge")) {
+      badge.hidden = data.incoming.length === 0;
+      badge.textContent = data.incoming.length;
+    }
   }
 
   /** Поиск по мере ввода: ждём паузу, устаревший ответ отбрасываем. */
@@ -274,32 +305,41 @@ const social = (() => {
     }, 250);
   }
 
-  /** Значок входящих заявок на кнопке «Друзья». */
-  function setIncoming(n) {
-    $("friends-badge").hidden = n === 0;
-    $("friends-badge").textContent = n;
-  }
-
-  /** Сервер сообщил, что заявки изменились: обновляем то, что сейчас на экране. */
-  function changed(screen) {
-    if (screen === "friends") loadFriends();
-    else if (screen === "profile" && $("pf-edit").hidden) reload();
-    o.refresh();
+  /** Сервер сообщил, что заявки изменились. */
+  function changed() {
+    loadFriends();
+    if ($("pf-edit").hidden) reload();
   }
 
   function init(options) {
     o = options;
-    $("btn-profile-back").addEventListener("click", () => {
-      if (backTo === "friends") openFriends();
-      else o.show(backTo);
+    const panel = $("panel");
+
+    panel.addEventListener("pointerenter", (e) => {
+      if (e.pointerType === "mouse") setOpen(true);
     });
-    $("btn-friends").addEventListener("click", openFriends);
-    $("btn-friends-back").addEventListener("click", () => o.show("menu"));
+    panel.addEventListener("pointerleave", (e) => {
+      if (e.pointerType !== "mouse" || busy()) return;
+      collapseTimer = setTimeout(() => setOpen(false), COLLAPSE_DELAY);
+    });
+    panel.addEventListener("focusin", () => setOpen(true));
+    // клик мимо панели и Esc сворачивают её, даже если открыт профиль
+    addEventListener("pointerdown", (e) => {
+      if (isOpen() && !panel.contains(e.target) && !$("panel-toggle").contains(e.target)) close();
+    });
+    addEventListener("keydown", (e) => {
+      if (e.code === "Escape" && isOpen()) close();
+    });
+
+    $("panel-toggle").addEventListener("click", () => (isOpen() ? close() : setOpen(true)));
+    $("panel-close").addEventListener("click", close);
+    $("btn-my-profile").addEventListener("click", () => open(o.me().userName));
+    $("btn-profile-back").addEventListener("click", showList);
     $("friend-search").addEventListener("input", onSearch);
     $("pf-edit").addEventListener("submit", saveEdit);
     $("pf-edit-cancel").addEventListener("click", stopEdit);
     $("pf-edit-about").addEventListener("input", renderCount);
   }
 
-  return { init, open, setIncoming, changed, paintAvatar };
+  return { init, open, close, loadFriends, changed, paintAvatar };
 })();

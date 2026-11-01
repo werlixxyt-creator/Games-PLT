@@ -48,17 +48,9 @@
     <section id="screen-menu" class="screen">
       <div class="topbar">
         <div class="chip">
-          <button id="btn-my-profile" class="chip-me" type="button" title="Мой профиль">
-            <span id="profile-avatar" class="avatar" aria-hidden="true"></span>
-            <span id="profile-name" class="profile-name"></span>
-          </button>
           <span id="streak-badge" class="streak-badge" title="Серия побед подряд" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#flame"/></svg><b id="streak-num">0</b>
           </span>
-          <button id="btn-friends" class="btn ghost small icon-btn friends-btn" type="button" aria-label="Друзья" title="Друзья">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#team"/></svg>
-            <b id="friends-badge" class="friends-badge" hidden></b>
-          </button>
           <button id="btn-menu-music" class="btn ghost small icon-btn music-toggle" type="button" aria-label="Музыка" title="Музыка вкл/выкл">
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#sound"/></svg>
           </button>
@@ -205,88 +197,6 @@
       <div id="skin-error" class="conn bad" role="alert"></div>
     </section>
 
-    <!-- ДРУЗЬЯ -->
-    <section id="screen-friends" class="screen">
-      <div class="topbar start">
-        <button id="btn-friends-back" class="btn ghost small">← В меню</button>
-      </div>
-      <h2>Друзья</h2>
-
-      <div class="people glass">
-        <label class="field">
-          <span>Найти игрока по нику</span>
-          <input id="friend-search" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Начни вводить ник">
-        </label>
-        <ul id="search-list" class="people-list"></ul>
-        <div id="friend-error" class="conn bad" role="alert"></div>
-      </div>
-
-      <div id="incoming-box" class="people glass" hidden>
-        <h3>Заявки в друзья</h3>
-        <ul id="incoming-list" class="people-list"></ul>
-      </div>
-
-      <div class="people glass">
-        <h3>Мои друзья</h3>
-        <ul id="friends-list" class="people-list"></ul>
-        <p id="friends-empty" class="muted small">Пока никого. Найди игрока по нику или открой его профиль из итогов матча.</p>
-      </div>
-
-      <div id="outgoing-box" class="people glass" hidden>
-        <h3>Отправленные заявки</h3>
-        <ul id="outgoing-list" class="people-list"></ul>
-      </div>
-    </section>
-
-    <!-- ПРОФИЛЬ -->
-    <section id="screen-profile" class="screen">
-      <div class="topbar start">
-        <button id="btn-profile-back" class="btn ghost small">← Назад</button>
-      </div>
-
-      <div class="profile-card glass">
-        <div class="pf-head">
-          <span id="pf-avatar" class="avatar pf-avatar" aria-hidden="true"></span>
-          <div class="pf-title">
-            <div id="pf-name" class="pf-name"></div>
-            <div id="pf-joined" class="muted small"></div>
-          </div>
-          <canvas id="pf-hero" class="pf-hero" width="84" height="84" aria-hidden="true"></canvas>
-        </div>
-        <p id="pf-about" class="pf-about"></p>
-        <div id="pf-actions" class="pf-actions"></div>
-        <div id="pf-error" class="conn bad" role="alert"></div>
-
-        <form id="pf-edit" class="pf-edit" novalidate hidden>
-          <label class="field">
-            <span>Ник</span>
-            <input id="pf-edit-name" maxlength="16" autocomplete="off" spellcheck="false">
-          </label>
-          <label class="field">
-            <span>О себе</span>
-            <textarea id="pf-edit-about" maxlength="160" rows="3"></textarea>
-          </label>
-          <div id="pf-edit-count" class="muted small pf-count"></div>
-          <div class="field">
-            <span>Цвет аватара</span>
-            <div id="pf-edit-colors" class="swatches"></div>
-          </div>
-          <div id="pf-edit-error" class="conn bad" role="alert"></div>
-          <div class="pf-actions">
-            <button id="pf-edit-save" class="btn primary small" type="submit">Сохранить</button>
-            <button id="pf-edit-cancel" class="btn ghost small" type="button">Отмена</button>
-          </div>
-        </form>
-      </div>
-
-      <div id="pf-stats" class="stats"></div>
-
-      <div id="pf-history" class="history glass" hidden>
-        <h3>Последние матчи</h3>
-        <ol id="pf-list" class="res-list"></ol>
-      </div>
-    </section>
-
     <!-- ПОИСК -->
     <section id="screen-search" class="screen">
       <div class="radar" aria-hidden="true">
@@ -374,6 +284,93 @@
     </section>
 
   </main>
+
+  <!-- панель справа: друзья, заявки и профиль (social.js). Свёрнута — видна только полоса с аватарами -->
+  <button id="panel-toggle" class="panel-toggle" type="button" aria-label="Друзья и профиль">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#team"/></svg>
+    <b class="friends-badge" hidden></b>
+  </button>
+  <aside id="panel" class="panel" aria-label="Друзья и профиль">
+    <div class="panel-top">
+      <button id="btn-my-profile" class="panel-me" type="button" title="Мой профиль">
+        <span id="profile-avatar" class="avatar" aria-hidden="true"></span>
+        <span id="profile-name" class="profile-name"></span>
+        <b class="friends-badge" hidden></b>
+      </button>
+      <button id="panel-close" class="panel-close only-open" type="button" aria-label="Свернуть панель">×</button>
+    </div>
+
+    <div id="panel-list">
+      <label class="field only-open">
+        <span>Найти игрока по нику</span>
+        <input id="friend-search" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Начни вводить ник">
+      </label>
+      <ul id="search-list" class="people-list only-open"></ul>
+      <div id="friend-error" class="conn bad only-open" role="alert"></div>
+
+      <section id="incoming-box" class="panel-box" hidden>
+        <h3 class="only-open">Заявки в друзья</h3>
+        <ul id="incoming-list" class="people-list incoming"></ul>
+      </section>
+
+      <section class="panel-box">
+        <h3 class="only-open">Мои друзья</h3>
+        <ul id="friends-list" class="people-list"></ul>
+        <p id="friends-empty" class="muted small only-open">Пока никого. Найди игрока по нику или открой его профиль из итогов матча.</p>
+      </section>
+
+      <section id="outgoing-box" class="panel-box only-open" hidden>
+        <h3>Отправленные заявки</h3>
+        <ul id="outgoing-list" class="people-list"></ul>
+      </section>
+    </div>
+
+    <div id="panel-profile" hidden>
+      <button id="btn-profile-back" class="btn ghost small" type="button">← К друзьям</button>
+
+      <div class="profile-card glass">
+        <div class="pf-head">
+          <span id="pf-avatar" class="avatar pf-avatar" aria-hidden="true"></span>
+          <div class="pf-title">
+            <div id="pf-name" class="pf-name"></div>
+            <div id="pf-joined" class="muted small"></div>
+          </div>
+          <canvas id="pf-hero" class="pf-hero" width="84" height="84" aria-hidden="true"></canvas>
+        </div>
+        <p id="pf-about" class="pf-about"></p>
+        <div id="pf-actions" class="pf-actions"></div>
+        <div id="pf-error" class="conn bad" role="alert"></div>
+
+        <form id="pf-edit" class="pf-edit" novalidate hidden>
+          <label class="field">
+            <span>Ник</span>
+            <input id="pf-edit-name" maxlength="16" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="field">
+            <span>О себе</span>
+            <textarea id="pf-edit-about" maxlength="160" rows="3"></textarea>
+          </label>
+          <div id="pf-edit-count" class="muted small pf-count"></div>
+          <div class="field">
+            <span>Цвет аватара</span>
+            <div id="pf-edit-colors" class="swatches"></div>
+          </div>
+          <div id="pf-edit-error" class="conn bad" role="alert"></div>
+          <div class="pf-actions">
+            <button id="pf-edit-save" class="btn primary small" type="submit">Сохранить</button>
+            <button id="pf-edit-cancel" class="btn ghost small" type="button">Отмена</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="pf-stats" class="stats"></div>
+
+      <div id="pf-history" class="history glass" hidden>
+        <h3>Последние матчи</h3>
+        <ol id="pf-list" class="res-list"></ol>
+      </div>
+    </div>
+  </aside>
 
   <!-- экранные стрелки — на сенсорных экранах во время игры; раскладка как на клавиатуре -->
   <div id="touchpad" class="touchpad" aria-hidden="true">
