@@ -16,6 +16,17 @@
   <div class="planet" aria-hidden="true"></div>
   <div id="curtain" class="curtain" aria-hidden="true"><span>ARROW <i>RUSH</i></span></div>
 
+  <!-- Чёрный экран при входе (fullscreen.js) и просьба повернуть телефон там, где браузер не умеет сам (iPhone). -->
+  <div id="fs-gate" class="fs-gate">
+    <p class="fs-touch">Нажми на кнопку для полноэкранного режима</p>
+    <button id="fs-button" class="btn primary fs-touch" type="button">На весь экран</button>
+    <p class="fs-desktop">Нажми F11 для полноэкранного режима</p>
+  </div>
+  <div class="rotate-hint">
+    <p>Поверни телефон горизонтально</p>
+    <p class="muted">Если экран не поворачивается, отключи блокировку поворота</p>
+  </div>
+
   <main id="app">
 
     <!-- ВХОД / РЕГИСТРАЦИЯ -->
@@ -641,5 +652,6 @@
   <script src="rewards.js"></script>
   <script src="lobby.js"></script>
   <script src="app.js"></script>
+  <script src="fullscreen.js"></script>
 </body>
 </html>
