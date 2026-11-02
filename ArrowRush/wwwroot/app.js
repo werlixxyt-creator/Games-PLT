@@ -1119,6 +1119,7 @@ function startMatch(d) {
     hero: profile ? profile.equipped.hero : "circle",
     ufo: "classic", // скины НЛО появятся позже
     jump: d.jump,
+    thunder: () => music.sting("thunder"),
     trailOf: trailOf(me.skin),
   });
   match.tracks.set(d.you, {
@@ -1285,7 +1286,9 @@ function trackMine(track, idx, wrong, level) {
       for (let i = prev; i < Math.min(idx, level.length); i++) {
         if (level[i].chart) chartPassed(i);
         if (level[i].swam) swamPassed(i);
+        if (level[i].event) eventPassed(i);
       }
+      markPassed(prev, idx, level.length);
     }
   }
   if (wrong && !track.wasWrong) {
@@ -1296,10 +1299,11 @@ function trackMine(track, idx, wrong, level) {
   track.wasWrong = wrong;
 }
 
-/** Вывеска над сценой на пару секунд. */
-function showBanner(text) {
+/** Вывеска над сценой на пару секунд; color — вместо обычного золотого. */
+function showBanner(text, color = "") {
   const banner = $("chart-banner");
   banner.textContent = text;
+  banner.style.color = color;
   banner.hidden = false;
   fx.retrigger(banner, "pop");
   clearTimeout(banner._hide);
@@ -1315,9 +1319,37 @@ function chartPassed(i) {
 
 /** Пройден свам: прилетает НЛО, ячейки становятся препятствиями. */
 function swamPassed(i) {
-  showBanner("СВАМ! Перепрыгивай ячейки");
+  showBanner("СВАМ! Перепрыгивай ячейки", "#39e6ff");
   course.swam(i);
-  music.jingle(true);
+  music.sting("swam");
+}
+
+// что сказать игроку, когда начался ивент
+const EVENT_TEXT = {
+  over: "ОВЕРДРАЙВ! Ячейки заполняются быстрее",
+  storm: "ШТОРМ! Дальние ячейки видно при молнии",
+  flip: "ПЕРЕВОРОТ! Мир вверх ногами, стрелки те же",
+};
+
+/** Пройдена ячейка ивента: он начинается. */
+function eventPassed(i) {
+  const kind = match.level[i].event;
+  showBanner(EVENT_TEXT[kind], course.eventInfo[kind].color);
+  course.event(kind, i);
+  music.sting(kind);
+}
+
+// отметки на пути: доля уровня и вывеска; финал совпадает с FINAL_AT в music.js
+const MARKS = [[0.5, "ПОЛОВИНА ПУТИ!", "#ffffff"], [0.85, "ФИНАЛ!", "#ff4f6e"]];
+
+/** Волна на отметках пути. */
+function markPassed(prev, idx, total) {
+  for (const [at, text, color] of MARKS) {
+    if (prev / total < at && idx / total >= at && idx < total) {
+      showBanner(text, color);
+      course.pulse(color);
+    }
+  }
 }
 
 /** Удар о ячейку на участке с НЛО. */
@@ -1558,7 +1590,13 @@ function render(now) {
   const view = watched
     ? { pos: watched.idx + watched.p, air: watched.air, ...handsOf(watched, t) }
     : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1 };
-  course.frame(now, { ...view, mates, energy: music.energy(), part: music.part() });
+  const pos = Math.min(Math.floor(view.pos), level.length);
+  course.frame(now, { ...view, mates, energy: music.energy(), part: music.part(), final: pos / level.length >= MARKS[1][0] && pos < level.length });
+
+  // музыка идёт за тем, что сейчас на экране
+  const cell = level[pos];
+  music.mood(cell ? (cell.ufo ? "swam" : cell.zone) : null);
+  music.progress(pos / level.length);
 
   // подсказки для меня
   if (!mine) return;

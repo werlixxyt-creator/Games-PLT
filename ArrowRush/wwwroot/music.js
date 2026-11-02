@@ -3,7 +3,8 @@
 // Музыка игры, синтезируется прямо в браузере (Web Audio), без файлов.
 // Матчи: трек с разделами, как в уровнях GD: дроп, затишье, нарастание, второй дроп.
 // У каждого матча своя тональность, аккорды и мелодия (от id матча). Отсчёт — нарастание,
-// на «СТАРТ!» сразу бьёт дроп.
+// на «СТАРТ!» сразу бьёт дроп. Трек следит за игрой: у ивентов уровня своё звучание (mood),
+// а чем ближе финиш, тем он плотнее (progress); в самом конце — быстрее и на тон выше.
 // Меню: спокойные треки по кругу. И в меню, и в матчах можно поставить свой файл игрока
 // (он хранится в браузере — IndexedDB).
 const music = (() => {
@@ -13,7 +14,10 @@ const music = (() => {
   let duck = null;      // бас и арпеджио «приседают» на каждую бочку
   let delay = null;     // эхо для арпеджио
   let noise = null;     // буфер белого шума для барабанов
-  let meter = null;     // анализатор музыки матча: по нему сцена качается в такт
+  let tone = null;      // общий фильтр музыки матча: ивенты и ошибки делают её глуше
+  let toneOpen = 20000; // на сколько он открыт сейчас, без учёта ошибки
+  let moodNow = null;   // какой ивент звучит
+  let meter = null;    // анализатор музыки матча: по нему сцена качается в такт
   let meterData = null;
   let meterAvg = 0;     // средняя громкость низов — удар считается от неё
   let timer = 0;
@@ -43,6 +47,17 @@ const music = (() => {
   ];
   const PENTATONIC = [0, 3, 5, 7, 10, 12, 15, 17, 19];
 
+  // звучание ивентов: раздел трека, темп, сдвиг в полутонах, фильтр; rate — скорость своего файла игрока
+  const MOODS = {
+    swam: { part: "drop2", tempo: 1, shift: 0, tone: 20000, rate: 1 },
+    over: { part: "drop2", tempo: 1.14, shift: 1, tone: 20000, rate: 1.12 },
+    storm: { part: "storm", tempo: 0.92, shift: 0, tone: 1100, rate: 0.94 },
+    flip: { part: "flip", tempo: 1, shift: 0, tone: 3200, rate: 1 },
+  };
+  const FINAL_AT = 0.85;      // с какой доли уровня начинается финал
+  const FINAL_TEMPO = 1.06;
+  const FINAL_SHIFT = 2;
+
   /** AudioContext создаём по нажатию игрока — иначе браузер не даст играть звук. */
   function unlock() {
     if (!ctx) {
@@ -56,6 +71,10 @@ const music = (() => {
       limiter.attack.value = 0.004;
       limiter.release.value = 0.16;
       master.connect(limiter).connect(ctx.destination);
+      tone = ctx.createBiquadFilter();
+      tone.type = "lowpass";
+      tone.frequency.value = toneOpen;
+      tone.connect(master);
       meter = ctx.createAnalyser();
       meter.fftSize = 1024;
       meter.smoothingTimeConstant = 0.35;
@@ -277,19 +296,48 @@ const music = (() => {
     if (inBar % (lastBar ? 1 : 2) === 0) snare(t, (lastBar ? 0.3 : 0.14) + (inBar / 16) * 0.2);
   }
 
+  /** Раздел с учётом игры: ивент и финал важнее того, что идёт по форме трека. */
+  function partNow(n, s) {
+    if (n >= 0 && s.mood) return { name: MOODS[s.mood].part, bar: 1, left: 8 };
+    if (n >= 0 && s.final) return { name: "drop2", bar: 1, left: 8 };
+    return partAt(n);
+  }
+
+  /** Темп с учётом ивента и финала. */
+  function applyTempo(s) {
+    const k = (s.mood ? MOODS[s.mood].tempo : 1) * (s.final ? FINAL_TEMPO : 1);
+    s.stepLen = 60 / (s.bpm * k) / 4;
+    delay.delayTime.setTargetAtTime(s.stepLen * 3, ctx.currentTime, 0.05);
+  }
+
   /** Одна шестнадцатая: что в ней играет, задаёт раздел трека. */
   function playStep(t, n) {
     const s = song;
     const inBar = ((n % 16) + 16) % 16;
     const bar = Math.floor(n / 16);
+
+    // ивент вступает по сильной доле, чтобы трек не сбивался
+    if (s.nextMood !== undefined && inBar % 4 === 0) {
+      s.mood = s.nextMood;
+      s.nextMood = undefined;
+      applyTempo(s);
+      if (s.mood) {
+        crash(t);
+        s.part = MOODS[s.mood].part;
+      }
+    }
+
     const chord = s.chords[((bar % 4) + 4) % 4];
-    const part = partAt(n);
+    const part = partNow(n, s);
     const beatLen = s.stepLen * 4;
-    const bassNote = s.root - 12 + chord;
-    const triad = [0, 3, 7].map((d) => s.root + 12 + chord + d);
+    const root = s.root + (s.mood ? MOODS[s.mood].shift : 0) + (s.final ? FINAL_SHIFT : 0);
+    const bassNote = root - 12 + chord;
+    const triad = [0, 3, 7].map((d) => root + 12 + chord + d);
     const shape = [0, 3, 7, 12, 15, 12, 7, 3];
-    const arpNote = s.root + 12 + chord + shape[((n % 8) + 8) % 8];
-    const hookNote = s.hook[((n % 32) + 32) % 32];
+    const arpStep = ((n % 8) + 8) % 8;
+    const arpNote = root + 12 + chord + shape[arpStep];
+    const hookStep = ((n % 32) + 32) % 32;
+    const hookNote = s.hook[hookStep] === null ? null : s.hook[hookStep] + root - s.root;
     if (inBar === 0) setTimeout(() => { if (song === s) s.part = part.name; }, Math.max(0, (t - ctx.currentTime) * 1000));
 
     if (part.name === "drop" || part.name === "drop2") {
@@ -303,9 +351,26 @@ const music = (() => {
       if (inBar % 8 === 0) wobble(t, bassNote, beatLen * 1.9, (s.bpm / 60) * (bar % 2 ? 4 : 2));
       if ([0, 3, 6, 10, 12].includes(inBar)) supersaw(t, triad, s.stepLen * 2.2, 5200, second ? 0.13 : 0.11);
       if (hookNote !== null) lead(t, hookNote + (second ? 12 : 0), s.stepLen * 2.4);
-      if (second) arp(t, arpNote + 12, true);
+      // ближе к финишу вступает верхний слой, а в финале — дробь на каждую долю
+      if (second || s.heat >= 0.5) arp(t, arpNote + 12, true);
+      if (s.final && inBar % 2 === 1) hat(t, true);
+    } else if (part.name === "storm") {
+      // шторм: тяжёлый медленный бас и редкие удары
+      if (inBar === 0) supersaw(t, triad.map((m) => m - 12), beatLen * 3.8, 800, 0.12);
+      if (inBar === 0 || inBar === 10) kick(t);
+      if (inBar === 8) snare(t, 0.7);
+      if (inBar % 8 === 0) wobble(t, bassNote, beatLen * 1.9, s.bpm / 60);
+      if (inBar % 8 === 6) hat(t, true);
+    } else if (part.name === "flip") {
+      // переворот: всё задом наперёд — арпеджио и мелодия идут обратно, бит вдвое реже
+      if (inBar === 0 || inBar === 6) kick(t);
+      if (inBar === 8) snare(t);
+      hat(t, inBar % 4 === 2);
+      arp(t, root + 24 + chord + shape[7 - arpStep], true);
+      const back = s.hook[31 - hookStep];
+      if (back !== null) lead(t, back + root - s.root, s.stepLen * 2);
     } else if (part.name === "verse") {
-      if (inBar === 0 || inBar === 8 || inBar === 10) kick(t);
+      if (inBar === 0 || inBar === 8 || inBar === 10 || (s.heat >= 0.35 && inBar === 4)) kick(t);
       if (inBar === 4 || inBar === 12) snare(t);
       if (inBar % 4 === 2) bass(t, bassNote, s.stepLen * 1.6);
       hat(t, inBar % 4 === 2);
@@ -344,8 +409,12 @@ const music = (() => {
     stop(0);
 
     bus = ctx.createGain();
-    bus.connect(master);
+    bus.connect(tone);
     bus.connect(meter);
+    moodNow = null;
+    toneOpen = 20000;
+    tone.frequency.cancelScheduledValues(ctx.currentTime);
+    tone.frequency.setValueAtTime(toneOpen, ctx.currentTime);
     if (matchId === "custom" && files.match.name) {
       // свой трек; если файл не загрузился — встроенный бит, чтобы матч не прошёл в тишине
       const out = bus;
@@ -427,6 +496,10 @@ const music = (() => {
       step: -steps,
       next: dropAt - steps * stepLen,
       part: "intro",
+      mood: null,        // какой ивент уже звучит; nextMood — какой вступит на следующей доле
+      nextMood: undefined,
+      heat: 0,           // пройденная доля уровня
+      final: false,
     };
     schedule();
     timer = setInterval(schedule, 25);
@@ -446,6 +519,69 @@ const music = (() => {
     const onset = Math.max(0, v - meterAvg);
     meterAvg += (v - meterAvg) * 0.08;
     return Math.min(1, onset * 3.5);
+  }
+
+  /** Какой ивент сейчас на уровне (null — никакого). Встроенный трек меняет раздел, свой файл игрока — скорость и фильтр. */
+  function mood(name) {
+    if (!ctx || !bus || name === moodNow) return;
+    moodNow = name;
+    const m = name ? MOODS[name] : null;
+    toneOpen = m ? m.tone : 20000;
+    tone.frequency.setTargetAtTime(toneOpen, ctx.currentTime, 0.12);
+    if (song) song.nextMood = name;
+    if (matchSource) matchSource.playbackRate.setTargetAtTime(m ? m.rate : 1, ctx.currentTime, 0.15);
+  }
+
+  /** Какая доля уровня пройдена, 0..1: от неё зависит плотность трека. Вызывать раз в кадр. */
+  function progress(k) {
+    if (!song) return;
+    song.heat = k;
+    if (k >= FINAL_AT && !song.final) {
+      song.final = true;
+      applyTempo(song);
+    }
+  }
+
+  function boom(t, out, peak) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.setValueAtTime(140, t);
+    o.frequency.exponentialRampToValueAtTime(36, t + 0.5);
+    env(g, t, 0.003, peak, 1);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 1.1);
+  }
+
+  function sweep(t, from, to, len, out) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(from, t);
+    o.frequency.exponentialRampToValueAtTime(to, t + len);
+    env(g, t, 0.01, 0.14, len);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + len + 0.05);
+  }
+
+  /** Звук начала ивента поверх музыки; thunder — гром от молнии. */
+  function sting(kind) {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime + 0.01;
+    if (kind === "thunder") {
+      noiseHit(t, "lowpass", 420, 0.75, 1.3, master);
+      return;
+    }
+    boom(t, master, 0.7);
+    noiseHit(t, "highpass", 3000, 0.4, 1.4, master);
+    if (kind === "swam") sweep(t, 180, 1400, 0.7, master);
+    else if (kind === "over") sweep(t, 300, 2400, 0.35, master);
+    else if (kind === "storm") noiseHit(t, "lowpass", 420, 0.75, 1.6, master);
+    else if (kind === "flip") {
+      sweep(t, 1400, 120, 0.4, master);
+      sweep(t + 0.4, 120, 1400, 0.4, master);
+    }
   }
 
   /** Заполненный ползунок: нота в тональности трека, серия ползунков поднимается по гамме. */
@@ -477,6 +613,12 @@ const music = (() => {
     o.connect(g).connect(master);
     o.start(t);
     o.stop(t + 0.24);
+
+    // на миг музыка глохнет, как от удара
+    if (!bus) return;
+    tone.frequency.cancelScheduledValues(t);
+    tone.frequency.setTargetAtTime(600, t, 0.01);
+    tone.frequency.setTargetAtTime(toneOpen, t + 0.1, 0.12);
   }
 
   /** Плавно гасим музыку матча за fade секунд. */
@@ -847,7 +989,7 @@ const music = (() => {
   }
 
   return {
-    unlock, start, stop, jingle, fanfare, setMuted, tap, energy, ding, miss,
+    unlock, start, stop, jingle, fanfare, setMuted, tap, energy, ding, miss, mood, progress, sting,
     isMuted: () => muted, isPlaying: () => !!song, part: () => (song ? song.part : null),
     menu, setMenuTrack, setMatchTrack, setCustomFile,
     menuTracks: MENU_TRACKS, menuTrack: () => menuId, matchTrack: () => matchId,

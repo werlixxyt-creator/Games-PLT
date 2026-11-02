@@ -88,11 +88,18 @@ public static class GameModes
 /// Swam — ячейка «Свам», проходится как обычная. Ufo — ячейка за ней: её надо перепрыгнуть с НЛО,
 /// стрелка здесь не важна, а FillSeconds — сколько НЛО к ней подлетает. Пока свам не пройден,
 /// она выглядит обычной ячейкой со стрелкой Was.
+/// Event — ячейка ивента (см. <see cref="LevelGenerator.Events"/>), проходится как обычная. Zone — ячейка за ней: тот же ивент в действии.
 /// </summary>
-public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false);
+public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false, string? Event = null, string? Zone = null);
 
 public static class LevelGenerator
 {
+    /// <summary>
+    /// Ивенты. Овердрайв — ячейки заполняются быстрее; остальное он меняет только на клиенте, как и шторм
+    /// (темно, дальние ячейки видны при молнии) и переворот (мир отражается вверх ногами).
+    /// </summary>
+    public static readonly string[] Events = ["over", "storm", "flip"];
+
     /// <param name="fast">Быстрый темп: ползунок — одно нажатие, зато их больше.</param>
     /// <param name="scale">Во сколько раз уровень длиннее обычного.</param>
     public static Slider[] Generate(bool fast, DifficultyRules d, Random rnd, double scale = 1)
@@ -123,9 +130,9 @@ public static class LevelGenerator
     }
 
     /// <summary>
-    /// Расставляет чарты и свамы так, чтобы их участки не пересекались.
-    /// Первая особая ячейка уровня всегда свам: он есть в каждом матче, даже самом коротком.
-    /// Участок свама короче, поэтому у конца уровня, где чарт не помещается, тоже встаёт свам.
+    /// Расставляет особые ячейки так, чтобы их участки не пересекались.
+    /// Первая всегда свам: он есть в каждом матче, даже самом коротком. Вторая всегда ивент.
+    /// Чарт самый длинный: у конца уровня, где он не помещается, вместо него встаёт свам.
     /// </summary>
     private static void AddSpecials(Slider[] sliders, bool fast, Random rnd)
     {
@@ -134,15 +141,33 @@ public static class LevelGenerator
         var lastChart = sliders.Length - GameRules.ChartCells - 1;
         if (lastSwam < 1) return;
 
-        var at = rnd.Next(1, Math.Min(maxGap, lastSwam + 1));
-        var first = true;
-        while (at <= lastSwam)
+        // свам ближе к началу: иначе на коротком уровне ивент уже не помещается
+        var at = rnd.Next(1, Math.Min(maxGap / 2, lastSwam + 1));
+        for (var placed = 0; at <= lastSwam; placed++)
         {
-            var swam = first || at > lastChart || rnd.NextDouble() < GameRules.SwamChance;
-            var cells = swam ? AddSwam(sliders, at) : AddChart(sliders, at, rnd);
-            at += cells + 1 + rnd.Next(GameRules.ChartMinGap, maxGap);
-            first = false;
+            int cells;
+            if (placed == 0) cells = AddSwam(sliders, at);
+            else if (placed == 1 || rnd.NextDouble() < GameRules.EventChance) cells = AddEvent(sliders, at, rnd);
+            else if (at > lastChart || rnd.NextDouble() < GameRules.SwamChance) cells = AddSwam(sliders, at);
+            else cells = AddChart(sliders, at, rnd);
+            var next = at + cells + 1;
+            at = next + rnd.Next(GameRules.ChartMinGap, maxGap);
+            // на коротком уровне ивент встаёт ближе к сваму, лишь бы поместился
+            if (placed == 0) at = Math.Max(next, Math.Min(at, lastSwam));
         }
+    }
+
+    /// <summary>Случайный ивент на следующие ячейки. Выглядят они как обычные, пока он не начался.</summary>
+    private static int AddEvent(Slider[] sliders, int at, Random rnd)
+    {
+        var name = Events[rnd.Next(Events.Length)];
+        sliders[at] = sliders[at] with { Event = name };
+        for (var i = at + 1; i <= at + GameRules.EventCells; i++)
+        {
+            var seconds = sliders[i].FillSeconds * (name == "over" ? GameRules.OverdriveFill : 1);
+            sliders[i] = sliders[i] with { Zone = name, FillSeconds = Math.Round(seconds, 2) };
+        }
+        return GameRules.EventCells;
     }
 
     /// <summary>Чарт: за ним идут одинаковые ячейки, прежняя стрелка остаётся в Was.</summary>

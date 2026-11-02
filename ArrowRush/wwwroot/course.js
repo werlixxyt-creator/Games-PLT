@@ -33,6 +33,15 @@ const course = (() => {
   const OBSTACLE_R = 36;
   const JUMP_HEIGHT = 260;   // высота прыжка с НЛО: выше препятствия он в той же доле прыжка, что на сервере (SwamClearFrom)
 
+  // ивенты: подпись особой ячейки, цвет и палитра, в которую уходит космос (овердрайв)
+  const EVENTS = {
+    over: { label: "ОВЕРДРАЙВ", color: "#ff8a2b", rgb: [255, 120, 40] },
+    storm: { label: "ШТОРМ", color: "#c9b8ff", rgb: [170, 150, 255] },
+    flip: { label: "ПЕРЕВОРОТ", color: "#5dffb0", rgb: [80, 255, 170] },
+  };
+  const OVER_PALETTE = { sky: [120, 24, 40], sky2: [200, 70, 20], neb: [255, 170, 40], neb2: [255, 60, 60], wall: [90, 20, 30], wall2: [255, 150, 50], glow: [255, 220, 150] };
+  const STORM_SIGHT = 2;     // шторм: сколько ячеек видно без молнии, считая текущую
+
   const KINDS = ["wave", "ship", "ball", "dash"];
   const THEME_IDS = ["violet", "ocean", "neon", "night"]; // как THEMES; лобби выбирает дизайн по этим именам
 
@@ -62,6 +71,14 @@ const course = (() => {
   let mateShown = new Map(); // где напарники на экране: slot → номер ползунка + доля
   let fly = null;       // идёт сцена прилёта НЛО: { start, from — номер свама, struck, landed }
   let inAir = false, landed = 0, recoil = 0; // прыжок с НЛО: приземление и толчок от него, затухают
+  let rings = [];       // ударные волны в мире: { x, y, size, color, k }
+  let ghosts = [];      // овердрайв: где персонаж был в прошлых кадрах
+  let bolts = [];       // шторм: молнии на экране: { pts, life }
+  let zones = { over: 0, storm: 0, flip: 0 }; // насколько идёт каждый ивент, 0..1, меняется плавно
+  let zoneNow = null;   // какой ивент на текущей ячейке
+  let strike = 0, strikeAt = 0; // шторм: яркость молнии и когда ударит следующая
+  let punch = 0;        // толчок камеры, затухает
+  let danger = 0;       // финал уровня: красные края экрана, 0..1
 
   /** Повторяемый генератор случайных чисел: один и тот же матч — одна и та же траектория. */
   function rng(seed) {
@@ -73,8 +90,15 @@ const course = (() => {
     };
   }
 
-  /** Ячейка дальше, чем видно в этом режиме. */
-  const hiddenCell = (i) => opts.sight > 0 && i - Math.floor(s) >= opts.sight;
+  /** Ячейка дальше, чем видно в этом режиме или в темноте шторма: её показывает только молния. */
+  const hiddenCell = (i) => (opts.sight > 0 && i - Math.floor(s) >= opts.sight)
+    || (zoneNow === "storm" && strike < 0.25 && i - Math.floor(s) >= STORM_SIGHT);
+
+  /** Переворот: мир отражается по вертикали, на середине сжимаясь в линию. */
+  const flipY = () => {
+    const k = reduce ? 1 : Math.cos(Math.PI * zones.flip);
+    return Math.abs(k) < 0.02 ? 0.02 : k;
+  };
 
   /** Какую стрелку показать: ячейки за чартом и свамом выглядят обычными, пока он не пройден. */
   function arrowOf(i) {
@@ -768,6 +792,7 @@ const course = (() => {
 
     ctx.save();
     ctx.translate(p[0], p[1]);
+    if (flipY() < 0) ctx.scale(1, -1); // в перевороте мир отражён, а стрелки и подписи остаются как есть
 
     if (current) {
       // кольцо сходится к стрелке — куда смотреть прямо сейчас
@@ -799,6 +824,7 @@ const course = (() => {
 
     if (opts.level[i].chart) drawBadge(r, "ЧАРТ", "#ffc93c");
     if (opts.level[i].swam) drawBadge(r, "СВАМ", "#39e6ff");
+    if (opts.level[i].event) drawBadge(r, EVENTS[opts.level[i].event].label, EVENTS[opts.level[i].event].color);
 
     if (hidden) {
       ctx.fillStyle = "#fff";
@@ -986,12 +1012,101 @@ const course = (() => {
         ctx.lineTo(x + dir * 24, y + 11);
         ctx.fill();
       }
+      ctx.save();
+      ctx.translate(x, y - 34);
+      if (flipY() < 0) ctx.scale(1, -1);
       ctx.lineWidth = 4;
       ctx.strokeStyle = OUTLINE;
-      ctx.strokeText(m.name, x, y - 34);
+      ctx.strokeText(m.name, 0, 0);
       ctx.fillStyle = "#fff";
-      ctx.fillText(m.name, x, y - 34);
+      ctx.fillText(m.name, 0, 0);
+      ctx.restore();
     }
+  }
+
+  /** Ударная волна в мире. */
+  function ring(x, y, size, color) {
+    if (reduce) return;
+    if (rings.length > 24) rings.shift();
+    rings.push({ x, y, size, color, k: 0 });
+  }
+
+  function drawRings(dt) {
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = rings.length - 1; i >= 0; i--) {
+      const r = rings[i];
+      r.k += dt / 0.5;
+      if (r.k >= 1) { rings.splice(i, 1); continue; }
+      ctx.strokeStyle = r.color;
+      ctx.globalAlpha = (1 - r.k) ** 2;
+      ctx.lineWidth = 14 * (1 - r.k) + 1;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.size * (1 - (1 - r.k) ** 3), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  /** Овердрайв: за персонажем тянутся его тени. */
+  function drawGhosts(me) {
+    ghosts.push({ x: me.x, y: me.y });
+    if (ghosts.length > 12) ghosts.shift();
+    if (zones.over < 0.1 || reduce) return;
+    for (let i = 0; i + 2 < ghosts.length; i += 2) {
+      ctx.globalAlpha = (i / ghosts.length) * 0.4 * zones.over;
+      drawHero(ctx, opts.hero, ghosts[i].x, ghosts[i].y, me.a, 1, "#ffb060");
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** Края экрана светятся цветом того, что сейчас идёт. */
+  function drawEdges(w, h, rgb, a) {
+    if (a < 0.01) return;
+    const g = ctx.createRadialGradient(w / 2, h / 2, h * 0.45, w / 2, h / 2, w * 0.68);
+    g.addColorStop(0, rgba(rgb, 0));
+    g.addColorStop(1, rgba(rgb, a));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  /** Новая молния: ломаная сверху вниз. */
+  function addBolt(w, h) {
+    const pts = [];
+    let x = w * (0.35 + Math.random() * 0.6);
+    for (let y = 0; y < h * 0.8; y += h * 0.06) {
+      pts.push([x, y]);
+      x += (Math.random() - 0.5) * h * 0.12;
+    }
+    bolts.push({ pts, life: 1 });
+  }
+
+  /** Шторм: темно везде, кроме света вокруг персонажа; молния на миг показывает весь уровень. */
+  function drawStorm(dt, w, h, hx, hy) {
+    const dark = 0.82 * zones.storm * (1 - Math.min(1, strike * 1.3));
+    if (dark > 0.01) {
+      const g = ctx.createRadialGradient(hx, hy, 90 * scale, hx, hy, 470 * scale);
+      g.addColorStop(0, "rgba(5,6,24,0)");
+      g.addColorStop(1, `rgba(5,6,24,${dark})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      const b = bolts[i];
+      b.life -= dt / 0.28;
+      if (b.life <= 0) { bolts.splice(i, 1); continue; }
+      for (const [width, a] of [[16, 0.25], [4, 1]]) {
+        ctx.strokeStyle = `rgba(215,205,255,${a * b.life})`;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        b.pts.forEach(([x, y]) => ctx.lineTo(x, y));
+        ctx.stroke();
+      }
+    }
+    ctx.globalCompositeOperation = "source-over";
   }
 
   function sectionAt(pos) {
@@ -1079,10 +1194,10 @@ const course = (() => {
   function applyCamera() {
     const sx = reduce ? 0 : (Math.random() - 0.5) * shake * 18;
     const sy = reduce ? 0 : (Math.random() - 0.5) * shake * 18;
-    const zoom = reduce ? 1 : 1 + beat * 0.022;
+    const zoom = reduce ? 1 : 1 + beat * 0.022 + punch * 0.09 - zones.over * 0.07 + danger * 0.03;
     ctx.translate(cssW * PLAYER_AT + sx, cssH / 2 + sy);
     ctx.rotate(reduce ? 0 : tilt);
-    ctx.scale(scale * zoom, scale * zoom);
+    ctx.scale(scale * zoom, scale * zoom * flipY());
     ctx.translate(-camX, -camY);
   }
 
@@ -1109,6 +1224,12 @@ const course = (() => {
     fly = null;
     inAir = false;
     landed = recoil = 0;
+    rings = [];
+    ghosts = [];
+    bolts = [];
+    zones = { over: 0, storm: 0, flip: 0 };
+    zoneNow = null;
+    strike = strikeAt = punch = danger = 0;
     lastPart = null;
     lastNow = performance.now();
     camX = 0;
@@ -1181,7 +1302,28 @@ const course = (() => {
     if (!map || !resize()) return [0, 0];
     const pts = map.segs[Math.min(i, map.segs.length - 1)], p = pts[pts.length - 1];
     const r = canvas.getBoundingClientRect();
-    return [r.left + cssW * PLAYER_AT + (p[0] - camX) * scale, r.top + cssH / 2 + (p[1] - camY) * scale];
+    return [r.left + cssW * PLAYER_AT + (p[0] - camX) * scale, r.top + cssH / 2 + (p[1] - camY) * scale * flipY()];
+  }
+
+  /** Начался ивент на ячейке i: вспышка, толчок камеры, волна и пиксели его цвета. */
+  function event(kind, i) {
+    const pts = map.segs[i], p = pts[pts.length - 1], e = EVENTS[kind];
+    flash = Math.max(flash, 0.75);
+    shake = Math.max(shake, 0.8);
+    punch = 1;
+    ring(p[0], p[1], 520, e.color);
+    ring(p[0], p[1], 280, "#fff");
+    pixels(p[0], p[1], 44, e.color, 1.6);
+    if (kind === "storm") strikeAt = time; // шторм начинается с молнии
+  }
+
+  /** Отметка на пути: волна от персонажа. */
+  function pulse(color) {
+    const me = at(s);
+    flash = Math.max(flash, 0.3);
+    punch = Math.max(punch, 0.6);
+    ring(me.x, me.y, 420, color);
+    pixels(me.x, me.y, 24, color, 1.3);
   }
 
   /** Чарт пройден: следующие ячейки стали одинаковыми — вспышка и пиксели на каждой из них. */
@@ -1201,6 +1343,8 @@ const course = (() => {
     const pts = map.segs[Math.min(i, map.segs.length - 1)], p = pts[pts.length - 1];
     const color = COLORS[opts.level[i].arrow];
     pixels(p[0], p[1], opts.fast ? 10 : 22, color);
+    ring(p[0], p[1], opts.fast ? 70 : 120, color);
+    punch = Math.max(punch, opts.fast ? 0.12 : 0.25);
     if (!reduce) pops.push({ x: p[0], y: p[1], r: opts.fast ? 31 : 41, color, k: 0 });
   }
 
@@ -1213,7 +1357,7 @@ const course = (() => {
 
   /**
    * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, mates: [{ slot, pos, air, name, color }],
-   * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null }.
+   * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null, final — близко к финишу }.
    */
   function frame(now, o) {
     if (!map || !resize()) return;
@@ -1231,21 +1375,50 @@ const course = (() => {
     beat = Math.max(o.energy, beat * Math.exp(-dt * 7));
     const part = o.part;
     if (part !== lastPart) {
-      if (part && part.startsWith("drop")) { flash = 1; shake = Math.max(shake, 0.5); }
+      if (part && part.startsWith("drop")) {
+        flash = 1;
+        shake = Math.max(shake, 0.5);
+        punch = 1;
+        const p = at(s);
+        ring(p.x, p.y, 640, rgba(palette.glow));
+      }
       lastPart = part;
     }
     const hot = part && part.startsWith("drop") ? 1 : part === "build" || part === "intro" ? 0.35 : 0;
-    heat += (hot - heat) * (1 - Math.exp(-dt * 4));
+    heat += (Math.max(hot, zones.over) - heat) * (1 - Math.exp(-dt * 4));
     flash *= Math.exp(-dt * 5);
     shake *= Math.exp(-dt * 7);
+    punch *= Math.exp(-dt * 8);
+    danger += ((o.final ? 1 : 0) - danger) * (1 - Math.exp(-dt * 2));
+
+    // ивент текущей ячейки: включается и гаснет плавно, космос уходит в его цвета
+    zoneNow = s < n ? map.segs.length && opts.level[Math.floor(s)].zone : null;
+    for (const k of Object.keys(zones)) zones[k] += ((zoneNow === k ? 1 : 0) - zones[k]) * (1 - Math.exp(-dt * 3.5));
+    if (zones.over > 0.01) {
+      palette = {};
+      for (const key of Object.keys(OVER_PALETTE)) palette[key] = mixRgb(map.colors[key], OVER_PALETTE[key], zones.over);
+    } else {
+      palette = map.colors;
+    }
+
+    strike *= Math.exp(-dt * 7);
+    if (zoneNow === "storm" && time >= strikeAt) {
+      strikeAt = time + 0.9 + Math.random() * 1.1;
+      strike = 1;
+      shake = Math.max(shake, 0.35);
+      if (!reduce) addBolt(cssW, cssH);
+      if (opts.thunder) opts.thunder();
+    }
 
     // новая секция: меняется только форма пути, стиль уровня остаётся
     const secIdx = map.sections.indexOf(sectionAt(s));
     if (secIdx !== section) {
       section = secIdx;
       flash = Math.max(flash, 0.25);
+      punch = Math.max(punch, 0.5);
       const p = at(s);
       pixels(p.x, p.y, 26, rgba(palette.glow));
+      ring(p.x, p.y, 300, rgba(palette.glow));
     }
 
     const me = at(s);
@@ -1317,10 +1490,12 @@ const course = (() => {
       }
       drawStrikes();
     }
+    drawRings(dt);
     drawPops(dt);
     drawMates(o.mates, dt);
     drawParts(dt);
     drawRide(me.x, pathY + UFO_DROP + UFO_UNDER, drop);
+    drawGhosts(me);
 
     // у финишного портала персонаж уменьшается и исчезает
     const gone = clamp(n + 1 - s, 0, 1);
@@ -1336,8 +1511,12 @@ const course = (() => {
     ctx.restore();
 
     if (scene) scenes.front(scene, ctx, view);
+    drawStorm(dt, cssW, cssH, cssW * PLAYER_AT, cssH / 2 + (me.y - camY) * scale * flipY());
     drawStreaks(cssW, cssH);
     drawVignette(cssW, cssH);
+    drawEdges(cssW, cssH, EVENTS.over.rgb, zones.over * (0.3 + beat * 0.3));
+    drawEdges(cssW, cssH, EVENTS.flip.rgb, zones.flip * 0.28);
+    drawEdges(cssW, cssH, [255, 40, 70], danger * (0.16 + beat * 0.34));
     if (!reduce && flash > 0.02) {
       ctx.fillStyle = `rgba(255,255,255,${flash * 0.6})`;
       ctx.fillRect(0, 0, cssW, cssH);
@@ -1348,5 +1527,5 @@ const course = (() => {
     }
   }
 
-  return { start, follow, frame, hit, filled, chart, swam, point, paintHero };
+  return { start, follow, frame, hit, filled, chart, swam, event, pulse, point, paintHero, eventInfo: EVENTS };
 })();

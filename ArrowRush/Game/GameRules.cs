@@ -28,13 +28,21 @@ public static class GameRules
     // Ячейка «Чарт»: следующие ячейки становятся одинаковыми
     public const int ChartCells = 10;
     /// <summary>Сколько обычных ячеек минимум между чартами; верхняя граница зависит от темпа.</summary>
-    public const int ChartMinGap = 5;
-    public const int ChartMaxGap = 12;
+    public const int ChartMinGap = 3;
+    public const int ChartMaxGap = 8;
     public const int ChartMaxGapFast = 30;
 
+    // Ивенты: особая ячейка меняет следующие ячейки, см. LevelGenerator
+    /// <summary>Какая доля особых ячеек после второй — ивенты. Первая всегда свам, вторая всегда ивент.</summary>
+    public const double EventChance = 0.55;
+    /// <summary>Длина ивента: не длиннее <see cref="SwamCells"/>, чтобы он помещался и в короткий уровень.</summary>
+    public const int EventCells = 6;
+    /// <summary>«Овердрайв»: во сколько раз быстрее заполняются ячейки при удержании.</summary>
+    public const double OverdriveFill = 0.6;
+
     // Ячейка «Свам»: персонаж падает на НЛО и перепрыгивает следующие ячейки
-    /// <summary>Какая доля особых ячеек после первой — свамы, остальные — чарты. Первая всегда свам.</summary>
-    public const double SwamChance = 0.6;
+    /// <summary>Какая доля особых ячеек, кроме ивентов, — свамы, остальные — чарты.</summary>
+    public const double SwamChance = 0.5;
     public const int SwamCells = 6;
     /// <summary>За сколько секунд НЛО подлетает к следующей ячейке.</summary>
     public const double SwamCellSeconds = 0.9;
