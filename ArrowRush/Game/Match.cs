@@ -50,6 +50,9 @@ public sealed class Player
     /// <summary>«Раст»: сколько секунд дыра ещё стоит на месте.</summary>
     public double HolePause { get; set; }
 
+    /// <summary>«Кловд»: на какой линии паук, 0 — потолок, 1 — пол.</summary>
+    public int Lane { get; set; } = 1;
+
     /// <summary>«Радуга»: какую стену ломает игрок, -1 — никакую.</summary>
     public int WallAt { get; set; } = -1;
     public int WallHits { get; set; }
@@ -179,6 +182,12 @@ public sealed class Match
             return;
         }
 
+        if (InCloud(p))
+        {
+            Dodge(p, dt);
+            return;
+        }
+
         if (Fast)
         {
             // люди продвигаются в SetInput, по нажатиям; здесь думает только бот
@@ -243,7 +252,40 @@ public sealed class Match
         p.Progress = 0;
 
         if (Punishes) Slip(p);
-        else while (Level[p.Index - 1].Ufo) p.Index--;
+        else while (Level[p.Index - 1].Ufo || Level[p.Index - 1].Zone == LevelGenerator.Cloud) p.Index--;
+    }
+
+    private bool InCloud(Player p) => Level[p.Index].Zone == LevelGenerator.Cloud;
+
+    /// <summary>«Кловд»: стрелка долетает сама; если паук на её линии — удар, как на участке с НЛО.</summary>
+    private void Dodge(Player p, double dt)
+    {
+        if (p.IsBot) BotDodge(p);
+
+        p.Progress += dt / Level[p.Index].FillSeconds;
+        if (p.Progress < 1) return;
+
+        if (p.Lane == Level[p.Index].Lane) Crash(p);
+        else Advance(p);
+    }
+
+    /// <summary>↑ — на потолок, ↓ — на пол, остальные стрелки перебрасывают на другую линию.</summary>
+    private static void Hop(Player p, int pressed) =>
+        p.Lane = (pressed & (1 << (int)Arrow.Up)) != 0 ? 0 : (pressed & (1 << (int)Arrow.Down)) != 0 ? 1 : 1 - p.Lane;
+
+    /// <summary>Бот уходит с линии стрелки незадолго до неё, а иногда зевает.</summary>
+    private void BotDodge(Player bot)
+    {
+        bot.HeldMask = 0;
+        if (bot.BotSeenIndex != bot.Index)
+        {
+            bot.BotSeenIndex = bot.Index;
+            bot.BotWrong = _rnd.NextDouble() < BotMistakeChance(0.05) ? 1 : 0;
+            bot.BotWait = GameRules.CloudBotSeconds * (0.6 + _rnd.NextDouble() * 0.6);
+        }
+
+        var cell = Level[bot.Index];
+        if (bot.BotWrong == 0 && (1 - bot.Progress) * cell.FillSeconds <= bot.BotWait) bot.Lane = 1 - cell.Lane!.Value;
     }
 
     /// <summary>Игрок подошёл к стене: счёт ударов и жизней начинается заново. Сюда можно попасть и назад из «Отката».</summary>
@@ -356,6 +398,10 @@ public sealed class Match
         {
             StartHole(p);
         }
+        else if (InCloud(p) && Level[p.Index - 1].Zone != LevelGenerator.Cloud)
+        {
+            p.Lane = 1; // паук начинает на полу
+        }
     }
 
     /// <summary>
@@ -412,6 +458,7 @@ public sealed class Match
         if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Ufo) Jump(p);
         else if (Phase == MatchPhase.Running && p.Active && InRast(p)) PressRast(p, pressed);
         else if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Wall) HitWall(p);
+        else if (Phase == MatchPhase.Running && p.Active && InCloud(p)) Hop(p, pressed);
         else if (Fast) Press(p, pressed);
         else if (Punishes && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Slip(p);
     }
@@ -553,7 +600,7 @@ public sealed class Match
         jump = GameRules.SwamJumpSeconds,
         holeStart = GameRules.RastStartGap,
         wallHits = GameRules.WallHits,
-        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall }),
+        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall, lane = s.Lane }),
         players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, hero = p.Hero, team = p.Team }),
     };
 
@@ -570,6 +617,7 @@ public sealed class Match
             miss = p.Mistakes,
             crash = p.Crashes,
             hole = Math.Round(p.HoleGap, 2),
+            lane = p.Lane,
             hp = p.WallAt == p.Index ? Math.Max(0, p.WallLives) : GameRules.WallLives,
             hits = p.WallAt == p.Index ? p.WallHits : 0,
             // сколько секунд длится прыжок, -1 — на земле

@@ -33,7 +33,7 @@ public static class GameRules
     public const int ChartMaxGapFast = 14;
 
     // Ивенты: особая ячейка меняет следующие ячейки. Каждая особая ячейка выбирается
-    // из явлений поровну: свам, чарт, овердрайв, шторм, переворот, «Радуга» и «Раст» (см. LevelGenerator)
+    // из явлений поровну: свам, чарт, овердрайв, шторм, переворот, «Радуга», «Кловд» и «Раст» (см. LevelGenerator)
     /// <summary>Длина ивента: не длиннее <see cref="SwamCells"/>, чтобы он помещался и в короткий уровень.</summary>
     public const int EventCells = 6;
     /// <summary>«Овердрайв»: во сколько раз быстрее заполняются ячейки при удержании.</summary>
@@ -50,6 +50,16 @@ public static class GameRules
     /// <summary>В какой доле прыжка персонаж выше ячейки: раньше и позже он в неё врезается.</summary>
     public const double SwamClearFrom = 0.12;
     public const double SwamClearTo = 0.88;
+
+    // Ивент «Кловд»: игрок становится пауком и уклоняется от стрелок, перескакивая между потолком и полом
+    /// <summary>Сколько стрелок летит: по одной на ячейку.</summary>
+    public const int CloudCells = 8;
+    /// <summary>Через сколько секунд прилетает следующая стрелка.</summary>
+    public const double CloudCellSeconds = 0.7;
+    /// <summary>Сколько летит первая: за это время идёт превращение в паука.</summary>
+    public const double CloudIntroSeconds = 1.7;
+    /// <summary>Как быстро бот реагирует на стрелку: столько секунд до неё он успевает уйти на другую линию.</summary>
+    public const double CloudBotSeconds = 0.3;
 
     // Ивент «Радуга»: над радугой летают глаза с крыльями, их лазеры ставят стены; пока ломаешь стену, они снимают жизни
     /// <summary>Сколько ячеек за особой ячейкой; каждая вторая становится стеной.</summary>

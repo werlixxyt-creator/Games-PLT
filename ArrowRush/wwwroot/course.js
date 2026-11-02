@@ -40,7 +40,12 @@ const course = (() => {
     flip: { label: "ПЕРЕВОРОТ", color: "#5dffb0", rgb: [80, 255, 170] },
     rast: { label: "РАСТ", color: "#ff3b5c", rgb: [255, 50, 80] },
     rainbow: { label: "РАДУГА", color: "#ffd84d", rgb: [255, 216, 77] },
+    cloud: { label: "КЛОВД", color: "#9fe8ff", rgb: [150, 230, 255] },
   };
+  const CLOUD_PALETTE = { sky: [30, 70, 140], sky2: [90, 170, 230], neb: [190, 240, 255], neb2: [120, 180, 255], wall: [40, 70, 130], wall2: [190, 235, 255], glow: [235, 250, 255] };
+  const CLOUD_LANE = 112;    // «Кловд»: насколько потолок и пол от пути
+  const CLOUD_SPEED = 355;   // единиц в секунду: столько стрелка пролетает к пауку
+  const PUFF_STEP = 62;      // шаг облачков вдоль потолка и пола
   const RAINBOW = ["#ff3b5c", "#ff8a2b", "#ffd84d", "#5dffb0", "#39d8ff", "#5f6dff", "#c06bff"];
   const EYES = 4;            // сколько крылатых глаз летит над радугой
   const WALL_STEP = 60;      // длина ячейки со стеной: персонаж упирается в неё почти сразу
@@ -85,7 +90,12 @@ const course = (() => {
   let rings = [];       // ударные волны в мире: { x, y, size, color, k }
   let ghosts = [];      // овердрайв: где персонаж был в прошлых кадрах
   let bolts = [];       // шторм: молнии на экране: { pts, life }
-  let zones = { over: 0, storm: 0, flip: 0, rast: 0, rainbow: 0 }; // насколько идёт каждый ивент, 0..1, меняется плавно
+  let zones = { over: 0, storm: 0, flip: 0, rast: 0, rainbow: 0, cloud: 0 }; // насколько идёт каждый ивент, 0..1, меняется плавно
+  let puff = null;      // «Кловд» начался: { start, from — номер его ячейки }
+  let spiderY = 1;      // где паук между линиями: -1 — потолок, 1 — пол
+  let lastLane = 1;     // на какой линии он был в прошлом кадре
+  let zaps = [];        // вспышки прыжка паука: { x, y0, y1, life }
+  let morphed = 0;      // превращение в паука: вспышка затухает
   let rain = null;      // «Радуга» началась: { start, from — номер её ячейки, fired — какие стены уже подстрелили }
   let lasers = [];      // лазеры: { eye, x, y — точка мира, delay — сколько ещё целится, life, color, hit }
   let shotAt = [];      // когда стрелял каждый глаз: от выстрела его отбрасывает
@@ -135,6 +145,12 @@ const course = (() => {
 
   /** Она уже стала препятствием: свам перед ней пройден. */
   const ufoShown = (i) => ufoCell(i) && reached > opts.level[i].chartAt;
+
+  /** Ячейка «Кловда», который уже начался: вместо неё летит стрелка. */
+  const cloudShown = (i) => opts.level[i]?.zone === "cloud" && reached > opts.level[i].chartAt;
+
+  /** На этом участке нет дороги. */
+  const noRoad = (i) => ufoShown(i) || cloudShown(i);
 
   /** Стена уже есть на уровне, 0..1: она вырастает там, куда прилетел лазер. Игрок у стены видит её сразу. */
   function wallK(i) {
@@ -218,12 +234,13 @@ const course = (() => {
     const colors = scene ? scenes.palettes[scene] : THEMES[style];
 
     for (let i = 0; i < level.length;) {
-      const straight = level[i].ufo ? "ufo" : level[i].zone === "rast" ? "rast" : null;
+      const straightKind = (c) => (c.ufo ? "ufo" : c.zone === "rast" || c.zone === "cloud" ? c.zone : null);
+      const straight = straightKind(level[i]);
       if (straight) {
-        // НЛО и «Раст»: ячейки стоят по прямой, иначе не рассчитать прыжок и не поставить дыру
+        // НЛО, «Раст» и «Кловд»: ячейки стоят по прямой, иначе не рассчитать прыжок и полёт стрелок
         const from = i, sx = x;
-        for (; i < level.length && (level[i].ufo ? "ufo" : level[i].zone === "rast" ? "rast" : null) === straight; i++) {
-          const step = straight === "ufo" ? level[i].fill * UFO_SPEED : RAST_STEP;
+        for (; i < level.length && straightKind(level[i]) === straight; i++) {
+          const step = straight === "ufo" ? level[i].fill * UFO_SPEED : straight === "cloud" ? level[i].fill * CLOUD_SPEED : RAST_STEP;
           segs.push([[x, y], [x + step, y]]);
           x += step;
         }
@@ -233,7 +250,7 @@ const course = (() => {
       const prev = kind;
       do kind = Math.floor(rand() * KINDS.length); while (kind === prev);
       let end = Math.min(level.length, i + (fast ? 6 + Math.floor(rand() * 7) : 2 + Math.floor(rand() * 2)));
-      for (let k = i; k < end; k++) if (level[k].ufo || level[k].zone === "rast") end = k;
+      for (let k = i; k < end; k++) if (straightKind(level[k])) end = k;
       sections.push({ from: i, to: end, kind: KINDS[kind], x });
       for (; i < end; i++) {
         const len = level[i].wall ? WALL_STEP : fast ? FAST_STEP : level[i].fill * HOLD_SPEED;
@@ -675,7 +692,7 @@ const course = (() => {
     const runs = [];
     let from = a;
     for (let i = Math.floor(a); i < b; i++) {
-      if (!ufoShown(i)) continue;
+      if (!noRoad(i)) continue;
       if (i > from) runs.push([from, i]);
       from = i + 1;
     }
@@ -724,7 +741,7 @@ const course = (() => {
 
     ctx.setLineDash(cells.dash(opts.cell));
     for (let i = cur; i < last && i < n; i++) {
-      if (ufoShown(i)) continue;
+      if (noRoad(i)) continue;
       const hidden = hiddenCell(i);
       ctx.globalAlpha = i === cur ? 0.62 : 0.3;
       ctx.strokeStyle = hidden ? "#8c88b4" : COLORS[arrowOf(i)];
@@ -744,7 +761,7 @@ const course = (() => {
     ctx.lineJoin = "round";
     ctx.lineWidth = opts.fast ? 22 : 30;
     for (let i = Math.floor(tail); i <= Math.min(Math.floor(s), n); i++) {
-      if (ufoShown(i)) continue;
+      if (noRoad(i)) continue;
       ctx.strokeStyle = opts.trailOf(Math.min(i, n - 1));
       trace(Math.max(tail, i), Math.min(s, i + 1));
       ctx.stroke();
@@ -1103,10 +1120,12 @@ const course = (() => {
   function drawGhosts(me) {
     ghosts.push({ x: me.x, y: me.y });
     if (ghosts.length > 12) ghosts.shift();
-    if (zones.over < 0.1 || reduce) return;
+    const k = Math.max(zones.over, zones.cloud);
+    if (k < 0.1 || reduce) return;
     for (let i = 0; i + 2 < ghosts.length; i += 2) {
-      ctx.globalAlpha = (i / ghosts.length) * 0.4 * zones.over;
-      drawHero(ctx, opts.hero, ghosts[i].x, ghosts[i].y, me.a, 1, "#ffb060");
+      ctx.globalAlpha = (i / ghosts.length) * 0.4 * k;
+      if (cloudShown(Math.floor(s))) drawSpider(ghosts[i].x, ghosts[i].y, ghosts[i].y < me.y - 1 || spiderY < 0 ? -1 : 1, 1);
+      else drawHero(ctx, opts.hero, ghosts[i].x, ghosts[i].y, me.a, 1, zones.cloud > zones.over ? "#8fe6ff" : "#ffb060");
     }
     ctx.globalAlpha = 1;
   }
@@ -1119,6 +1138,140 @@ const course = (() => {
     g.addColorStop(1, rgba(rgb, a));
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
+  }
+
+  /** Цвета паука: тело берёт цвет скина персонажа. */
+  const spiderColor = () => (HEROES[opts.hero] || HEROES.circle).color;
+
+  /** Паук как в GD: брюшко, голова и лапы, которые бегут по потолку или полу. side: 1 — на полу, -1 — на потолке. */
+  function drawSpider(x, y, side, size) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(size, size * side);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // лапы: по три с каждой стороны, идут вразнобой
+    for (const dir of [-1, 1]) {
+      for (let leg = 0; leg < 3; leg++) {
+        const step = Math.sin(time * 26 + leg * 2.1 + (dir > 0 ? 1.5 : 0));
+        const hipX = dir * (5 + leg * 6), footX = dir * (19 + leg * 10) + step * 7;
+        for (const [width, color] of [[8, "#fff"], [4.5, OUTLINE]]) {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.beginPath();
+          ctx.moveTo(hipX, 4);
+          ctx.lineTo(hipX + dir * 9, -9 - Math.max(0, step) * 4);
+          ctx.lineTo(footX, 24);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // брюшко и голова
+    ctx.fillStyle = spiderColor();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(-8, 2, 19, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(14, 0, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // светящиеся глаза
+    ctx.fillStyle = "#7dfbff";
+    for (const [ex, ey] of [[17, -4], [21, 1]]) {
+      ctx.beginPath();
+      ctx.arc(ex, ey, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** Потолок и пол из облаков: кучерявые полосы вдоль пути, мягко дышат. */
+  function drawClouds(left, right, pathY) {
+    if (zones.cloud < 0.02) return;
+    const from = Math.floor(left / PUFF_STEP), to = Math.ceil(right / PUFF_STEP);
+    ctx.save();
+    ctx.globalAlpha = zones.cloud;
+    for (const [side, color, grow] of [[-1, "#d9f3ff", 1.15], [1, "#d9f3ff", 1.15], [-1, "#fff", 0.9], [1, "#fff", 0.9]]) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      for (let k = from; k <= to; k++) {
+        const r = (24 + ((k * 37 + 41) % 17)) * grow * (1 + Math.sin(time * 2 + k) * 0.06);
+        const x = k * PUFF_STEP, y = pathY + side * (CLOUD_LANE + 28 + r * 0.45);
+        ctx.moveTo(x + r, y);
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** Стрелка «Кловда» влетает справа по своей линии, за ней огненный хвост. */
+  function drawDart(i, pathY) {
+    const cell = opts.level[i], pts = map.segs[i], p = pts[pts.length - 1];
+    const k = puff && cell.chartAt === puff.from ? clamp((time - puff.start - 0.35 - (i - puff.from) * 0.06) / 0.25, 0, 1) : 1;
+    if (k <= 0) return;
+    const y = pathY + (cell.lane === 0 ? -1 : 1) * CLOUD_LANE, wob = reduce ? 0 : Math.sin(time * 18 + i) * 2.5;
+
+    ctx.save();
+    ctx.translate(p[0], y + wob);
+    ctx.globalAlpha = k;
+    ctx.globalCompositeOperation = "lighter";
+    const tail = ctx.createLinearGradient(0, 0, 190, 0);
+    tail.addColorStop(0, "rgba(255,140,50,.85)");
+    tail.addColorStop(1, "rgba(255,50,80,0)");
+    ctx.fillStyle = tail;
+    ctx.beginPath();
+    ctx.moveTo(12, -13);
+    ctx.lineTo(190, 0);
+    ctx.lineTo(12, 13);
+    ctx.fill();
+    const glow = ctx.createRadialGradient(0, 0, 3, 0, 0, 48);
+    glow.addColorStop(0, `rgba(255,70,90,${0.55 + beat * 0.4})`);
+    glow.addColorStop(1, "rgba(255,70,90,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(-48, -48, 96, 96);
+    ctx.globalCompositeOperation = "source-over";
+
+    // наконечник смотрит влево, на паука
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(-32, 0);
+    ctx.lineTo(-2, -21);
+    ctx.lineTo(-4, -9);
+    ctx.lineTo(30, -9);
+    ctx.lineTo(30, 9);
+    ctx.lineTo(-4, 9);
+    ctx.lineTo(-2, 21);
+    ctx.closePath();
+    ctx.fillStyle = "#ff3b5c";
+    ctx.fill();
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = OUTLINE; // тёмная обводка: на светлых облаках белая теряется
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Паук перескочил: столб света между линиями и след. */
+  function drawZaps(dt) {
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = zaps.length - 1; i >= 0; i--) {
+      const z = zaps[i];
+      z.life -= dt / 0.22;
+      if (z.life <= 0) { zaps.splice(i, 1); continue; }
+      const w = 26 * z.life;
+      const g = ctx.createLinearGradient(z.x - w, 0, z.x + w, 0);
+      g.addColorStop(0, "rgba(120,235,255,0)");
+      g.addColorStop(0.5, `rgba(235,252,255,${z.life})`);
+      g.addColorStop(1, "rgba(120,235,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(z.x - w, Math.min(z.y0, z.y1), w * 2, Math.abs(z.y1 - z.y0));
+    }
+    ctx.globalCompositeOperation = "source-over";
   }
 
   /** Экранные координаты точки мира. */
@@ -1691,7 +1844,11 @@ const course = (() => {
     rings = [];
     ghosts = [];
     bolts = [];
-    zones = { over: 0, storm: 0, flip: 0, rast: 0, rainbow: 0 };
+    zones = { over: 0, storm: 0, flip: 0, rast: 0, rainbow: 0, cloud: 0 };
+    puff = null;
+    spiderY = lastLane = 1;
+    zaps = [];
+    morphed = 0;
     rain = null;
     lasers = [];
     shotAt = [];
@@ -1716,6 +1873,7 @@ const course = (() => {
     pops = [];
     fly = null;
     rain = null;
+    puff = null;
     eaten = 0;
     flash = Math.max(flash, 0.4);
   }
@@ -1806,6 +1964,30 @@ const course = (() => {
     pixels(p[0], p[1], 44, e.color, 1.6);
     if (kind === "storm") strikeAt = time; // шторм начинается с молнии
     if (kind === "rainbow") rain = { start: time, from: i, fired: new Set() };
+    if (kind === "cloud") {
+      // клуб дыма, из которого выходит паук; прежняя дорога разлетается
+      puff = { start: time, from: i };
+      morphed = 1;
+      spiderY = lastLane = 1;
+      ring(p[0], p[1], 340, "#fff");
+      pixels(p[0], p[1], 40, "#d9f3ff", 1.5);
+      for (let k = i + 1; opts.level[k]?.zone === "cloud"; k++) {
+        const c = at(k + 0.5);
+        pixels(c.x, c.y, 10, COLORS[opts.level[k].was], 1.2);
+      }
+    }
+  }
+
+  /** Стрелка пролетела мимо паука: свист и искры на её линии. */
+  function dodged(i) {
+    const pts = map.segs[i], p = pts[pts.length - 1];
+    const y = p[1] + (opts.level[i].lane === 0 ? -1 : 1) * CLOUD_LANE;
+    ring(p[0], y, 110, "#ffb060");
+    pixels(p[0], y, 14, "#ffb060", 1.1);
+    shake = Math.max(shake, 0.28);
+    punch = Math.max(punch, 0.28);
+    flashOf(0.1, [255, 190, 110]);
+    kick(0.022);
   }
 
   /** Лазер попал в игрока у стены. */
@@ -1854,6 +2036,10 @@ const course = (() => {
   /** Ячейка заполнена: она лопается в стиле скина, разлетаются пиксели. */
   function filled(i) {
     if (ufoCell(i)) return; // препятствие перепрыгнули, а не заполнили: оно остаётся позади
+    if (opts.level[i].zone === "cloud") {
+      dodged(i);
+      return;
+    }
     const pts = map.segs[Math.min(i, map.segs.length - 1)], p = pts[pts.length - 1];
     if (opts.level[i].wall) {
       shatter(p[0], p[1]);
@@ -1877,7 +2063,7 @@ const course = (() => {
   }
 
   /**
-   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, hole — дыра «Раста»: 0 — у игрока, 1 — у левого края, больше — за ним, hp — жизни у стены «Радуги» или null, mates: [{ slot, pos, air, name, color }],
+   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, lane — линия паука в «Кловде», hole — дыра «Раста»: 0 — у игрока, 1 — у левого края, больше — за ним, hp — жизни у стены «Радуги» или null, mates: [{ slot, pos, air, name, color }],
    * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null, final — близко к финишу }.
    */
   function frame(now, o) {
@@ -1925,12 +2111,14 @@ const course = (() => {
     // ивент текущей ячейки: включается и гаснет плавно, космос уходит в его цвета
     zoneNow = s < n ? opts.level[Math.floor(s)].zone : null;
     for (const k of Object.keys(zones)) zones[k] += ((zoneNow === k ? 1 : 0) - zones[k]) * (1 - Math.exp(-dt * 3.5));
-    if (zones.over > 0.01) {
+    const tinted = zones.cloud > zones.over ? [CLOUD_PALETTE, zones.cloud] : [OVER_PALETTE, zones.over];
+    if (tinted[1] > 0.01) {
       palette = {};
-      for (const key of Object.keys(OVER_PALETTE)) palette[key] = mixRgb(map.colors[key], OVER_PALETTE[key], zones.over);
+      for (const key of Object.keys(OVER_PALETTE)) palette[key] = mixRgb(map.colors[key], tinted[0][key], tinted[1]);
     } else {
       palette = map.colors;
     }
+    morphed *= Math.exp(-dt * 4);
 
     // «Радуга»: лазеры летят в ячейки, там вырастают стены
     if (rain) {
@@ -1986,6 +2174,26 @@ const course = (() => {
     const pathY = me.y, drop = dropAt(s);
     me.y += drop - jumpLift(o.air);
 
+    // паук мгновенно перескакивает между потолком и полом; в прыжке — столб света, тряска и поворот камеры
+    const spider = cloudShown(Math.floor(s));
+    if (spider) {
+      const lane = o.lane ?? 1;
+      if (lane !== lastLane) {
+        lastLane = lane;
+        zaps.push({ x: me.x, y0: pathY - CLOUD_LANE, y1: pathY + CLOUD_LANE, life: 1 });
+        const landY = pathY + (lane === 0 ? -1 : 1) * CLOUD_LANE;
+        pixels(me.x, landY, 16, "#9fe8ff", 1.1);
+        ring(me.x, landY, 100, "#9fe8ff");
+        shake = Math.max(shake, 0.4);
+        punch = Math.max(punch, 0.3);
+        flashOf(0.16, [150, 230, 255]);
+        kick(0.035);
+      }
+      const want = lane === 0 ? -1 : 1;
+      spiderY += (want - spiderY) * (1 - Math.exp(-dt * 60));
+      me.y = pathY + spiderY * CLOUD_LANE;
+    }
+
     // толчок при прыжке и удар при приземлении качают и персонажа, и НЛО
     const air = o.air >= 0;
     if (air && !inAir) {
@@ -2013,6 +2221,10 @@ const course = (() => {
     const color = opts.trailOf(Math.min(cur, n - 1));
     if (!reduce && s < n && (o.holding || Math.random() < 0.3)) {
       pixel(me.x - 20, me.y + (Math.random() - 0.5) * 16, -80 - Math.random() * 120, (Math.random() - 0.5) * 70, 0.4 + Math.random() * 0.5, 4 + Math.random() * 7, Math.random() < 0.5 ? "#fff" : color);
+    }
+    // паук сыплет искрами с лап
+    if (!reduce && spider) {
+      pixel(me.x - 24, me.y + spiderY * 22, -220 - Math.random() * 160, -spiderY * Math.random() * 90, 0.35, 3 + Math.random() * 5, Math.random() < 0.5 ? "#fff" : "#9fe8ff");
     }
     // в воздухе плавает пыль, мир не стоит на месте
     if (!reduce && Math.random() < 0.5) {
@@ -2052,12 +2264,18 @@ const course = (() => {
       drawHole(pathY); // ячейки рисуются поверх дыры: стрелки видны, даже когда она вплотную
       ctx.restore();
     }
+    drawClouds(left, right, pathY);
+    drawZaps(dt);
     drawTrail();
     if (s < n) {
       drawRoad(right);
       const last = visibleRange(right);
       // пройденные препятствия остаются позади, пока не уедут за экран
       for (let i = last - 1; i >= Math.max(0, cur - 3); i--) {
+        if (cloudShown(i)) {
+          drawDart(i, pathY);
+          continue;
+        }
         const wall = i >= cur ? wallK(i) : 0;
         if (wall > 0) {
           drawWall(i, wall, i === cur ? s - cur : 0);
@@ -2094,12 +2312,22 @@ const course = (() => {
     const gone = clamp(n + 1 - s, 0, 1) * (1 - eaten);
     if (gone > 0.02) {
       const jitter = o.wrong && !reduce ? (Math.random() - 0.5) * 7 : 0;
+      if (spider) {
+        // клуб дыма превращения
+        if (morphed > 0.05) {
+          ctx.fillStyle = rgba([235, 250, 255], morphed);
+          ctx.beginPath();
+          ctx.arc(me.x, me.y, 30 + (1 - morphed) * 70, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        drawSpider(me.x, me.y + spiderY * 2, spiderY >= 0 ? 1 : -1, gone * (1 + beat * 0.1));
+      }
       // на НЛО: покачивается стоя и крутит сальто в прыжке, сжимается при толчке и приземлении
       const squash = landed * 0.34 - recoil * 0.22;
       const pose = drop > 1 || air
         ? { spin: air ? Math.min(1, o.air / opts.jump) * Math.PI * 2 : Math.sin(time * 7) * 0.12, sx: 1 + squash, sy: 1 - squash }
         : undefined;
-      drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
+      if (!spider) drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
     }
     ctx.restore();
 
@@ -2113,6 +2341,7 @@ const course = (() => {
     drawVignette(cssW, cssH);
     drawEdges(cssW, cssH, EVENTS.over.rgb, zones.over * (0.3 + beat * 0.3));
     drawEdges(cssW, cssH, EVENTS.flip.rgb, zones.flip * 0.28);
+    drawEdges(cssW, cssH, EVENTS.cloud.rgb, zones.cloud * (0.22 + beat * 0.3));
     drawEdges(cssW, cssH, [255, 40, 70], Math.max(danger * (0.16 + beat * 0.34), close * 0.7));
     if (!reduce && flash > 0.02) {
       ctx.fillStyle = rgba(flashRgb, flash * 0.6);

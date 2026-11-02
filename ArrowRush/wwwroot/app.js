@@ -108,7 +108,7 @@ let lastPractice = false; // «Ещё матч» повторяет тот же 
 let skinSlot = "slider"; // открытая вкладка на экране скинов
 
 function newPrediction() {
-  return { idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false, jumpAt: -Infinity };
+  return { idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false, jumpAt: -Infinity, lane: 1, laneAt: -Infinity };
 }
 
 /** Какую стрелку надо нажать для нарисованной: в «Зеркале» — противоположную. */
@@ -1334,12 +1334,14 @@ const EVENT_TEXT = {
   flip: "ПЕРЕВОРОТ! Мир вверх ногами, стрелки те же",
   rast: "РАСТ! Жми быстрее, чёрная дыра догоняет",
   rainbow: "ГЛАЗА НАД РАДУГОЙ! Ломай каменные стены",
+  cloud: "КЛОВД! Ты паук: ↑ и ↓, уклоняйся от стрелок",
 };
 
 /** Пройдена ячейка ивента: он начинается. */
 function eventPassed(i) {
   const kind = match.level[i].event;
-  showBanner(EVENT_TEXT[kind], course.eventInfo[kind].color);
+  // у «Кловда» вывеска лежит на белых облаках: светлый цвет там не читается
+  showBanner(EVENT_TEXT[kind], kind === "cloud" ? "#0d5ea8" : course.eventInfo[kind].color);
   course.event(kind, i);
   music.sting(kind);
 }
@@ -1385,8 +1387,9 @@ function celebrate(track, from, to, level) {
   const speed = match.press;
   for (let i = from; i < Math.min(to, level.length); i++) {
     const [x, y] = course.point(i);
-    if (!level[i].ufo) fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
+    if (!level[i].ufo && level[i].zone !== "cloud") fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
     if (level[i].wall) music.sting("wallBroken");
+    if (level[i].zone === "cloud") music.sting("dodge");
     course.filled(i);
     music.ding(i);
   }
@@ -1415,7 +1418,7 @@ function showCombo() {
   if (combo % 10 === 0) playStreakFx(profile ? profile.equipped.streak : "flame", el, 0.5);
 }
 
-const held_by_server = (cell) => !!cell && (cell.ufo || cell.wall);
+const held_by_server = (cell) => !!cell && (cell.ufo || cell.wall || cell.zone === "cloud");
 
 /** Режимы с нажатиями: сверяем своё предсказание с сервером. */
 function syncPrediction(server, now) {
@@ -1440,7 +1443,7 @@ function playingRivals(st) {
 /** Зажата ли у игрока нужная стрелка: так сцена показывает его ошибки и удержание. */
 function handsOf(p, t) {
   const cell = match.level[p.idx];
-  if (cell?.ufo || cell?.wall || cell?.zone === "rast") return { wrong: false, holding: false };
+  if (held_by_server(cell) || cell?.zone === "rast") return { wrong: false, holding: false };
   if (match.press) return { wrong: p.stun, holding: false };
   const mask = t < 0 ? 0 : p.held, target = 1 << targetOf(match.level[p.idx].arrow);
   return { wrong: (mask & ~target) !== 0, holding: mask === target };
@@ -1586,7 +1589,7 @@ function render(now) {
     }
 
     // на НЛО прогресс сам идёт к ячейке, а стрелки не бывают неправильными
-    if (idx === p.idx && level[idx]?.ufo) {
+    if (idx === p.idx && (level[idx]?.ufo || level[idx]?.zone === "cloud")) {
       progress = Math.min(1, p.p + elapsed / level[idx].fill);
       wrong = holding = false;
     }
@@ -1632,9 +1635,11 @@ function render(now) {
   const shown = watched || mine;
   const hole = shown && inRast(shown) ? shown.hole / match.holeStart : 1;
   const hp = shown && level[shown.idx]?.wall ? shown.hp : null;
+  // свой прыжок виден сразу, а потом верим серверу
+  const myLane = mine && now - pred.laneAt > 250 ? mine.lane : pred.lane;
   const view = watched
-    ? { pos: watched.idx + watched.p, air: watched.air, hole, hp, ...handsOf(watched, t) }
-    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp };
+    ? { pos: watched.idx + watched.p, air: watched.air, hole, hp, lane: watched.lane, ...handsOf(watched, t) }
+    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp, lane: myLane };
   const pos = Math.min(Math.floor(view.pos), level.length);
   course.frame(now, { ...view, mates, energy: music.energy(), part: music.part(), final: pos / level.length >= MARKS[1][0] && pos < level.length });
 
@@ -1672,6 +1677,8 @@ function render(now) {
     need.textContent = "Перепрыгни ячейку: любая стрелка";
   } else if (level[myIdx].wall) {
     need.textContent = `Ломай стену любой стрелкой: ${mine.hits} / ${match.wallHits}`;
+  } else if (level[myIdx].zone === "cloud") {
+    need.textContent = "Уклоняйся: ↑ потолок, ↓ пол";
   } else if (rasting) {
     need.textContent = match.mirror ? "Жми наоборот, быстрее!" : `Жми ${ARROW_CHAR[level[myIdx]?.arrow ?? level[mine.idx].arrow]}, быстрее!`;
   } else if (speed) {
@@ -1733,6 +1740,7 @@ function pressArrow(a) {
   // автоповтор зажатой клавиши — не новое нажатие
   if (!(held & bit)) {
     predictJump();
+    predictHop(bit);
     predictPress(bit);
   }
   held |= bit;
@@ -1789,6 +1797,16 @@ function predictJump() {
   if (!mine || mine.out || mine.done) return;
   const now = performance.now();
   if (match.level[match.press ? pred.idx : mine.idx]?.ufo && now - pred.jumpAt >= match.jump * 1000) pred.jumpAt = now;
+}
+
+/** «Кловд»: паук перескакивает сразу, те же правила, что на сервере (Match.Hop). */
+function predictHop(bit) {
+  const mine = match && lastState && lastState.players.find((p) => p.slot === match.you);
+  if (!mine || mine.out || mine.done || match.level[mine.idx]?.zone !== "cloud") return;
+  const from = performance.now() - pred.laneAt > 250 ? mine.lane : pred.lane;
+  pred.lane = bit === 2 ? 0 : bit === 8 ? 1 : 1 - from;
+  pred.laneAt = performance.now();
+  if (pred.lane !== from) music.sting("hop");
 }
 
 /** Режимы с нажатиями: те же правила, что на сервере (Match.Press), — чтобы ползунок заполнялся мгновенно. */

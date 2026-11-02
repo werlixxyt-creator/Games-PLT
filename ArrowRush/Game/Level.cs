@@ -90,8 +90,9 @@ public static class GameModes
 /// она выглядит обычной ячейкой со стрелкой Was.
 /// Event — ячейка ивента (см. <see cref="LevelGenerator.Events"/>), проходится как обычная. Zone — ячейка за ней: тот же ивент в действии.
 /// Wall — стена «Радуги»: её ломают нажатиями любой клавиши. Пока ивент не начался, она выглядит обычной ячейкой со стрелкой Was.
+/// Lane — ячейка «Кловда»: стрелка летит по этой линии (0 — потолок, 1 — пол), FillSeconds — через сколько она долетит до игрока.
 /// </summary>
-public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false, string? Event = null, string? Zone = null, bool Wall = false);
+public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false, string? Event = null, string? Zone = null, bool Wall = false, int? Lane = null);
 
 public static class LevelGenerator
 {
@@ -106,6 +107,9 @@ public static class LevelGenerator
 
     /// <summary>Ивент «Радуга»: глаза с крыльями ставят стены, см. <see cref="AddRainbow"/>. Его ячейка выглядит обычной: он начинается внезапно.</summary>
     public const string Rainbow = "rainbow";
+
+    /// <summary>Ивент «Кловд»: игрок становится пауком и уклоняется от стрелок, см. <see cref="AddCloud"/>.</summary>
+    public const string Cloud = "cloud";
 
     /// <param name="fast">Быстрый темп: ползунок — одно нажатие, зато их больше.</param>
     /// <param name="scale">Во сколько раз уровень длиннее обычного.</param>
@@ -137,22 +141,23 @@ public static class LevelGenerator
 
     /// <summary>
     /// Расставляет особые ячейки так, чтобы их участки не пересекались. Для каждой выбирается одно из явлений,
-    /// у всех равный шанс: свам, чарт, три ивента, «Радуга» и «Раст». Чарт самый длинный: у конца уровня, где он не помещается,
-    /// выбор идёт из остальных. Ячейки «Раста» добавляются к уровню в конце, чтобы не сбить номера.
+    /// у всех равный шанс: свам, чарт, три ивента, «Радуга», «Кловд» и «Раст». Чарт и «Кловд» самые длинные:
+    /// у конца уровня, где они не помещаются, выбор идёт из остальных. Ячейки «Раста» добавляются к уровню в конце, чтобы не сбить номера.
     /// </summary>
     private static Slider[] AddSpecials(Slider[] sliders, bool fast, Random rnd)
     {
         var maxGap = fast ? GameRules.ChartMaxGapFast : GameRules.ChartMaxGap;
         var lastStart = sliders.Length - new[] { GameRules.SwamCells, GameRules.EventCells, GameRules.RainbowCells }.Max() - 1;
         var lastChart = sliders.Length - GameRules.ChartCells - 1;
+        var lastCloud = sliders.Length - GameRules.CloudCells - 1;
         if (lastStart < 1) return sliders;
 
         var rasts = new List<int>();
         var at = rnd.Next(1, Math.Min(maxGap / 2, lastStart + 1));
         while (at <= lastStart)
         {
-            // чарт последний в списке: он выпадает из выбора, если не помещается
-            var cells = rnd.Next(at > lastChart ? 6 : 7) switch
+            // чарт и «Кловд» последние в списке: они выпадают из выбора, если не помещаются
+            var cells = rnd.Next(at > lastCloud ? 6 : at > lastChart ? 7 : 8) switch
             {
                 0 => AddSwam(sliders, at),
                 1 => AddEvent(sliders, at, Events[0]),
@@ -160,6 +165,7 @@ public static class LevelGenerator
                 3 => AddEvent(sliders, at, Events[2]),
                 4 => MarkRast(sliders, at, rasts),
                 5 => AddRainbow(sliders, at),
+                6 => AddCloud(sliders, at, rnd),
                 _ => AddChart(sliders, at, rnd),
             };
             at += cells + 1 + rnd.Next(GameRules.ChartMinGap, maxGap);
@@ -180,6 +186,30 @@ public static class LevelGenerator
             sliders[at + i] = i % 2 == 0 ? cell with { Wall = true, Was = cell.Arrow } : cell;
         }
         return GameRules.RainbowCells;
+    }
+
+    /// <summary>«Кловд»: на каждую ячейку одна стрелка по случайной линии, но не больше трёх подряд по одной. Пока ивент не начался, ячейки выглядят обычными (Was).</summary>
+    private static int AddCloud(Slider[] sliders, int at, Random rnd)
+    {
+        sliders[at] = sliders[at] with { Event = Cloud };
+        int last = -1, run = 0;
+        for (var i = 1; i <= GameRules.CloudCells; i++)
+        {
+            var lane = rnd.Next(2);
+            if (lane == last && run >= 3) lane = 1 - lane;
+            run = lane == last ? run + 1 : 1;
+            last = lane;
+            var cell = sliders[at + i];
+            sliders[at + i] = cell with
+            {
+                Arrow = lane == 0 ? Arrow.Up : Arrow.Down,
+                Was = cell.Arrow,
+                FillSeconds = i == 1 ? GameRules.CloudIntroSeconds : GameRules.CloudCellSeconds,
+                Zone = Cloud,
+                Lane = lane,
+            };
+        }
+        return GameRules.CloudCells;
     }
 
     private static int MarkRast(Slider[] sliders, int at, List<int> rasts)
