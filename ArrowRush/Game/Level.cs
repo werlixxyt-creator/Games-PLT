@@ -128,63 +128,67 @@ public static class LevelGenerator
             sliders[i] = new Slider(arrow, Math.Round(seconds, 2));
         }
 
-        AddSpecials(sliders, fast, rnd);
-        return scale >= 1 && rnd.NextDouble() < GameRules.RastChance ? AddRast(sliders, rnd) : sliders;
+        return AddSpecials(sliders, fast, rnd);
     }
 
     /// <summary>
-    /// «Раст» вставляется за обычной ячейкой из второй половины уровня и добавляет к нему новые ячейки,
-    /// поэтому помещается и в короткий уровень. Это две стрелки по очереди, скорости заполнения у них нет:
-    /// проходятся нажатиями в любом темпе. Пока ивент не начался, они выглядят обычными (Was).
+    /// Расставляет особые ячейки так, чтобы их участки не пересекались. Для каждой выбирается одно из явлений,
+    /// у всех равный шанс: свам, чарт, три ивента и «Раст». Чарт самый длинный: у конца уровня, где он не помещается,
+    /// выбор идёт из остальных. Ячейки «Раста» добавляются к уровню в конце, чтобы не сбить номера.
     /// </summary>
-    private static Slider[] AddRast(Slider[] sliders, Random rnd)
+    private static Slider[] AddSpecials(Slider[] sliders, bool fast, Random rnd)
     {
-        bool Plain(Slider s) => s is { Chart: false, Swam: false, Ufo: false, Event: null, Zone: null, Was: null };
-        var spots = Enumerable.Range(sliders.Length / 2, sliders.Length - sliders.Length / 2).Where(i => Plain(sliders[i])).ToList();
-        if (spots.Count == 0) return sliders;
+        var maxGap = fast ? GameRules.ChartMaxGapFast : GameRules.ChartMaxGap;
+        var lastStart = sliders.Length - Math.Max(GameRules.SwamCells, GameRules.EventCells) - 1;
+        var lastChart = sliders.Length - GameRules.ChartCells - 1;
+        if (lastStart < 1) return sliders;
 
-        var at = spots[rnd.Next(spots.Count)];
+        var rasts = new List<int>();
+        var at = rnd.Next(1, Math.Min(maxGap / 2, lastStart + 1));
+        while (at <= lastStart)
+        {
+            // чарт последний в списке: он выпадает из выбора, если не помещается
+            var cells = rnd.Next(at > lastChart ? 5 : 6) switch
+            {
+                0 => AddSwam(sliders, at),
+                1 => AddEvent(sliders, at, Events[0]),
+                2 => AddEvent(sliders, at, Events[1]),
+                3 => AddEvent(sliders, at, Events[2]),
+                4 => MarkRast(sliders, at, rasts),
+                _ => AddChart(sliders, at, rnd),
+            };
+            at += cells + 1 + rnd.Next(GameRules.ChartMinGap, maxGap);
+        }
+
+        // с конца: так вставка не сдвигает ещё не обработанные места
+        foreach (var rast in Enumerable.Reverse(rasts)) sliders = AddRast(sliders, rast, rnd);
+        return sliders;
+    }
+
+    private static int MarkRast(Slider[] sliders, int at, List<int> rasts)
+    {
+        sliders[at] = sliders[at] with { Event = Rast };
+        rasts.Add(at);
+        return 0;
+    }
+
+    /// <summary>
+    /// Ячейки «Раста»: они добавляются к уровню, поэтому помещаются и в короткий. Это две стрелки по очереди,
+    /// скорости заполнения у них нет: проходятся нажатиями в любом темпе. Пока ивент не начался, они выглядят обычными (Was).
+    /// </summary>
+    private static Slider[] AddRast(Slider[] sliders, int at, Random rnd)
+    {
         var first = (Arrow)rnd.Next(4);
         var second = (Arrow)(((int)first + 1 + rnd.Next(3)) % 4);
         var zone = Enumerable.Range(0, GameRules.RastCells)
             .Select(i => new Slider(i % 2 == 0 ? first : second, 0, Was: (Arrow)rnd.Next(4), Zone: Rast));
 
-        sliders[at] = sliders[at] with { Event = Rast };
         return [.. sliders.Take(at + 1), .. zone, .. sliders.Skip(at + 1)];
     }
 
-    /// <summary>
-    /// Расставляет особые ячейки так, чтобы их участки не пересекались.
-    /// Первая всегда свам: он есть в каждом матче, даже самом коротком. Вторая всегда ивент.
-    /// Чарт самый длинный: у конца уровня, где он не помещается, вместо него встаёт свам.
-    /// </summary>
-    private static void AddSpecials(Slider[] sliders, bool fast, Random rnd)
+    /// <summary>Ивент на следующие ячейки. Выглядят они как обычные, пока он не начался.</summary>
+    private static int AddEvent(Slider[] sliders, int at, string name)
     {
-        var maxGap = fast ? GameRules.ChartMaxGapFast : GameRules.ChartMaxGap;
-        var lastSwam = sliders.Length - GameRules.SwamCells - 1;
-        var lastChart = sliders.Length - GameRules.ChartCells - 1;
-        if (lastSwam < 1) return;
-
-        // свам ближе к началу: иначе на коротком уровне ивент уже не помещается
-        var at = rnd.Next(1, Math.Min(maxGap / 2, lastSwam + 1));
-        for (var placed = 0; at <= lastSwam; placed++)
-        {
-            int cells;
-            if (placed == 0) cells = AddSwam(sliders, at);
-            else if (placed == 1 || rnd.NextDouble() < GameRules.EventChance) cells = AddEvent(sliders, at, rnd);
-            else if (at > lastChart || rnd.NextDouble() < GameRules.SwamChance) cells = AddSwam(sliders, at);
-            else cells = AddChart(sliders, at, rnd);
-            var next = at + cells + 1;
-            at = next + rnd.Next(GameRules.ChartMinGap, maxGap);
-            // на коротком уровне ивент встаёт ближе к сваму, лишь бы поместился
-            if (placed == 0) at = Math.Max(next, Math.Min(at, lastSwam));
-        }
-    }
-
-    /// <summary>Случайный ивент на следующие ячейки. Выглядят они как обычные, пока он не начался.</summary>
-    private static int AddEvent(Slider[] sliders, int at, Random rnd)
-    {
-        var name = Events[rnd.Next(Events.Length)];
         sliders[at] = sliders[at] with { Event = name };
         for (var i = at + 1; i <= at + GameRules.EventCells; i++)
         {

@@ -28,21 +28,18 @@ public static class GameRules
     // Ячейка «Чарт»: следующие ячейки становятся одинаковыми
     public const int ChartCells = 10;
     /// <summary>Сколько обычных ячеек минимум между чартами; верхняя граница зависит от темпа.</summary>
-    public const int ChartMinGap = 3;
-    public const int ChartMaxGap = 8;
-    public const int ChartMaxGapFast = 30;
+    public const int ChartMinGap = 2;
+    public const int ChartMaxGap = 5;
+    public const int ChartMaxGapFast = 14;
 
-    // Ивенты: особая ячейка меняет следующие ячейки, см. LevelGenerator
-    /// <summary>Какая доля особых ячеек после второй — ивенты. Первая всегда свам, вторая всегда ивент.</summary>
-    public const double EventChance = 0.55;
+    // Ивенты: особая ячейка меняет следующие ячейки. Каждая особая ячейка выбирается
+    // из явлений поровну: свам, чарт, овердрайв, шторм, переворот и «Раст» (см. LevelGenerator)
     /// <summary>Длина ивента: не длиннее <see cref="SwamCells"/>, чтобы он помещался и в короткий уровень.</summary>
     public const int EventCells = 6;
     /// <summary>«Овердрайв»: во сколько раз быстрее заполняются ячейки при удержании.</summary>
     public const double OverdriveFill = 0.6;
 
     // Ячейка «Свам»: персонаж падает на НЛО и перепрыгивает следующие ячейки
-    /// <summary>Какая доля особых ячеек, кроме ивентов, — свамы, остальные — чарты.</summary>
-    public const double SwamChance = 0.5;
     public const int SwamCells = 6;
     /// <summary>За сколько секунд НЛО подлетает к следующей ячейке.</summary>
     public const double SwamCellSeconds = 0.9;
@@ -55,8 +52,7 @@ public static class GameRules
     public const double SwamClearTo = 0.88;
 
     // Ивент «Раст»: следующие ячейки — две стрелки по очереди, сзади них надвигается чёрная дыра
-    /// <summary>В какой доле уровней он есть. Его ячейки добавляются к уровню, поэтому в «Спринте» его нет.</summary>
-    public const double RastChance = 0.5;
+    /// <summary>Сколько ячеек он добавляет к уровню.</summary>
     public const int RastCells = 40;
     /// <summary>Сколько секунд дыра идёт до игрока в начале и насколько далеко её можно отогнать.</summary>
     public const double RastStartGap = 3;
