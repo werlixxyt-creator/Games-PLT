@@ -89,8 +89,9 @@ public static class GameModes
 /// стрелка здесь не важна, а FillSeconds — сколько НЛО к ней подлетает. Пока свам не пройден,
 /// она выглядит обычной ячейкой со стрелкой Was.
 /// Event — ячейка ивента (см. <see cref="LevelGenerator.Events"/>), проходится как обычная. Zone — ячейка за ней: тот же ивент в действии.
+/// Wall — стена «Радуги»: её ломают нажатиями любой клавиши. Пока ивент не начался, она выглядит обычной ячейкой со стрелкой Was.
 /// </summary>
-public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false, string? Event = null, string? Zone = null);
+public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false, string? Event = null, string? Zone = null, bool Wall = false);
 
 public static class LevelGenerator
 {
@@ -102,6 +103,9 @@ public static class LevelGenerator
 
     /// <summary>Ивент «Раст»: он длиннее других и стоит отдельно, см. <see cref="AddRast"/>.</summary>
     public const string Rast = "rast";
+
+    /// <summary>Ивент «Радуга»: человечки на радуге ставят стены, см. <see cref="AddRainbow"/>.</summary>
+    public const string Rainbow = "rainbow";
 
     /// <param name="fast">Быстрый темп: ползунок — одно нажатие, зато их больше.</param>
     /// <param name="scale">Во сколько раз уровень длиннее обычного.</param>
@@ -133,13 +137,13 @@ public static class LevelGenerator
 
     /// <summary>
     /// Расставляет особые ячейки так, чтобы их участки не пересекались. Для каждой выбирается одно из явлений,
-    /// у всех равный шанс: свам, чарт, три ивента и «Раст». Чарт самый длинный: у конца уровня, где он не помещается,
+    /// у всех равный шанс: свам, чарт, три ивента, «Радуга» и «Раст». Чарт самый длинный: у конца уровня, где он не помещается,
     /// выбор идёт из остальных. Ячейки «Раста» добавляются к уровню в конце, чтобы не сбить номера.
     /// </summary>
     private static Slider[] AddSpecials(Slider[] sliders, bool fast, Random rnd)
     {
         var maxGap = fast ? GameRules.ChartMaxGapFast : GameRules.ChartMaxGap;
-        var lastStart = sliders.Length - Math.Max(GameRules.SwamCells, GameRules.EventCells) - 1;
+        var lastStart = sliders.Length - new[] { GameRules.SwamCells, GameRules.EventCells, GameRules.RainbowCells }.Max() - 1;
         var lastChart = sliders.Length - GameRules.ChartCells - 1;
         if (lastStart < 1) return sliders;
 
@@ -148,13 +152,14 @@ public static class LevelGenerator
         while (at <= lastStart)
         {
             // чарт последний в списке: он выпадает из выбора, если не помещается
-            var cells = rnd.Next(at > lastChart ? 5 : 6) switch
+            var cells = rnd.Next(at > lastChart ? 6 : 7) switch
             {
                 0 => AddSwam(sliders, at),
                 1 => AddEvent(sliders, at, Events[0]),
                 2 => AddEvent(sliders, at, Events[1]),
                 3 => AddEvent(sliders, at, Events[2]),
                 4 => MarkRast(sliders, at, rasts),
+                5 => AddRainbow(sliders, at),
                 _ => AddChart(sliders, at, rnd),
             };
             at += cells + 1 + rnd.Next(GameRules.ChartMinGap, maxGap);
@@ -163,6 +168,18 @@ public static class LevelGenerator
         // с конца: так вставка не сдвигает ещё не обработанные места
         foreach (var rast in Enumerable.Reverse(rasts)) sliders = AddRast(sliders, rast, rnd);
         return sliders;
+    }
+
+    /// <summary>«Радуга»: каждая вторая ячейка за особой становится стеной, между ними обычные ячейки.</summary>
+    private static int AddRainbow(Slider[] sliders, int at)
+    {
+        sliders[at] = sliders[at] with { Event = Rainbow };
+        for (var i = 1; i <= GameRules.RainbowCells; i++)
+        {
+            var cell = sliders[at + i] with { Zone = Rainbow };
+            sliders[at + i] = i % 2 == 0 ? cell with { Wall = true, Was = cell.Arrow } : cell;
+        }
+        return GameRules.RainbowCells;
     }
 
     private static int MarkRast(Slider[] sliders, int at, List<int> rasts)

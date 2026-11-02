@@ -1095,6 +1095,7 @@ function startMatch(d) {
     stun: d.stun,
     jump: d.jump,
     holeStart: d.holeStart,
+    wallHits: d.wallHits,
     tracks: new Map(),
   };
   pred = newPrediction();
@@ -1121,6 +1122,7 @@ function startMatch(d) {
     ufo: "classic", // скины НЛО появятся позже
     jump: d.jump,
     thunder: () => music.sting("thunder"),
+    laser: () => music.sting("laser"),
     trailOf: trailOf(me.skin),
   });
   match.tracks.set(d.you, {
@@ -1331,6 +1333,7 @@ const EVENT_TEXT = {
   storm: "ШТОРМ! Дальние ячейки видно при молнии",
   flip: "ПЕРЕВОРОТ! Мир вверх ногами, стрелки те же",
   rast: "РАСТ! Жми быстрее, чёрная дыра догоняет",
+  rainbow: "РАДУГА! Лазеры ставят стены: ломай их",
 };
 
 /** Пройдена ячейка ивента: он начинается. */
@@ -1383,6 +1386,7 @@ function celebrate(track, from, to, level) {
   for (let i = from; i < Math.min(to, level.length); i++) {
     const [x, y] = course.point(i);
     if (!level[i].ufo) fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
+    if (level[i].wall) music.sting("wallBroken");
     course.filled(i);
     music.ding(i);
   }
@@ -1411,12 +1415,14 @@ function showCombo() {
   if (combo % 10 === 0) playStreakFx(profile ? profile.equipped.streak : "flame", el, 0.5);
 }
 
+const held_by_server = (cell) => !!cell && (cell.ufo || cell.wall);
+
 /** Режимы с нажатиями: сверяем своё предсказание с сервером. */
 function syncPrediction(server, now) {
   const level = match.level;
   if (server.done) pred.idx = match.level.length;
-  // на НЛО игрока ведёт сервер: нажатия не двигают его вперёд
-  else if (level[server.idx]?.ufo || (level[pred.idx]?.ufo && server.idx > pred.idx)) pred.idx = server.idx;
+  // на НЛО и у стены игрока ведёт сервер: нажатия не двигают его вперёд
+  else if (held_by_server(level[server.idx]) || (held_by_server(level[pred.idx]) && server.idx > pred.idx)) pred.idx = server.idx;
   // сервер впереди — догоняем сразу; расходимся в другую сторону — ждём, пока дойдут последние нажатия.
   // В «Откате» после ошибки сервер какое-то время ещё впереди, поэтому там всегда ждём
   else if (server.idx !== pred.idx && ((server.idx > pred.idx && !match.setback) || now - pred.lastPress > 400)) pred.idx = server.idx;
@@ -1434,7 +1440,7 @@ function playingRivals(st) {
 /** Зажата ли у игрока нужная стрелка: так сцена показывает его ошибки и удержание. */
 function handsOf(p, t) {
   const cell = match.level[p.idx];
-  if (cell?.ufo || cell?.zone === "rast") return { wrong: false, holding: false };
+  if (cell?.ufo || cell?.wall || cell?.zone === "rast") return { wrong: false, holding: false };
   if (match.press) return { wrong: p.stun, holding: false };
   const mask = t < 0 ? 0 : p.held, target = 1 << targetOf(match.level[p.idx].arrow);
   return { wrong: (mask & ~target) !== 0, holding: mask === target };
@@ -1496,6 +1502,23 @@ function renderLives() {
 }
 
 const inRast = (p) => match.level[p.idx]?.zone === "rast";
+
+/** Стена «Радуги»: звук и удары на каждый лазер и на каждое нажатие; кончились жизни — вывеска. */
+function underFire(track, p, level) {
+  if (!level[p.idx]?.wall) { track.wall = -1; return; }
+  if (track.wall === p.idx) {
+    if (p.hp < track.hp) { course.laser(); music.sting("laser"); }
+    if (p.hits > track.hits) { course.brick(); music.sting("brick"); }
+  }
+  track.wall = p.idx;
+  track.hp = p.hp;
+  track.hits = p.hits;
+  if (p.out && !track.shot) {
+    track.shot = true;
+    course.hit();
+    showBanner("Лазеры добили тебя", "#ff3b5c");
+  }
+}
 
 function render(now) {
   const st = lastState;
@@ -1567,6 +1590,11 @@ function render(now) {
       progress = Math.min(1, p.p + elapsed / level[idx].fill);
       wrong = holding = false;
     }
+    // стена: прогресс — сколько ударов уже по ней пришлось
+    if (idx === p.idx && level[idx]?.wall) {
+      progress = p.p;
+      wrong = holding = false;
+    }
 
     if (isMe) {
       if (p.crash > track.crash) crashed();
@@ -1578,6 +1606,7 @@ function render(now) {
         music.sting("devour");
         showBanner("Чёрная дыра догнала тебя", "#ff3b5c");
       }
+      underFire(track, p, level);
       trackMine(track, idx, wrong, level);
       myPos = idx >= level.length ? level.length + 1 : idx + progress;
       myWrong = wrong;
@@ -1602,9 +1631,10 @@ function render(now) {
   const myAir = (now - pred.jumpAt) / 1000;
   const shown = watched || mine;
   const hole = shown && inRast(shown) ? shown.hole / match.holeStart : 1;
+  const hp = shown && level[shown.idx]?.wall ? shown.hp : null;
   const view = watched
-    ? { pos: watched.idx + watched.p, air: watched.air, hole, ...handsOf(watched, t) }
-    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole };
+    ? { pos: watched.idx + watched.p, air: watched.air, hole, hp, ...handsOf(watched, t) }
+    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp };
   const pos = Math.min(Math.floor(view.pos), level.length);
   course.frame(now, { ...view, mates, energy: music.energy(), part: music.part(), final: pos / level.length >= MARKS[1][0] && pos < level.length });
 
@@ -1632,12 +1662,16 @@ function render(now) {
   } else if (myDone) {
     need.textContent = `Финиш! Ждём остальных…`;
   } else if (pred.out || mine.out) {
-    need.textContent = rasting ? "Чёрная дыра догнала тебя. Ждём остальных…" : "Ошибки кончились — ты выбыл. Ждём остальных…";
+    need.textContent = rasting ? "Чёрная дыра догнала тебя. Ждём остальных…"
+      : level[mine.idx]?.wall ? "Лазеры добили тебя. Ждём остальных…"
+      : "Ошибки кончились — ты выбыл. Ждём остальных…";
     need.classList.add("bad");
   } else if (t < 0) {
     need.textContent = match.mirror ? "Зеркало: жми наоборот!" : `Первая стрелка: ${ARROW_CHAR[level[0].arrow]}`;
   } else if (level[myIdx].ufo) {
     need.textContent = "Перепрыгни ячейку: любая стрелка";
+  } else if (level[myIdx].wall) {
+    need.textContent = `Ломай стену любой стрелкой: ${mine.hits} / ${match.wallHits}`;
   } else if (rasting) {
     need.textContent = match.mirror ? "Жми наоборот, быстрее!" : `Жми ${ARROW_CHAR[level[myIdx]?.arrow ?? level[mine.idx].arrow]}, быстрее!`;
   } else if (speed) {
@@ -1763,7 +1797,7 @@ function predictPress(bit) {
   if (!match || (!match.press && !rast) || !lastState) return;
   const now = performance.now();
   const t = lastState.t + Math.min((now - stateAt) / 1000, 0.2);
-  if (t < 0 || pred.out || pred.idx >= match.level.length || now < pred.stunUntil || match.level[pred.idx].ufo) return;
+  if (t < 0 || pred.out || pred.idx >= match.level.length || now < pred.stunUntil || held_by_server(match.level[pred.idx])) return;
 
   pred.lastPress = now;
   if (bit === 1 << targetOf(match.level[pred.idx].arrow)) {

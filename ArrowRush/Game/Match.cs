@@ -50,6 +50,13 @@ public sealed class Player
     /// <summary>«Раст»: сколько секунд дыра ещё стоит на месте.</summary>
     public double HolePause { get; set; }
 
+    /// <summary>«Радуга»: какую стену ломает игрок, -1 — никакую.</summary>
+    public int WallAt { get; set; } = -1;
+    public int WallHits { get; set; }
+    /// <summary>Сколько секунд его обстреливают у этой стены; жизни считаются от этого времени.</summary>
+    public double WallSeconds { get; set; }
+    public int WallLives => GameRules.WallLives - (int)(WallSeconds / GameRules.WallLifeSeconds);
+
     public double? FinishTime { get; set; }
     public int Place { get; set; }
     public bool Left { get; set; }
@@ -166,6 +173,12 @@ public sealed class Match
             return;
         }
 
+        if (Level[p.Index].Wall)
+        {
+            UnderFire(p, dt);
+            return;
+        }
+
         if (Fast)
         {
             // люди продвигаются в SetInput, по нажатиям; здесь думает только бот
@@ -231,6 +244,47 @@ public sealed class Match
 
         if (Punishes) Slip(p);
         else while (Level[p.Index - 1].Ufo) p.Index--;
+    }
+
+    /// <summary>Игрок подошёл к стене: счёт ударов и жизней начинается заново. Сюда можно попасть и назад из «Отката».</summary>
+    private static void FaceWall(Player p)
+    {
+        if (p.WallAt == p.Index) return;
+        p.WallAt = p.Index;
+        p.WallHits = 0;
+        p.WallSeconds = 0;
+    }
+
+    /// <summary>«Радуга»: пока стена цела, лазеры снимают жизни; кончились — игрок выбыл.</summary>
+    private void UnderFire(Player p, double dt)
+    {
+        FaceWall(p);
+        if (p.IsBot) BotWall(p, dt);
+        if (!p.Active || !Level[p.Index].Wall) return; // бот мог сломать стену
+
+        p.WallSeconds += dt;
+        if (p.WallLives <= 0) p.Out = true;
+    }
+
+    /// <summary>Удар по стене любой клавишей; прогресс показывает, насколько она разбита.</summary>
+    private void HitWall(Player p)
+    {
+        FaceWall(p);
+        p.WallHits++;
+        p.Progress = (double)p.WallHits / GameRules.WallHits;
+        if (p.WallHits >= GameRules.WallHits)
+        {
+            p.WallAt = -1;
+            Advance(p);
+        }
+    }
+
+    private void BotWall(Player bot, double dt)
+    {
+        bot.BotWait -= dt;
+        if (bot.BotWait > 0) return;
+        bot.BotWait = (0.8 + _rnd.NextDouble() * 0.5) * _diff.BotReaction * GameRules.WallBotSeconds;
+        HitWall(bot);
     }
 
     private bool InRast(Player p) => Level[p.Index].Zone == LevelGenerator.Rast;
@@ -357,6 +411,7 @@ public sealed class Match
 
         if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Ufo) Jump(p);
         else if (Phase == MatchPhase.Running && p.Active && InRast(p)) PressRast(p, pressed);
+        else if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Wall) HitWall(p);
         else if (Fast) Press(p, pressed);
         else if (Punishes && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Slip(p);
     }
@@ -497,7 +552,8 @@ public sealed class Match
         wrongDrain = _diff.WrongDrainPerSecond,
         jump = GameRules.SwamJumpSeconds,
         holeStart = GameRules.RastStartGap,
-        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone }),
+        wallHits = GameRules.WallHits,
+        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall }),
         players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, hero = p.Hero, team = p.Team }),
     };
 
@@ -514,6 +570,8 @@ public sealed class Match
             miss = p.Mistakes,
             crash = p.Crashes,
             hole = Math.Round(p.HoleGap, 2),
+            hp = p.WallAt == p.Index ? Math.Max(0, p.WallLives) : GameRules.WallLives,
+            hits = p.WallAt == p.Index ? p.WallHits : 0,
             // сколько секунд длится прыжок, -1 — на земле
             air = GameTime - p.JumpAt < GameRules.SwamJumpSeconds ? Math.Round(GameTime - p.JumpAt, 2) : -1,
             @out = p.Out,

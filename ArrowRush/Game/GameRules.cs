@@ -33,7 +33,7 @@ public static class GameRules
     public const int ChartMaxGapFast = 14;
 
     // Ивенты: особая ячейка меняет следующие ячейки. Каждая особая ячейка выбирается
-    // из явлений поровну: свам, чарт, овердрайв, шторм, переворот и «Раст» (см. LevelGenerator)
+    // из явлений поровну: свам, чарт, овердрайв, шторм, переворот, «Радуга» и «Раст» (см. LevelGenerator)
     /// <summary>Длина ивента: не длиннее <see cref="SwamCells"/>, чтобы он помещался и в короткий уровень.</summary>
     public const int EventCells = 6;
     /// <summary>«Овердрайв»: во сколько раз быстрее заполняются ячейки при удержании.</summary>
@@ -50,6 +50,17 @@ public static class GameRules
     /// <summary>В какой доле прыжка персонаж выше ячейки: раньше и позже он в неё врезается.</summary>
     public const double SwamClearFrom = 0.12;
     public const double SwamClearTo = 0.88;
+
+    // Ивент «Радуга»: по радуге бегут человечки, их лазеры ставят стены; пока ломаешь стену, они снимают жизни
+    /// <summary>Сколько ячеек за особой ячейкой; каждая вторая становится стеной.</summary>
+    public const int RainbowCells = 6;
+    /// <summary>Сколько нажатий любой клавиши ломают стену.</summary>
+    public const int WallHits = 10;
+    /// <summary>Жизни на каждую стену и как часто лазер снимает одну: всего 9 секунд на стену.</summary>
+    public const int WallLives = 10;
+    public const double WallLifeSeconds = 0.9;
+    /// <summary>Как часто бьёт по стене бот обычной реакции, в секундах.</summary>
+    public const double WallBotSeconds = 0.35;
 
     // Ивент «Раст»: следующие ячейки — две стрелки по очереди, сзади них надвигается чёрная дыра
     /// <summary>Сколько ячеек он добавляет к уровню.</summary>

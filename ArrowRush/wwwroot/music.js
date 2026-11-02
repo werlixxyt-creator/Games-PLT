@@ -54,6 +54,7 @@ const music = (() => {
     storm: { part: "storm", tempo: 0.92, shift: 0, tone: 1100, rate: 0.94 },
     flip: { part: "flip", tempo: 1, shift: 0, tone: 3200, rate: 1 },
     rast: { part: "rast", tempo: 1.25, shift: 3, tone: 20000, rate: 1.2 },
+    rainbow: { part: "rainbow", tempo: 1.08, shift: 2, tone: 20000, rate: 1.06 },
   };
   const FINAL_AT = 0.85;      // с какой доли уровня начинается финал
   const FINAL_TEMPO = 1.06;
@@ -355,6 +356,14 @@ const music = (() => {
       // ближе к финишу вступает верхний слой, а в финале — дробь на каждую долю
       if (second || s.heat >= 0.5) arp(t, arpNote + 12, true);
       if (s.final && inBar % 2 === 1) hat(t, true);
+    } else if (part.name === "rainbow") {
+      // радуга: задорный прыгающий ритм, мелодия октавой выше и верхнее арпеджио
+      if (inBar % 4 === 0) kick(t);
+      if (inBar === 4 || inBar === 12 || inBar === 14) snare(t, 0.8);
+      hat(t, inBar % 4 === 2);
+      if (inBar % 4 === 2) bass(t, bassNote + 12, s.stepLen * 1.6);
+      arp(t, arpNote + 12, true);
+      if (hookNote !== null) lead(t, hookNote + 12, s.stepLen * 2);
     } else if (part.name === "rast") {
       // погоня: бочка на каждую восьмую, дробь без остановки и рваный бас
       if (inBar % 2 === 0) kick(t, 0.9);
@@ -587,12 +596,28 @@ const music = (() => {
       boom(t + 0.8, master, 1);
       return;
     }
+    if (kind === "laser") {
+      sweep(t, 2400, 260, 0.14, master);
+      return;
+    }
+    if (kind === "brick") {
+      noiseHit(t, "bandpass", 900, 0.5, 0.09, master);
+      return;
+    }
+    if (kind === "wallBroken") {
+      noiseHit(t, "lowpass", 1200, 0.8, 0.5, master);
+      boom(t, master, 0.5);
+      return;
+    }
     boom(t, master, 0.7);
     noiseHit(t, "highpass", 3000, 0.4, 1.4, master);
     if (kind === "swam") sweep(t, 180, 1400, 0.7, master);
     else if (kind === "over") sweep(t, 300, 2400, 0.35, master);
     else if (kind === "storm") noiseHit(t, "lowpass", 420, 0.75, 1.6, master);
-    else if (kind === "rast") {
+    else if (kind === "rainbow") {
+      sweep(t, 500, 2000, 0.3, master);
+      sweep(t + 0.15, 750, 3000, 0.3, master);
+    } else if (kind === "rast") {
       boom(t + 0.12, master, 0.9);
       sweep(t, 90, 40, 1.2, master);
     } else if (kind === "flip") {

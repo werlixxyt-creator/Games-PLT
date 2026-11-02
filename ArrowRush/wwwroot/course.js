@@ -39,7 +39,12 @@ const course = (() => {
     storm: { label: "ШТОРМ", color: "#c9b8ff", rgb: [170, 150, 255] },
     flip: { label: "ПЕРЕВОРОТ", color: "#5dffb0", rgb: [80, 255, 170] },
     rast: { label: "РАСТ", color: "#ff3b5c", rgb: [255, 50, 80] },
+    rainbow: { label: "РАДУГА", color: "#ffd84d", rgb: [255, 216, 77] },
   };
+  const RAINBOW = ["#ff3b5c", "#ff8a2b", "#ffd84d", "#5dffb0", "#39d8ff", "#5f6dff", "#c06bff"];
+  const RUNNERS = 5;         // сколько человечков бежит по радуге
+  const WALL_STEP = 90;      // длина ячейки со стеной: персонаж упирается в неё почти сразу
+  const WALL_HEIGHT = 170;   // стена выше и ниже пути на столько
   const OVER_PALETTE = { sky: [120, 24, 40], sky2: [200, 70, 20], neb: [255, 170, 40], neb2: [255, 60, 60], wall: [90, 20, 30], wall2: [255, 150, 50], glow: [255, 220, 150] };
   const STORM_SIGHT = 2;     // шторм: сколько ячеек видно без молнии, считая текущую
   const RAST_STEP = 120;     // «Раст»: расстояние между ячейками
@@ -78,7 +83,9 @@ const course = (() => {
   let rings = [];       // ударные волны в мире: { x, y, size, color, k }
   let ghosts = [];      // овердрайв: где персонаж был в прошлых кадрах
   let bolts = [];       // шторм: молнии на экране: { pts, life }
-  let zones = { over: 0, storm: 0, flip: 0, rast: 0 }; // насколько идёт каждый ивент, 0..1, меняется плавно
+  let zones = { over: 0, storm: 0, flip: 0, rast: 0, rainbow: 0 }; // насколько идёт каждый ивент, 0..1, меняется плавно
+  let rain = null;      // «Радуга» началась: { start, from — номер её ячейки, fired — какие стены уже подстрелили }
+  let lasers = [];      // лазеры на экране: { x0, y0, x1, y1, life, color }
   let holeShown = 1;    // «Раст»: где чёрная дыра, 1 — у правого края, 0 — догнала
   let eaten = 0;        // дыра поглощает персонажа, 0..1
   let beatAt = 0;       // когда была последняя вспышка в такт
@@ -121,6 +128,17 @@ const course = (() => {
 
   /** Она уже стала препятствием: свам перед ней пройден. */
   const ufoShown = (i) => ufoCell(i) && reached > opts.level[i].chartAt;
+
+  /** Стена уже есть на уровне, 0..1: она вырастает там, куда прилетел лазер. Игрок у стены видит её сразу. */
+  function wallK(i) {
+    const cell = opts.level[i];
+    if (!cell?.wall || reached <= cell.chartAt) return 0;
+    if (reached >= i || !rain || cell.chartAt !== rain.from) return 1;
+    return clamp((time - wallTime(i)) / 0.2, 0, 1);
+  }
+
+  /** Когда лазер прилетает в стену i: стены появляются по очереди. */
+  const wallTime = (i) => rain.start + 0.55 + (i - rain.from - 2) * 0.22;
 
   /** Насколько ячейка превратилась в препятствие, 0..1: в сцене прилёта они меняются одна за другой. */
   function morph(i) {
@@ -199,7 +217,7 @@ const course = (() => {
       for (let k = i; k < end; k++) if (level[k].ufo || level[k].zone === "rast") end = k;
       sections.push({ from: i, to: end, kind: KINDS[kind], x });
       for (; i < end; i++) {
-        const len = fast ? FAST_STEP : level[i].fill * HOLD_SPEED;
+        const len = level[i].wall ? WALL_STEP : fast ? FAST_STEP : level[i].fill * HOLD_SPEED;
         const pts = shape(KINDS[kind], x, y, len, rand, st);
         segs.push(pts);
         [x, y] = pts[pts.length - 1];
@@ -1081,6 +1099,147 @@ const course = (() => {
     ctx.fillRect(0, 0, w, h);
   }
 
+  /** Экранные координаты точки мира. */
+  const toScreen = (x, y) => ({ x: cssW * heroAt() + (x - camX) * scale, y: cssH / 2 + (y - camY) * scale * flipY() });
+
+  /** Высота радуги на экране: дуга под панелью, в начале ивента она съезжает сверху. */
+  function rainbowY(x, w, h) {
+    const k = (x - w / 2) / (w / 2);
+    return h * 0.3 - (1 - k * k) * h * 0.09 - (1 - zones.rainbow) * h * 0.5;
+  }
+
+  /** Где человечек n: бежит по радуге слева направо и выбегает снова. */
+  function runnerAt(n, w, h) {
+    const x = (((n / RUNNERS + time * 0.11) % 1) * 1.1 - 0.05) * w;
+    return { x, y: rainbowY(x, w, h) - 30 * scale };
+  }
+
+  /** Лазер случайного человечка в точку мира. */
+  function fire(x, y) {
+    const from = runnerAt(Math.floor(Math.random() * RUNNERS), cssW, cssH), to = toScreen(x, y);
+    lasers.push({ x0: from.x, y0: from.y, x1: to.x, y1: to.y, life: 1, color: RAINBOW[Math.floor(Math.random() * RAINBOW.length)] });
+  }
+
+  function drawRunner(n, w, h) {
+    const { x, y } = runnerAt(n, w, h);
+    const u = 22 * scale, step = Math.sin(time * 16 + n * 2);
+    ctx.save();
+    ctx.translate(x, y + Math.abs(step) * -3 * scale);
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 4 * scale + 1;
+    ctx.beginPath();
+    ctx.moveTo(0, -u * 0.2); // тело
+    ctx.lineTo(0, u * 0.5);
+    ctx.moveTo(0, u * 0.5);  // ноги
+    ctx.lineTo(step * u * 0.55, u * 1.2);
+    ctx.moveTo(0, u * 0.5);
+    ctx.lineTo(-step * u * 0.55, u * 1.2);
+    ctx.moveTo(0, 0);        // рука с бластером
+    ctx.lineTo(u * 0.6, u * 0.3);
+    ctx.stroke();
+    ctx.strokeStyle = "#ff3b5c";
+    ctx.beginPath();
+    ctx.moveTo(u * 0.55, u * 0.3);
+    ctx.lineTo(u * 1.05, u * 0.48);
+    ctx.stroke();
+    ctx.fillStyle = RAINBOW[n % RAINBOW.length];
+    ctx.beginPath();
+    ctx.arc(0, -u * 0.55, u * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** «Радуга»: полосы дуги поверх мира и бегущие по ним человечки. */
+  function drawRainbow(w, h) {
+    if (zones.rainbow < 0.02) return;
+    const band = 6 * scale + 1;
+    ctx.lineCap = "round";
+    RAINBOW.forEach((color, i) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = band + 1;
+      ctx.beginPath();
+      for (let x = -20; x <= w + 20; x += 24) ctx.lineTo(x, rainbowY(x, w, h) + i * band);
+      ctx.stroke();
+    });
+    for (let n = 0; n < RUNNERS; n++) drawRunner(n, w, h);
+  }
+
+  function drawLasers(dt) {
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+    for (let i = lasers.length - 1; i >= 0; i--) {
+      const l = lasers[i];
+      l.life -= dt / 0.26;
+      if (l.life <= 0) { lasers.splice(i, 1); continue; }
+      for (const [width, color] of [[14, l.color], [4, "#fff"]]) {
+        ctx.globalAlpha = l.life;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(l.x0, l.y0);
+        ctx.lineTo(l.x1, l.y1);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  /** Стена из кирпичей: k — насколько выросла, crack — насколько разбита, 0..1. */
+  function drawWall(i, k, crack) {
+    const pts = map.segs[i], p = pts[pts.length - 1];
+    const w = 58, h = WALL_HEIGHT * k;
+    ctx.save();
+    ctx.translate(p[0] + (crack > 0 && !reduce ? (Math.random() - 0.5) * 6 * crack : 0), p[1]);
+    ctx.fillStyle = "#b5533c";
+    ctx.fillRect(-w / 2, -h, w, h * 2);
+    ctx.strokeStyle = "#4a2230";
+    ctx.lineWidth = 3;
+    const row = 30;
+    for (let y = -h, n = 0; y < h; y += row, n++) {
+      const bottom = Math.min(y + row, h); // нижний ряд не вылезает за стену
+      ctx.strokeRect(-w / 2, y, w, bottom - y);
+      ctx.beginPath();
+      ctx.moveTo(n % 2 ? -w / 6 : w / 6, y);
+      ctx.lineTo(n % 2 ? -w / 6 : w / 6, bottom);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(-w / 2, -h, w, h * 2);
+    // трещины идут от центра вслед за ударами
+    ctx.strokeStyle = "#1d1340";
+    ctx.lineWidth = 4;
+    const cracks = Math.ceil(crack * 8);
+    for (let c = 0; c < cracks; c++) {
+      const a = c * 2.4;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * w * 0.28, Math.sin(a) * 50);
+      ctx.lineTo(Math.cos(a + 0.5) * w * 0.48, Math.sin(a + 0.5) * 110);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Жизни у стены: сердечки над персонажем. */
+  function drawHearts(x, y, hp) {
+    ctx.font = "900 20px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = OUTLINE;
+    for (let i = 0; i < 10; i++) {
+      const hx = x + (i - 4.5) * 20;
+      ctx.strokeText("♥", hx, y);
+      ctx.fillStyle = i < hp ? "#ff3b5c" : "#5a5570";
+      ctx.fillText("♥", hx, y);
+    }
+    ctx.textBaseline = "alphabetic";
+  }
+
   /** Где чёрная дыра на экране: k — насколько она далеко: 1 — старт у левого края, больше — отогнана за него; пока ивент начинается, она выезжает слева. */
   function holePoint(k, pathY) {
     return {
@@ -1293,7 +1452,9 @@ const course = (() => {
     rings = [];
     ghosts = [];
     bolts = [];
-    zones = { over: 0, storm: 0, flip: 0, rast: 0 };
+    zones = { over: 0, storm: 0, flip: 0, rast: 0, rainbow: 0 };
+    rain = null;
+    lasers = [];
     holeShown = 1;
     eaten = beatAt = 0;
     zoneNow = null;
@@ -1310,6 +1471,7 @@ const course = (() => {
     s = pos;
     pops = [];
     fly = null;
+    rain = null;
     eaten = 0;
     flash = Math.max(flash, 0.4);
   }
@@ -1395,6 +1557,23 @@ const course = (() => {
     ring(p[0], p[1], 280, "#fff");
     pixels(p[0], p[1], 44, e.color, 1.6);
     if (kind === "storm") strikeAt = time; // шторм начинается с молнии
+    if (kind === "rainbow") rain = { start: time, from: i, fired: new Set() };
+  }
+
+  /** Лазер попал в игрока у стены. */
+  function laser() {
+    const p = at(s);
+    fire(p.x, p.y);
+    shake = Math.max(shake, 0.55);
+    flash = Math.max(flash, 0.14);
+    pixels(p.x, p.y, 12, "#ff3b5c");
+  }
+
+  /** Удар по стене. */
+  function brick() {
+    const p = at(s);
+    shake = Math.max(shake, 0.25);
+    pixels(p.x + 50, p.y, 8, "#d87a5c", 0.8);
   }
 
   /** Отметка на пути: волна от персонажа. */
@@ -1438,7 +1617,7 @@ const course = (() => {
   }
 
   /**
-   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, hole — дыра «Раста»: 0 — у игрока, 1 — у левого края, больше — за ним, mates: [{ slot, pos, air, name, color }],
+   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, hole — дыра «Раста»: 0 — у игрока, 1 — у левого края, больше — за ним, hp — жизни у стены «Радуги» или null, mates: [{ slot, pos, air, name, color }],
    * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null, final — близко к финишу }.
    */
   function frame(now, o) {
@@ -1488,6 +1667,21 @@ const course = (() => {
       for (const key of Object.keys(OVER_PALETTE)) palette[key] = mixRgb(map.colors[key], OVER_PALETTE[key], zones.over);
     } else {
       palette = map.colors;
+    }
+
+    // «Радуга»: лазеры летят в ячейки, там вырастают стены
+    if (rain) {
+      for (let i = rain.from + 2; opts.level[i]?.wall && opts.level[i].chartAt === rain.from; i += 2) {
+        if (rain.fired.has(i) || time < wallTime(i)) continue;
+        rain.fired.add(i);
+        if (reached >= i) continue;
+        const pts = map.segs[i], p = pts[pts.length - 1];
+        fire(p[0], p[1]);
+        shake = Math.max(shake, 0.4);
+        pixels(p[0], p[1], 18, "#ffd84d", 1.2);
+        ring(p[0], p[1], 160, "#fff");
+        if (opts.laser) opts.laser();
+      }
     }
 
     // «Раст»: чем ближе дыра, тем сильнее трясёт; она затягивает частицы
@@ -1585,6 +1779,11 @@ const course = (() => {
       const last = visibleRange(right);
       // пройденные препятствия остаются позади, пока не уедут за экран
       for (let i = last - 1; i >= Math.max(0, cur - 3); i--) {
+        const wall = i >= cur ? wallK(i) : 0;
+        if (wall > 0) {
+          drawWall(i, wall, i === cur ? s - cur : 0);
+          if (wall >= 1) continue;
+        }
         const m = morph(i);
         if (m > 0) drawObstacle(i, m);
         if (i < cur || m >= 1) continue;
@@ -1625,6 +1824,9 @@ const course = (() => {
     ctx.restore();
 
     if (scene && zones.rast < 0.5) scenes.front(scene, ctx, view);
+    drawRainbow(cssW, cssH);
+    drawLasers(dt);
+    if (o.hp !== null && o.hp !== undefined) drawHearts(cssW * heroAt(), cssH / 2 + (me.y - camY) * scale * flipY() - 62 * scale, o.hp);
     drawStorm(dt, cssW, cssH, cssW * heroAt(), cssH / 2 + (me.y - camY) * scale * flipY());
     drawStreaks(cssW, cssH);
     drawVignette(cssW, cssH);
@@ -1641,5 +1843,5 @@ const course = (() => {
     }
   }
 
-  return { start, follow, frame, hit, devour, filled, chart, swam, event, pulse, point, paintHero, eventInfo: EVENTS };
+  return { start, follow, frame, hit, devour, laser, brick, filled, chart, swam, event, pulse, point, paintHero, eventInfo: EVENTS };
 })();
