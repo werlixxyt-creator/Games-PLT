@@ -43,6 +43,7 @@ const course = (() => {
   const OVER_PALETTE = { sky: [120, 24, 40], sky2: [200, 70, 20], neb: [255, 170, 40], neb2: [255, 60, 60], wall: [90, 20, 30], wall2: [255, 150, 50], glow: [255, 220, 150] };
   const STORM_SIGHT = 2;     // шторм: сколько ячеек видно без молнии, считая текущую
   const RAST_STEP = 120;     // «Раст»: расстояние между ячейками
+  const RAST_SHIFT = 0.3;    // «Раст»: на сколько сдвигается персонаж вправо, чтобы дыре было откуда догонять
   const BEAT_GAP = 0.36;     // вспышки в такт не чаще раза в столько секунд: частое мигание опасно для зрения
 
   const KINDS = ["wave", "ship", "ball", "dash"];
@@ -99,6 +100,9 @@ const course = (() => {
   /** Ячейка дальше, чем видно в этом режиме или в темноте шторма: её показывает только молния. */
   const hiddenCell = (i) => (opts.sight > 0 && i - Math.floor(s) >= opts.sight)
     || (zoneNow === "storm" && strike < 0.25 && i - Math.floor(s) >= STORM_SIGHT);
+
+  /** Доля ширины экрана, где сейчас персонаж. */
+  const heroAt = () => PLAYER_AT + zones.rast * RAST_SHIFT;
 
   /** Переворот: мир отражается по вертикали, на середине сжимаясь в линию. */
   const flipY = () => {
@@ -982,7 +986,7 @@ const course = (() => {
   /** Напарник летит по той же траектории со своим прогрессом; ушёл за край экрана — метка у края. */
   function drawMates(mates, dt) {
     const n = map.segs.length;
-    const edgeL = camX - viewW * PLAYER_AT + 76, edgeR = camX + viewW * (1 - PLAYER_AT) - 76;
+    const edgeL = camX - viewW * heroAt() + 76, edgeR = camX + viewW * (1 - heroAt()) - 76;
     const stacked = { left: 0, right: 0 }; // метки у края идут столбиком, чтобы не накладывались
     ctx.font = "800 15px Nunito, sans-serif";
     ctx.textAlign = "center";
@@ -1077,10 +1081,10 @@ const course = (() => {
     ctx.fillRect(0, 0, w, h);
   }
 
-  /** Где чёрная дыра на экране: k — насколько она далеко: 1 — старт у правого края, больше — отогнана за него; пока ивент начинается, она выезжает справа. */
+  /** Где чёрная дыра на экране: k — насколько она далеко: 1 — старт у левого края, больше — отогнана за него; пока ивент начинается, она выезжает слева. */
   function holePoint(k, pathY) {
     return {
-      x: cssW * PLAYER_AT + 70 * scale + k * cssW * 0.68 + (1 - zones.rast) * cssW * 0.6,
+      x: cssW * heroAt() - 70 * scale - k * cssW * 0.58 - (1 - zones.rast) * cssW * 0.6,
       y: cssH / 2 + (pathY - camY) * scale,
       r: cssH * (0.24 + Math.max(0, 1 - k) * 0.12),
     };
@@ -1257,7 +1261,7 @@ const course = (() => {
     const sx = reduce ? 0 : (Math.random() - 0.5) * shake * 18;
     const sy = reduce ? 0 : (Math.random() - 0.5) * shake * 18;
     const zoom = reduce ? 1 : 1 + beat * 0.022 + punch * 0.09 - zones.over * 0.07 + danger * 0.03;
-    ctx.translate(cssW * PLAYER_AT + sx, cssH / 2 + sy);
+    ctx.translate(cssW * heroAt() + sx, cssH / 2 + sy);
     ctx.rotate(reduce ? 0 : tilt);
     ctx.scale(scale * zoom, scale * zoom * flipY());
     ctx.translate(-camX, -camY);
@@ -1378,7 +1382,7 @@ const course = (() => {
     if (!map || !resize()) return [0, 0];
     const pts = map.segs[Math.min(i, map.segs.length - 1)], p = pts[pts.length - 1];
     const r = canvas.getBoundingClientRect();
-    return [r.left + cssW * PLAYER_AT + (p[0] - camX) * scale, r.top + cssH / 2 + (p[1] - camY) * scale * flipY()];
+    return [r.left + cssW * heroAt() + (p[0] - camX) * scale, r.top + cssH / 2 + (p[1] - camY) * scale * flipY()];
   }
 
   /** Начался ивент на ячейке i: вспышка, толчок камеры, волна и пиксели его цвета. */
@@ -1434,7 +1438,7 @@ const course = (() => {
   }
 
   /**
-   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, hole — дыра «Раста»: 0 — у игрока, 1 — у правого края, больше — за ним, mates: [{ slot, pos, air, name, color }],
+   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, hole — дыра «Раста»: 0 — у игрока, 1 — у левого края, больше — за ним, mates: [{ slot, pos, air, name, color }],
    * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null, final — близко к финишу }.
    */
   function frame(now, o) {
@@ -1559,8 +1563,8 @@ const course = (() => {
 
     ctx.save();
     applyCamera();
-    const left = camX - viewW * PLAYER_AT - 120;
-    const right = camX + viewW * (1 - PLAYER_AT) + 120;
+    const left = camX - viewW * heroAt() - 120;
+    const right = camX + viewW * (1 - heroAt()) + 120;
     if (!scene) {
       drawWalls(left, right);
       drawDeco(left, right);
@@ -1599,10 +1603,10 @@ const course = (() => {
     if (zoneNow === "rast" && !reduce) {
       // частицы летят из пустоты в дыру
       const h = holePoint(holeShown, pathY);
-      const hx = camX + (h.x - cssW * PLAYER_AT) / scale;
+      const hx = camX + (h.x - cssW * heroAt()) / scale;
       for (let i = 0; i < 3; i++) {
         const py = pathY + (Math.random() - 0.5) * 520;
-        const px = hx - 140 - Math.random() * 500;
+        const px = hx + 140 + Math.random() * 500;
         pixel(px, py, (hx - px) * 2.2, (pathY - py) * 2.2, 0.45, 3 + Math.random() * 5, Math.random() < 0.5 ? "#ff8a6a" : "#b78cff");
       }
     }
@@ -1621,7 +1625,7 @@ const course = (() => {
     ctx.restore();
 
     if (scene && zones.rast < 0.5) scenes.front(scene, ctx, view);
-    drawStorm(dt, cssW, cssH, cssW * PLAYER_AT, cssH / 2 + (me.y - camY) * scale * flipY());
+    drawStorm(dt, cssW, cssH, cssW * heroAt(), cssH / 2 + (me.y - camY) * scale * flipY());
     drawStreaks(cssW, cssH);
     drawVignette(cssW, cssH);
     drawEdges(cssW, cssH, EVENTS.over.rgb, zones.over * (0.3 + beat * 0.3));

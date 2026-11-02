@@ -253,7 +253,7 @@ public sealed class Match
         p.Out = true;
     }
 
-    /// <summary>Дыра появляется у правого края и стоит, пока игрок её не увидит.</summary>
+    /// <summary>Дыра появляется у левого края и стоит, пока игрок её не увидит.</summary>
     private static void StartHole(Player p)
     {
         p.HoleGap = GameRules.RastStartGap;
