@@ -86,7 +86,8 @@ public static class GameModes
 /// Chart — ячейка «Чарт». Was — у ячеек за чартом: какой стрелкой она выглядит, пока чарт не пройден.
 /// Считается всегда Arrow: дойти до этих ячеек раньше чарта нельзя.
 /// Swam — ячейка «Свам», проходится как обычная. Ufo — ячейка за ней: её надо перепрыгнуть с НЛО,
-/// стрелка здесь не важна, а FillSeconds — сколько НЛО к ней подлетает.
+/// стрелка здесь не важна, а FillSeconds — сколько НЛО к ней подлетает. Пока свам не пройден,
+/// она выглядит обычной ячейкой со стрелкой Was.
 /// </summary>
 public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false);
 
@@ -156,13 +157,14 @@ public static class LevelGenerator
         return GameRules.ChartCells;
     }
 
-    /// <summary>Свам: за ним идут ячейки-препятствия. Стрелка вверх на них только подсказывает, что надо прыгать.</summary>
+    /// <summary>Свам: следующие ячейки становятся препятствиями, прежняя стрелка остаётся в Was. До первой из них лететь дольше: идёт сцена прилёта НЛО.</summary>
     private static int AddSwam(Slider[] sliders, int at)
     {
         sliders[at] = sliders[at] with { Swam = true };
         for (var i = at + 1; i <= at + GameRules.SwamCells; i++)
         {
-            sliders[i] = new Slider(Arrow.Up, GameRules.SwamCellSeconds, Ufo: true);
+            var seconds = i == at + 1 ? GameRules.SwamIntroSeconds : GameRules.SwamCellSeconds;
+            sliders[i] = sliders[i] with { FillSeconds = seconds, Was = sliders[i].Arrow, Ufo = true };
         }
         return GameRules.SwamCells;
     }

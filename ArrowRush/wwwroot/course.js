@@ -25,9 +25,13 @@ const course = (() => {
   const CELL = 40;           // шаг стен коридора
   const TO_PORTAL = 340;     // от последнего ползунка до финишного портала
   const POP_SECONDS = 0.35;  // как долго лопается заполненная ячейка
-  const UFO_STEP = 320;      // участок с НЛО: расстояние между ячейками
-  const UFO_DROP = 150;      // насколько НЛО ниже пути
-  const JUMP_HEIGHT = 320;   // высота прыжка с НЛО: выше ячейки он в той же доле прыжка, что на сервере (SwamClearFrom)
+  const UFO_SPEED = 355;     // участок с НЛО: единиц в секунду
+  const UFO_DROP = 120;      // насколько персонаж на НЛО ниже пути
+  const UFO_UNDER = 60;      // центр НЛО ниже персонажа: тот стоит на куполе
+  const UFO_ARRIVE = 0.75;   // сцена прилёта: столько НЛО летит к персонажу
+  const OBSTACLE_LOW = 90;   // насколько ячейка-препятствие опускается с пути, прямо на уровень персонажа
+  const OBSTACLE_R = 36;
+  const JUMP_HEIGHT = 260;   // высота прыжка с НЛО: выше препятствия он в той же доле прыжка, что на сервере (SwamClearFrom)
 
   const KINDS = ["wave", "ship", "ball", "dash"];
   const THEME_IDS = ["violet", "ocean", "neon", "night"]; // как THEMES; лобби выбирает дизайн по этим именам
@@ -56,6 +60,8 @@ const course = (() => {
   let pops = [];        // заполненные ячейки лопаются: { x, y, r, color, k }
   let reached = 0;      // номер ползунка, на котором сейчас игрок
   let mateShown = new Map(); // где напарники на экране: slot → номер ползунка + доля
+  let fly = null;       // идёт сцена прилёта НЛО: { start, from — номер свама, struck, landed }
+  let inAir = false, landed = 0, recoil = 0; // прыжок с НЛО: приземление и толчок от него, затухают
 
   /** Повторяемый генератор случайных чисел: один и тот же матч — одна и та же траектория. */
   function rng(seed) {
@@ -70,14 +76,24 @@ const course = (() => {
   /** Ячейка дальше, чем видно в этом режиме. */
   const hiddenCell = (i) => opts.sight > 0 && i - Math.floor(s) >= opts.sight;
 
-  /** Какую стрелку показать: ячейки за чартом выглядят обычными, пока чарт не пройден. */
+  /** Какую стрелку показать: ячейки за чартом и свамом выглядят обычными, пока он не пройден. */
   function arrowOf(i) {
     const cell = opts.level[i];
-    return cell.was !== null && reached <= cell.chartAt ? cell.was : cell.arrow;
+    return cell.was !== null && (cell.ufo || reached <= cell.chartAt) ? cell.was : cell.arrow;
   }
 
-  /** Ячейка, которую надо перепрыгнуть с НЛО. */
+  /** Ячейка участка с НЛО. */
   const ufoCell = (i) => !!opts.level[i]?.ufo;
+
+  /** Она уже стала препятствием: свам перед ней пройден. */
+  const ufoShown = (i) => ufoCell(i) && reached > opts.level[i].chartAt;
+
+  /** Насколько ячейка превратилась в препятствие, 0..1: в сцене прилёта они меняются одна за другой. */
+  function morph(i) {
+    if (!ufoShown(i)) return 0;
+    if (!fly || opts.level[i].chartAt !== fly.from) return 1;
+    return clamp((time - fly.start - 0.3 - (i - fly.from - 1) * 0.11) / 0.4, 0, 1);
+  }
 
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const rgba = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
@@ -135,8 +151,9 @@ const course = (() => {
         // участок с НЛО: ячейки стоят по прямой, иначе не рассчитать прыжок
         const from = i, sx = x;
         for (; i < level.length && level[i].ufo; i++) {
-          segs.push([[x, y], [x + UFO_STEP, y]]);
-          x += UFO_STEP;
+          const step = level[i].fill * UFO_SPEED;
+          segs.push([[x, y], [x + step, y]]);
+          x += step;
         }
         sections.push({ from, to: i, kind: "ufo", x: sx });
         continue;
@@ -298,14 +315,16 @@ const course = (() => {
     moon: { path: new Path2D("M12 -30 A30 30 0 1 0 12 30 A23 23 0 1 1 12 -30 Z"), color: "#fff1b8" },
   };
 
-  // скины НЛО: корпус, купол и цвета; какой надет, передаёт opts.ufo
+  // скины НЛО: формы и цвета; какой надет, передаёт opts.ufo
   const UFOS = {
     classic: {
-      hull: new Path2D("M-66 6 C-44 -16 44 -16 66 6 C44 26 -44 26 -66 6 Z"),
-      dome: new Path2D("M-30 -8 C-26 -38 26 -38 30 -8 Z"),
-      color: "#7a8cff",
-      glass: "rgba(190,245,255,.7)",
-      lights: "#ffe14d",
+      hull: new Path2D("M-112 8 C-74 -20 74 -20 112 8 C80 30 -80 30 -112 8 Z"),
+      rim: new Path2D("M-112 8 C-74 -16 74 -16 112 8"),
+      dome: new Path2D("M-44 -8 C-42 -52 42 -52 44 -8 Z"),
+      metal: ["#4b525e", "#1d2028"], // сверху и снизу
+      edge: "#39b8c4",
+      glow: [70, 235, 255],
+      ring: [24, 96, 110],   // тёмное кольцо на брюхе
     },
   };
 
@@ -579,12 +598,12 @@ const course = (() => {
     ctx.lineTo(last.x, last.y);
   }
 
-  /** Части пути между a и b без участков с НЛО: там нет дороги, только ячейки. */
+  /** Части пути между a и b без участков с НЛО: там нет дороги, только препятствия. */
   function roadRuns(a, b) {
     const runs = [];
     let from = a;
     for (let i = Math.floor(a); i < b; i++) {
-      if (!ufoCell(i)) continue;
+      if (!ufoShown(i)) continue;
       if (i > from) runs.push([from, i]);
       from = i + 1;
     }
@@ -633,7 +652,7 @@ const course = (() => {
 
     ctx.setLineDash(cells.dash(opts.cell));
     for (let i = cur; i < last && i < n; i++) {
-      if (ufoCell(i)) continue;
+      if (ufoShown(i)) continue;
       const hidden = hiddenCell(i);
       ctx.globalAlpha = i === cur ? 0.62 : 0.3;
       ctx.strokeStyle = hidden ? "#8c88b4" : COLORS[arrowOf(i)];
@@ -653,7 +672,7 @@ const course = (() => {
     ctx.lineJoin = "round";
     ctx.lineWidth = opts.fast ? 22 : 30;
     for (let i = Math.floor(tail); i <= Math.min(Math.floor(s), n); i++) {
-      if (ufoCell(i)) continue;
+      if (ufoShown(i)) continue;
       ctx.strokeStyle = opts.trailOf(Math.min(i, n - 1));
       trace(Math.max(tail, i), Math.min(s, i + 1));
       ctx.stroke();
@@ -683,14 +702,61 @@ const course = (() => {
     ctx.fillText(text, 0, r + 36);
   }
 
-  /** Столб под ячейкой-препятствием: через него НЛО не пролетит, поэтому ячейку надо перепрыгнуть. */
-  function drawPole() {
-    const h = UFO_DROP + 90;
-    ctx.fillStyle = rgba(mixRgb(palette.wall, [0, 0, 0], 0.18));
-    ctx.fillRect(-10, 0, 20, h);
-    ctx.strokeStyle = rgba(palette.wall2, 0.9);
-    ctx.lineWidth = 3;
-    ctx.strokeRect(-10, 0, 20, h);
+  /** Ячейка-препятствие: красная пила без стрелки висит на уровне персонажа, её надо перепрыгнуть. m — насколько она превратилась. */
+  function drawObstacle(i, m) {
+    const pts = map.segs[i], p = pts[pts.length - 1];
+    const r = OBSTACLE_R * (0.6 + 0.4 * m);
+    ctx.save();
+    ctx.translate(p[0], p[1] + OBSTACLE_LOW * (1 - (1 - m) ** 3) + Math.sin(time * 3 + i) * 5 * m);
+    ctx.globalAlpha = m;
+    ctx.save();
+    ctx.rotate(time * 4);
+    ctx.scale(r * 1.34, r * 1.34);
+    ctx.fillStyle = "#ff3b5c";
+    ctx.fill(SAW);
+    ctx.lineWidth = 3 / r;
+    ctx.strokeStyle = OUTLINE;
+    ctx.stroke(SAW);
+    ctx.restore();
+    cells.draw(ctx, { skin: opts.cell, r: r * 0.72, color: "#ff3b5c", t: time, hidden: false, k: 0, wrong: false });
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.3, -r * 0.3);
+    ctx.lineTo(r * 0.3, r * 0.3);
+    ctx.moveTo(r * 0.3, -r * 0.3);
+    ctx.lineTo(-r * 0.3, r * 0.3);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Сцена прилёта: в каждую ячейку бьёт луч с неба, в его вспышке она становится препятствием. */
+  function drawStrikes() {
+    if (!fly) return;
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = fly.from + 1; ufoCell(i) && opts.level[i].chartAt === fly.from; i++) {
+      const m = morph(i), pts = map.segs[i], p = pts[pts.length - 1];
+      if (m <= 0 || m >= 1) continue;
+      const a = Math.sin(m * Math.PI), w = 16 + 46 * a;
+      const beam = ctx.createLinearGradient(0, camY - VIEW_H, 0, p[1] + OBSTACLE_LOW);
+      beam.addColorStop(0, "rgba(70,235,255,0)");
+      beam.addColorStop(1, `rgba(150,245,255,${a * 0.85})`);
+      ctx.fillStyle = beam;
+      ctx.fillRect(p[0] - w / 2, camY - VIEW_H, w, VIEW_H + p[1] + OBSTACLE_LOW - camY);
+      ctx.strokeStyle = `rgba(190,250,255,${1 - m})`;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(p[0], p[1] + OBSTACLE_LOW * m, 30 + m * 110, 0, Math.PI * 2);
+      ctx.stroke();
+      if (m >= 0.5 && !fly.struck.has(i)) {
+        fly.struck.add(i);
+        shake = Math.max(shake, 0.35);
+        pixels(p[0], p[1] + OBSTACLE_LOW * 0.5, 16, "#8ff4ff", 1.2);
+        pixels(p[0], p[1] + OBSTACLE_LOW * 0.5, 8, "#ff3b5c", 1);
+      }
+    }
+    ctx.globalCompositeOperation = "source-over";
   }
 
   function drawKey(i, current, progress, wrong) {
@@ -702,8 +768,6 @@ const course = (() => {
 
     ctx.save();
     ctx.translate(p[0], p[1]);
-
-    if (ufoCell(i)) drawPole();
 
     if (current) {
       // кольцо сходится к стрелке — куда смотреть прямо сейчас
@@ -717,7 +781,7 @@ const course = (() => {
 
     cells.draw(ctx, {
       skin: opts.cell, r, color, t: time, hidden,
-      k: current && !opts.fast && !ufoCell(i) ? progress : 0,
+      k: current && !opts.fast ? progress : 0,
       wrong: wrong && current,
     });
 
@@ -778,13 +842,16 @@ const course = (() => {
     if (map.endX < right + 300) drawPortal(map.endX, map.endY, [255, 255, 255], 190);
   }
 
-  /** color — заменить цвет скина (напарник рисуется своим цветом). */
-  function drawHero(c, id, x, y, angle, size, color) {
+  /**
+   * color — заменить цвет скина (напарник рисуется своим цветом).
+   * pose — поза на НЛО: { spin — угол вместо обычного вращения, sx, sy — сжатие при прыжке и приземлении }.
+   */
+  function drawHero(c, id, x, y, angle, size, color, pose) {
     const hero = HEROES[id] || HEROES.circle;
     c.save();
     c.translate(x, y);
-    c.rotate(hero.nose ? angle : time * 5);
-    c.scale(size, size);
+    c.rotate(pose ? pose.spin : hero.nose ? angle : time * 5);
+    c.scale(size * (pose ? pose.sx : 1), size * (pose ? pose.sy : 1));
     c.lineJoin = "round";
     c.strokeStyle = "#fff";
     c.lineWidth = 8;
@@ -797,33 +864,85 @@ const course = (() => {
     c.restore();
   }
 
-  /** НЛО под персонажем; k — насколько оно появилось, 0..1. */
-  function drawUfo(id, x, y, k) {
-    const ufo = UFOS[id] || UFOS.classic;
-    ctx.save();
-    ctx.translate(x, y + Math.sin(time * 6) * 4);
-    ctx.scale(k, k);
-    ctx.lineJoin = "round";
-    ctx.fillStyle = ufo.glass;
-    ctx.fill(ufo.dome);
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 4;
-    ctx.stroke(ufo.dome);
-    ctx.fillStyle = ufo.color;
-    ctx.fill(ufo.hull);
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 7;
-    ctx.stroke(ufo.hull);
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3.5;
-    ctx.stroke(ufo.hull);
-    ctx.fillStyle = ufo.lights;
-    for (let i = -2; i <= 2; i++) {
-      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(time * 9 + i * 1.4);
+  /** Огни бегут по кругу: сзади они за корпусом, спереди видны. */
+  function drawUfoLights(n, rx, ry, cy, w, h, speed) {
+    for (let i = 0; i < n; i++) {
+      const a = time * speed + (i / n) * Math.PI * 2;
+      const front = Math.sin(a);
+      if (front < 0.05) continue;
+      ctx.globalAlpha = 0.45 + 0.55 * front;
       ctx.beginPath();
-      ctx.arc(i * 21, 7, 5, 0, Math.PI * 2);
+      ctx.ellipse(Math.cos(a) * rx, cy + front * ry, w * (0.45 + 0.55 * front), h, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
+  }
+
+  /** НЛО: тёмный металл, бирюзовая кромка, белые огни и сияющее брюхо. Огни крутятся, брюхо пульсирует. */
+  function drawUfo(id, x, y, k, lean = 0) {
+    const ufo = UFOS[id] || UFOS.classic;
+    const pulse = 0.75 + 0.25 * Math.sin(time * 9);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(lean - 0.07);
+    ctx.scale(k, k);
+    ctx.lineJoin = "round";
+
+    // сияние и луч снизу
+    ctx.globalCompositeOperation = "lighter";
+    const halo = ctx.createRadialGradient(0, 34, 0, 0, 34, 120);
+    halo.addColorStop(0, rgba(ufo.glow, 0.75 * pulse));
+    halo.addColorStop(1, rgba(ufo.glow, 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(-120, -86, 240, 240);
+    const ray = ctx.createLinearGradient(0, 30, 0, 150);
+    ray.addColorStop(0, rgba(ufo.glow, 0.32 * pulse));
+    ray.addColorStop(1, rgba(ufo.glow, 0));
+    ctx.fillStyle = ray;
+    ctx.beginPath();
+    ctx.moveTo(-34, 28);
+    ctx.lineTo(34, 28);
+    ctx.lineTo(70, 150);
+    ctx.lineTo(-70, 150);
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+
+    // брюхо: кольца света
+    ctx.fillStyle = ufo.metal[1];
+    ctx.beginPath();
+    ctx.ellipse(0, 25, 58, 17, 0, 0, Math.PI * 2);
+    ctx.fill();
+    for (const [rx, ry, color] of [[44, 12, rgba(ufo.glow, 0.9)], [29, 7.5, rgba(ufo.ring)], [19, 4.5, "#e8fdff"]]) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.ellipse(0, 28, rx * (0.92 + 0.08 * pulse), ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const metal = ctx.createLinearGradient(0, -50, 0, 30);
+    metal.addColorStop(0, ufo.metal[0]);
+    metal.addColorStop(1, ufo.metal[1]);
+
+    // купол с поясом огней
+    ctx.fillStyle = metal;
+    ctx.fill(ufo.dome);
+    ctx.strokeStyle = "rgba(255,255,255,.28)";
+    ctx.lineWidth = 2;
+    ctx.stroke(ufo.dome);
+    ctx.fillStyle = "#fff";
+    drawUfoLights(9, 37, 3, -19, 3.4, 2.6, 2.2);
+
+    // корпус, кромка и большие огни
+    ctx.fillStyle = metal;
+    ctx.fill(ufo.hull);
+    ctx.strokeStyle = "rgba(255,255,255,.3)";
+    ctx.lineWidth = 2;
+    ctx.stroke(ufo.hull);
+    ctx.strokeStyle = ufo.edge;
+    ctx.lineWidth = 4;
+    ctx.stroke(ufo.rim);
+    ctx.fillStyle = "#fff";
+    drawUfoLights(12, 90, 8, 6, 10, 3.2, 1.5);
     ctx.restore();
   }
 
@@ -850,7 +969,7 @@ const course = (() => {
         ctx.stroke();
       }
 
-      if (drop > 1) drawUfo(opts.ufo, p.x, p.y + UFO_DROP + 46, 0.8 * drop / UFO_DROP);
+      if (drop > 1) drawUfo(opts.ufo, p.x, p.y + UFO_DROP + UFO_UNDER, 0.6 * drop / UFO_DROP);
       p.y += drop - jumpLift(m.air);
 
       const x = clamp(p.x, edgeL, edgeR);
@@ -975,7 +1094,7 @@ const course = (() => {
     // ячейки за чартом запоминают, какой чарт их меняет
     let chartAt = -1;
     o.level.forEach((cell, i) => {
-      if (cell.chart) chartAt = i;
+      if (cell.chart || cell.swam) chartAt = i;
       cell.chartAt = chartAt;
     });
     reached = 0;
@@ -987,6 +1106,9 @@ const course = (() => {
     section = 0;
     palette = map.colors;
     flash = shake = beat = heat = tilt = 0;
+    fly = null;
+    inAir = false;
+    landed = recoil = 0;
     lastPart = null;
     lastNow = performance.now();
     camX = 0;
@@ -998,6 +1120,7 @@ const course = (() => {
     Object.assign(opts, { hero, cell, trailOf });
     s = pos;
     pops = [];
+    fly = null;
     flash = Math.max(flash, 0.4);
   }
 
@@ -1008,10 +1131,49 @@ const course = (() => {
     pixels(p.x, p.y, 16, "#ff3b5c");
   }
 
-  /** Свам пройден: снизу выезжает НЛО. */
-  function swam() {
-    flash = Math.max(flash, 0.3);
-    shake = Math.max(shake, 0.3);
+  /** Свам i пройден: дорога разлетается, с неба прилетает НЛО и превращает ячейки в препятствия. */
+  function swam(i) {
+    flash = Math.max(flash, 0.7);
+    shake = Math.max(shake, 0.8);
+    if (reduce) return;
+    fly = { start: time, from: i, struck: new Set(), landed: false };
+    for (let k = i + 1; ufoCell(k) && opts.level[k].chartAt === i; k++) {
+      const pts = map.segs[k], p = at(k + 0.5);
+      pixels(p.x, p.y, 14, COLORS[opts.level[k].was], 1.3);
+      pixels(pts[1][0], pts[1][1], 8, "#fff", 1);
+    }
+  }
+
+  /** НЛО на своём месте под персонажем; в сцене прилёта оно влетает из верхнего угла, огромное, с хвостом света. */
+  function drawRide(x, y, drop) {
+    if (fly && time - fly.start > 2.2) fly = null;
+    if (!fly || fly.landed) {
+      if (drop > 1) drawUfo(opts.ufo, x, y + recoil * 20 + landed * 12 + Math.sin(time * 5) * 5, drop / UFO_DROP, recoil * 0.1 - landed * 0.06);
+      return;
+    }
+    const k = clamp((time - fly.start) / UFO_ARRIVE, 0, 1), e = 1 - (1 - k) ** 3;
+    const ux = x + (1 - e) * viewW * 0.85, uy = y - (1 - e) * 560;
+    if (k < 1) {
+      ctx.globalCompositeOperation = "lighter";
+      const tail = ctx.createLinearGradient(ux, uy, ux + 620, uy - 410);
+      tail.addColorStop(0, "rgba(120,240,255,.8)");
+      tail.addColorStop(1, "rgba(120,240,255,0)");
+      ctx.strokeStyle = tail;
+      ctx.lineCap = "round";
+      ctx.lineWidth = 60 * (1 - e) + 10;
+      ctx.beginPath();
+      ctx.moveTo(ux, uy);
+      ctx.lineTo(ux + 620, uy - 410);
+      ctx.stroke();
+      ctx.globalCompositeOperation = "source-over";
+    } else if (!fly.landed) {
+      fly.landed = true;
+      flash = Math.max(flash, 0.8);
+      shake = 1;
+      pixels(x, y, 40, "#8ff4ff", 1.6);
+      pixels(x, y, 20, "#fff", 1.2);
+    }
+    drawUfo(opts.ufo, ux, uy, 1 + (1 - e) * 2, (1 - e) * 0.55);
   }
 
   /** Экранные координаты стрелки ползунка i — для искр на общем слое эффектов. */
@@ -1035,6 +1197,7 @@ const course = (() => {
 
   /** Ячейка заполнена: она лопается в стиле скина, разлетаются пиксели. */
   function filled(i) {
+    if (ufoCell(i)) return; // препятствие перепрыгнули, а не заполнили: оно остаётся позади
     const pts = map.segs[Math.min(i, map.segs.length - 1)], p = pts[pts.length - 1];
     const color = COLORS[opts.level[i].arrow];
     pixels(p[0], p[1], opts.fast ? 10 : 22, color);
@@ -1089,6 +1252,20 @@ const course = (() => {
     // камера смотрит на путь: НЛО и прыжки её не качают
     const pathY = me.y, drop = dropAt(s);
     me.y += drop - jumpLift(o.air);
+
+    // толчок при прыжке и удар при приземлении качают и персонажа, и НЛО
+    const air = o.air >= 0;
+    if (air && !inAir) {
+      recoil = 1;
+      pixels(me.x, pathY + drop, 12, "#8ff4ff", 0.7);
+    } else if (!air && inAir && drop > 1) {
+      landed = 1;
+      pixels(me.x, pathY + drop + 26, 14, "#fff", 0.7);
+    }
+    inAir = air;
+    recoil *= Math.exp(-dt * 8);
+    landed *= Math.exp(-dt * 10);
+
     const sec = map.sections[section];
     camX = me.x;
     const camTarget = s >= n ? map.endY : wallAt(map.walls, me.x, map.walls.mid);
@@ -1100,6 +1277,10 @@ const course = (() => {
     const color = opts.trailOf(Math.min(cur, n - 1));
     if (!reduce && s < n && (o.holding || Math.random() < 0.3)) {
       pixel(me.x - 20, me.y + (Math.random() - 0.5) * 16, -80 - Math.random() * 120, (Math.random() - 0.5) * 70, 0.4 + Math.random() * 0.5, 4 + Math.random() * 7, Math.random() < 0.5 ? "#fff" : color);
+    }
+    // след двигателя НЛО
+    if (!reduce && drop > 1 && (!fly || fly.landed)) {
+      pixel(me.x - 40 - Math.random() * 40, pathY + drop + UFO_UNDER + 30, -160 - Math.random() * 120, 30 + Math.random() * 90, 0.3 + Math.random() * 0.4, 4 + Math.random() * 6, "#8ff4ff");
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1125,18 +1306,32 @@ const course = (() => {
     if (s < n) {
       drawRoad(right);
       const last = visibleRange(right);
-      for (let i = last - 1; i >= cur; i--) drawKey(i, i === cur, s - cur, o.wrong);
+      // пройденные препятствия остаются позади, пока не уедут за экран
+      for (let i = last - 1; i >= Math.max(0, cur - 3); i--) {
+        const m = morph(i);
+        if (m > 0) drawObstacle(i, m);
+        if (i < cur || m >= 1) continue;
+        ctx.globalAlpha = 1 - m;
+        drawKey(i, i === cur && m === 0, s - cur, o.wrong);
+        ctx.globalAlpha = 1;
+      }
+      drawStrikes();
     }
     drawPops(dt);
     drawMates(o.mates, dt);
     drawParts(dt);
-    if (drop > 1) drawUfo(opts.ufo, me.x, pathY + UFO_DROP + 46, drop / UFO_DROP);
+    drawRide(me.x, pathY + UFO_DROP + UFO_UNDER, drop);
 
     // у финишного портала персонаж уменьшается и исчезает
     const gone = clamp(n + 1 - s, 0, 1);
     if (gone > 0.02) {
       const jitter = o.wrong && !reduce ? (Math.random() - 0.5) * 7 : 0;
-      drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter, me.a, (o.holding ? 1.14 : 1) * gone);
+      // на НЛО: покачивается стоя и крутит сальто в прыжке, сжимается при толчке и приземлении
+      const squash = landed * 0.34 - recoil * 0.22;
+      const pose = drop > 1 || air
+        ? { spin: air ? Math.min(1, o.air / opts.jump) * Math.PI * 2 : Math.sin(time * 7) * 0.12, sx: 1 + squash, sy: 1 - squash }
+        : undefined;
+      drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
     }
     ctx.restore();
 

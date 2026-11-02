@@ -38,11 +38,13 @@ public static class GameRules
     public const int SwamCells = 6;
     /// <summary>За сколько секунд НЛО подлетает к следующей ячейке.</summary>
     public const double SwamCellSeconds = 0.9;
+    /// <summary>Сколько НЛО летит к первой ячейке: за это время идёт сцена его прилёта.</summary>
+    public const double SwamIntroSeconds = 1.8;
     /// <summary>Сколько длится прыжок. Должно быть меньше <see cref="SwamCellSeconds"/>, иначе не успеть приземлиться.</summary>
     public const double SwamJumpSeconds = 0.75;
     /// <summary>В какой доле прыжка персонаж выше ячейки: раньше и позже он в неё врезается.</summary>
-    public const double SwamClearFrom = 0.2;
-    public const double SwamClearTo = 0.8;
+    public const double SwamClearFrom = 0.12;
+    public const double SwamClearTo = 0.88;
 
     // Режим «Хардкор»: без пауз за ошибку, но ошибки ограничены
     /// <summary>Столько ошибок — и игрок выбывает.</summary>

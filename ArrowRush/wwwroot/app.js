@@ -1284,7 +1284,7 @@ function trackMine(track, idx, wrong, level) {
       celebrate(track, prev, idx, level);
       for (let i = prev; i < Math.min(idx, level.length); i++) {
         if (level[i].chart) chartPassed(i);
-        if (level[i].swam) swamPassed();
+        if (level[i].swam) swamPassed(i);
       }
     }
   }
@@ -1313,10 +1313,10 @@ function chartPassed(i) {
   music.jingle(true);
 }
 
-/** Пройден свам: персонаж падает на НЛО. */
-function swamPassed() {
+/** Пройден свам: прилетает НЛО, ячейки становятся препятствиями. */
+function swamPassed(i) {
   showBanner("СВАМ! Перепрыгивай ячейки");
-  course.swam();
+  course.swam(i);
   music.jingle(true);
 }
 
@@ -1348,7 +1348,7 @@ function celebrate(track, from, to, level) {
   const speed = match.press;
   for (let i = from; i < Math.min(to, level.length); i++) {
     const [x, y] = course.point(i);
-    fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
+    if (!level[i].ufo) fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
     course.filled(i);
     music.ding(i);
   }
@@ -1583,7 +1583,7 @@ function render(now) {
   } else if (t < 0) {
     need.textContent = match.mirror ? "Зеркало: жми наоборот!" : `Первая стрелка: ${ARROW_CHAR[level[0].arrow]}`;
   } else if (level[myIdx].ufo) {
-    need.textContent = "Прыгай: любая стрелка";
+    need.textContent = "Перепрыгни ячейку: любая стрелка";
   } else if (speed) {
     if (now < pred.stunUntil) {
       need.textContent = "Не та стрелка! Пауза…";
