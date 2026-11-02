@@ -53,6 +53,7 @@ const music = (() => {
     over: { part: "drop2", tempo: 1.14, shift: 1, tone: 20000, rate: 1.12 },
     storm: { part: "storm", tempo: 0.92, shift: 0, tone: 1100, rate: 0.94 },
     flip: { part: "flip", tempo: 1, shift: 0, tone: 3200, rate: 1 },
+    rast: { part: "rast", tempo: 1.25, shift: 3, tone: 20000, rate: 1.2 },
   };
   const FINAL_AT = 0.85;      // с какой доли уровня начинается финал
   const FINAL_TEMPO = 1.06;
@@ -354,6 +355,14 @@ const music = (() => {
       // ближе к финишу вступает верхний слой, а в финале — дробь на каждую долю
       if (second || s.heat >= 0.5) arp(t, arpNote + 12, true);
       if (s.final && inBar % 2 === 1) hat(t, true);
+    } else if (part.name === "rast") {
+      // погоня: бочка на каждую восьмую, дробь без остановки и рваный бас
+      if (inBar % 2 === 0) kick(t, 0.9);
+      snare(t, 0.22 + (inBar / 16) * 0.3);
+      hat(t, inBar % 4 === 2);
+      if (inBar % 4 === 0) wobble(t, bassNote, beatLen * 0.95, (s.bpm / 60) * 6);
+      if (inBar % 2 === 0) arp(t, arpNote + 12, true);
+      if ([0, 3, 6, 8, 11, 14].includes(inBar)) supersaw(t, triad, s.stepLen * 1.5, 6000, 0.1);
     } else if (part.name === "storm") {
       // шторм: тяжёлый медленный бас и редкие удары
       if (inBar === 0) supersaw(t, triad.map((m) => m - 12), beatLen * 3.8, 800, 0.12);
@@ -565,7 +574,7 @@ const music = (() => {
     o.stop(t + len + 0.05);
   }
 
-  /** Звук начала ивента поверх музыки; thunder — гром от молнии. */
+  /** Звук начала ивента поверх музыки; thunder — гром от молнии, devour — дыра поглотила игрока. */
   function sting(kind) {
     if (!ctx || muted) return;
     const t = ctx.currentTime + 0.01;
@@ -573,12 +582,20 @@ const music = (() => {
       noiseHit(t, "lowpass", 420, 0.75, 1.3, master);
       return;
     }
+    if (kind === "devour") {
+      sweep(t, 900, 30, 0.9, master);
+      boom(t + 0.8, master, 1);
+      return;
+    }
     boom(t, master, 0.7);
     noiseHit(t, "highpass", 3000, 0.4, 1.4, master);
     if (kind === "swam") sweep(t, 180, 1400, 0.7, master);
     else if (kind === "over") sweep(t, 300, 2400, 0.35, master);
     else if (kind === "storm") noiseHit(t, "lowpass", 420, 0.75, 1.6, master);
-    else if (kind === "flip") {
+    else if (kind === "rast") {
+      boom(t + 0.12, master, 0.9);
+      sweep(t, 90, 40, 1.2, master);
+    } else if (kind === "flip") {
       sweep(t, 1400, 120, 0.4, master);
       sweep(t + 0.4, 120, 1400, 0.4, master);
     }

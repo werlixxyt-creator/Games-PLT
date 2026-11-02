@@ -38,9 +38,12 @@ const course = (() => {
     over: { label: "ОВЕРДРАЙВ", color: "#ff8a2b", rgb: [255, 120, 40] },
     storm: { label: "ШТОРМ", color: "#c9b8ff", rgb: [170, 150, 255] },
     flip: { label: "ПЕРЕВОРОТ", color: "#5dffb0", rgb: [80, 255, 170] },
+    rast: { label: "РАСТ", color: "#ff3b5c", rgb: [255, 50, 80] },
   };
   const OVER_PALETTE = { sky: [120, 24, 40], sky2: [200, 70, 20], neb: [255, 170, 40], neb2: [255, 60, 60], wall: [90, 20, 30], wall2: [255, 150, 50], glow: [255, 220, 150] };
   const STORM_SIGHT = 2;     // шторм: сколько ячеек видно без молнии, считая текущую
+  const RAST_STEP = 120;     // «Раст»: расстояние между ячейками
+  const BEAT_GAP = 0.36;     // вспышки в такт не чаще раза в столько секунд: частое мигание опасно для зрения
 
   const KINDS = ["wave", "ship", "ball", "dash"];
   const THEME_IDS = ["violet", "ocean", "neon", "night"]; // как THEMES; лобби выбирает дизайн по этим именам
@@ -74,7 +77,10 @@ const course = (() => {
   let rings = [];       // ударные волны в мире: { x, y, size, color, k }
   let ghosts = [];      // овердрайв: где персонаж был в прошлых кадрах
   let bolts = [];       // шторм: молнии на экране: { pts, life }
-  let zones = { over: 0, storm: 0, flip: 0 }; // насколько идёт каждый ивент, 0..1, меняется плавно
+  let zones = { over: 0, storm: 0, flip: 0, rast: 0 }; // насколько идёт каждый ивент, 0..1, меняется плавно
+  let holeShown = 1;    // «Раст»: где чёрная дыра, 1 — у правого края, 0 — догнала
+  let eaten = 0;        // дыра поглощает персонажа, 0..1
+  let beatAt = 0;       // когда была последняя вспышка в такт
   let zoneNow = null;   // какой ивент на текущей ячейке
   let strike = 0, strikeAt = 0; // шторм: яркость молнии и когда ударит следующая
   let punch = 0;        // толчок камеры, затухает
@@ -171,21 +177,22 @@ const course = (() => {
     const colors = scene ? scenes.palettes[scene] : THEMES[style];
 
     for (let i = 0; i < level.length;) {
-      if (level[i].ufo) {
-        // участок с НЛО: ячейки стоят по прямой, иначе не рассчитать прыжок
+      const straight = level[i].ufo ? "ufo" : level[i].zone === "rast" ? "rast" : null;
+      if (straight) {
+        // НЛО и «Раст»: ячейки стоят по прямой, иначе не рассчитать прыжок и не поставить дыру
         const from = i, sx = x;
-        for (; i < level.length && level[i].ufo; i++) {
-          const step = level[i].fill * UFO_SPEED;
+        for (; i < level.length && (level[i].ufo ? "ufo" : level[i].zone === "rast" ? "rast" : null) === straight; i++) {
+          const step = straight === "ufo" ? level[i].fill * UFO_SPEED : RAST_STEP;
           segs.push([[x, y], [x + step, y]]);
           x += step;
         }
-        sections.push({ from, to: i, kind: "ufo", x: sx });
+        sections.push({ from, to: i, kind: straight, x: sx });
         continue;
       }
       const prev = kind;
       do kind = Math.floor(rand() * KINDS.length); while (kind === prev);
       let end = Math.min(level.length, i + (fast ? 6 + Math.floor(rand() * 7) : 2 + Math.floor(rand() * 2)));
-      for (let k = i; k < end; k++) if (level[k].ufo) end = k;
+      for (let k = i; k < end; k++) if (level[k].ufo || level[k].zone === "rast") end = k;
       sections.push({ from: i, to: end, kind: KINDS[kind], x });
       for (; i < end; i++) {
         const len = fast ? FAST_STEP : level[i].fill * HOLD_SPEED;
@@ -788,7 +795,7 @@ const course = (() => {
     const arrow = arrowOf(i);
     const color = COLORS[arrow]; // цвет стрелки зависит только от направления
     const hidden = hiddenCell(i);
-    const r = (opts.fast ? 25 : 33) * (current ? 1.26 + beat * 0.12 : 1);
+    const r = (opts.fast || opts.level[i].zone === "rast" ? 25 : 33) * (current ? 1.26 + beat * 0.12 : 1);
 
     ctx.save();
     ctx.translate(p[0], p[1]);
@@ -861,7 +868,7 @@ const course = (() => {
   function drawPortals(left, right) {
     for (let i = 1; i < map.sections.length; i++) {
       const sec = map.sections[i];
-      if (sec.kind === "ufo" || sec.x < left - 200 || sec.x > right + 200) continue;
+      if (sec.kind === "ufo" || sec.kind === "rast" || sec.x < left - 200 || sec.x > right + 200) continue;
       const p = map.segs[sec.from][0];
       drawPortal(p[0], p[1], palette.glow, 104);
     }
@@ -1070,6 +1077,61 @@ const course = (() => {
     ctx.fillRect(0, 0, w, h);
   }
 
+  /** Где чёрная дыра на экране: k — насколько она далеко, 1 — у правого края; пока ивент начинается, она выезжает из-за него. */
+  function holePoint(k, pathY) {
+    return {
+      x: cssW * PLAYER_AT + 70 * scale + k * cssW * 0.6 + (1 - zones.rast) * cssW * 0.6,
+      y: cssH / 2 + (pathY - camY) * scale,
+      r: cssH * (0.24 + (1 - k) * 0.12),
+    };
+  }
+
+  /** «Раст»: чёрная дыра с крутящимся диском; чем ближе, тем сильнее тянет частицы. */
+  function drawHole(pathY) {
+    if (zones.rast < 0.02) return;
+    const { x, y, r } = holePoint(holeShown, pathY);
+    ctx.save();
+    ctx.translate(x, y);
+
+    ctx.globalCompositeOperation = "lighter";
+    const halo = ctx.createRadialGradient(0, 0, r * 0.6, 0, 0, r * 2.6);
+    halo.addColorStop(0, `rgba(255,70,100,${0.55 + beat * 0.3})`);
+    halo.addColorStop(0.5, "rgba(120,50,255,.28)");
+    halo.addColorStop(1, "rgba(120,50,255,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(-r * 2.6, -r * 2.6, r * 5.2, r * 5.2);
+
+    // рукава диска закручиваются внутрь
+    ctx.lineCap = "round";
+    for (let arm = 0; arm < 6; arm++) {
+      const off = (arm / 6) * Math.PI * 2 + time * 2.4;
+      ctx.strokeStyle = arm % 2 ? "rgba(255,170,90,.75)" : "rgba(190,120,255,.7)";
+      ctx.lineWidth = 7 * scale + 2;
+      ctx.beginPath();
+      for (let k = 0; k <= 1; k += 0.03) {
+        const a = off + k * 3.4, d = r * (1.75 - k * 0.8);
+        ctx.lineTo(Math.cos(a) * d, Math.sin(a) * d * 0.62);
+      }
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+
+    const core = ctx.createRadialGradient(0, 0, r * 0.7, 0, 0, r);
+    core.addColorStop(0, "#000");
+    core.addColorStop(0.9, "#000");
+    core.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffd9c2";
+    ctx.lineWidth = 3 + beat * 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.93, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   /** Новая молния: ломаная сверху вниз. */
   function addBolt(w, h) {
     const pts = [];
@@ -1209,7 +1271,7 @@ const course = (() => {
     // ячейки за чартом запоминают, какой чарт их меняет
     let chartAt = -1;
     o.level.forEach((cell, i) => {
-      if (cell.chart || cell.swam) chartAt = i;
+      if (cell.chart || cell.swam || cell.event) chartAt = i;
       cell.chartAt = chartAt;
     });
     reached = 0;
@@ -1227,7 +1289,9 @@ const course = (() => {
     rings = [];
     ghosts = [];
     bolts = [];
-    zones = { over: 0, storm: 0, flip: 0 };
+    zones = { over: 0, storm: 0, flip: 0, rast: 0 };
+    holeShown = 1;
+    eaten = beatAt = 0;
     zoneNow = null;
     strike = strikeAt = punch = danger = 0;
     lastPart = null;
@@ -1242,14 +1306,26 @@ const course = (() => {
     s = pos;
     pops = [];
     fly = null;
+    eaten = 0;
     flash = Math.max(flash, 0.4);
   }
 
   /** Ошибка игрока: тряска и красная вспышка. */
   function hit() {
     shake = 1;
+    punch = Math.max(punch, 0.5);
     const p = at(s);
     pixels(p.x, p.y, 16, "#ff3b5c");
+    ring(p.x, p.y, 200, "#ff3b5c");
+  }
+
+  /** Дыра догнала игрока: он сжимается в точку. */
+  function devour() {
+    eaten = 0.001;
+    flash = 1;
+    shake = 1;
+    const p = at(s);
+    pixels(p.x, p.y, 40, "#ff3b5c", 1.6);
   }
 
   /** Свам i пройден: дорога разлетается, с неба прилетает НЛО и превращает ячейки в препятствия. */
@@ -1345,6 +1421,8 @@ const course = (() => {
     pixels(p[0], p[1], opts.fast ? 10 : 22, color);
     ring(p[0], p[1], opts.fast ? 70 : 120, color);
     punch = Math.max(punch, opts.fast ? 0.12 : 0.25);
+    shake = Math.max(shake, opts.fast ? 0.1 : 0.22);
+    flash = Math.max(flash, opts.fast ? 0.04 : 0.1);
     if (!reduce) pops.push({ x: p[0], y: p[1], r: opts.fast ? 31 : 41, color, k: 0 });
   }
 
@@ -1356,7 +1434,7 @@ const course = (() => {
   }
 
   /**
-   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, mates: [{ slot, pos, air, name, color }],
+   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, hole — дыра «Раста», 0..1 от игрока к краю, mates: [{ slot, pos, air, name, color }],
    * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null, final — близко к финишу }.
    */
   function frame(now, o) {
@@ -1374,6 +1452,13 @@ const course = (() => {
     // музыка качает сцену; на дропе — вспышка и полосы света
     beat = Math.max(o.energy, beat * Math.exp(-dt * 7));
     const part = o.part;
+    // сильный удар на дропе: мир вздрагивает и вспыхивает
+    if (o.energy > 0.55 && heat > 0.5 && time - beatAt >= BEAT_GAP) {
+      beatAt = time;
+      flash = Math.max(flash, 0.2);
+      shake = Math.max(shake, 0.32);
+      punch = Math.max(punch, 0.3);
+    }
     if (part !== lastPart) {
       if (part && part.startsWith("drop")) {
         flash = 1;
@@ -1392,7 +1477,7 @@ const course = (() => {
     danger += ((o.final ? 1 : 0) - danger) * (1 - Math.exp(-dt * 2));
 
     // ивент текущей ячейки: включается и гаснет плавно, космос уходит в его цвета
-    zoneNow = s < n ? map.segs.length && opts.level[Math.floor(s)].zone : null;
+    zoneNow = s < n ? opts.level[Math.floor(s)].zone : null;
     for (const k of Object.keys(zones)) zones[k] += ((zoneNow === k ? 1 : 0) - zones[k]) * (1 - Math.exp(-dt * 3.5));
     if (zones.over > 0.01) {
       palette = {};
@@ -1400,6 +1485,12 @@ const course = (() => {
     } else {
       palette = map.colors;
     }
+
+    // «Раст»: чем ближе дыра, тем сильнее трясёт; она затягивает частицы
+    holeShown += ((o.hole ?? 1) - holeShown) * (1 - Math.exp(-dt * 14));
+    const close = zoneNow === "rast" ? 1 - holeShown : 0;
+    shake = Math.max(shake, close * close * 0.9);
+    if (eaten > 0) eaten = Math.min(1, eaten + dt / 0.7);
 
     strike *= Math.exp(-dt * 7);
     if (zoneNow === "storm" && time >= strikeAt) {
@@ -1475,6 +1566,15 @@ const course = (() => {
       drawDeco(left, right);
     }
     drawPortals(left, right);
+    if (zones.rast > 0.01) {
+      // весь мир исчезает: остаются чернота, дорога и персонаж
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(1, zones.rast * 1.15)})`;
+      ctx.fillRect(0, 0, cssW, cssH);
+      drawHole(pathY); // ячейки рисуются поверх дыры: стрелки видны, даже когда она вплотную
+      ctx.restore();
+    }
     drawTrail();
     if (s < n) {
       drawRoad(right);
@@ -1496,9 +1596,19 @@ const course = (() => {
     drawParts(dt);
     drawRide(me.x, pathY + UFO_DROP + UFO_UNDER, drop);
     drawGhosts(me);
+    if (zoneNow === "rast" && !reduce) {
+      // частицы летят из пустоты в дыру
+      const h = holePoint(holeShown, pathY);
+      const hx = camX + (h.x - cssW * PLAYER_AT) / scale;
+      for (let i = 0; i < 3; i++) {
+        const py = pathY + (Math.random() - 0.5) * 520;
+        const px = hx - 140 - Math.random() * 500;
+        pixel(px, py, (hx - px) * 2.2, (pathY - py) * 2.2, 0.45, 3 + Math.random() * 5, Math.random() < 0.5 ? "#ff8a6a" : "#b78cff");
+      }
+    }
 
     // у финишного портала персонаж уменьшается и исчезает
-    const gone = clamp(n + 1 - s, 0, 1);
+    const gone = clamp(n + 1 - s, 0, 1) * (1 - eaten);
     if (gone > 0.02) {
       const jitter = o.wrong && !reduce ? (Math.random() - 0.5) * 7 : 0;
       // на НЛО: покачивается стоя и крутит сальто в прыжке, сжимается при толчке и приземлении
@@ -1510,13 +1620,13 @@ const course = (() => {
     }
     ctx.restore();
 
-    if (scene) scenes.front(scene, ctx, view);
+    if (scene && zones.rast < 0.5) scenes.front(scene, ctx, view);
     drawStorm(dt, cssW, cssH, cssW * PLAYER_AT, cssH / 2 + (me.y - camY) * scale * flipY());
     drawStreaks(cssW, cssH);
     drawVignette(cssW, cssH);
     drawEdges(cssW, cssH, EVENTS.over.rgb, zones.over * (0.3 + beat * 0.3));
     drawEdges(cssW, cssH, EVENTS.flip.rgb, zones.flip * 0.28);
-    drawEdges(cssW, cssH, [255, 40, 70], danger * (0.16 + beat * 0.34));
+    drawEdges(cssW, cssH, [255, 40, 70], Math.max(danger * (0.16 + beat * 0.34), close * 0.7));
     if (!reduce && flash > 0.02) {
       ctx.fillStyle = `rgba(255,255,255,${flash * 0.6})`;
       ctx.fillRect(0, 0, cssW, cssH);
@@ -1527,5 +1637,5 @@ const course = (() => {
     }
   }
 
-  return { start, follow, frame, hit, filled, chart, swam, event, pulse, point, paintHero, eventInfo: EVENTS };
+  return { start, follow, frame, hit, devour, filled, chart, swam, event, pulse, point, paintHero, eventInfo: EVENTS };
 })();

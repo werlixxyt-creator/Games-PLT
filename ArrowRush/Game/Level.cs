@@ -100,6 +100,9 @@ public static class LevelGenerator
     /// </summary>
     public static readonly string[] Events = ["over", "storm", "flip"];
 
+    /// <summary>Ивент «Раст»: он длиннее других и стоит отдельно, см. <see cref="AddRast"/>.</summary>
+    public const string Rast = "rast";
+
     /// <param name="fast">Быстрый темп: ползунок — одно нажатие, зато их больше.</param>
     /// <param name="scale">Во сколько раз уровень длиннее обычного.</param>
     public static Slider[] Generate(bool fast, DifficultyRules d, Random rnd, double scale = 1)
@@ -126,7 +129,28 @@ public static class LevelGenerator
         }
 
         AddSpecials(sliders, fast, rnd);
-        return sliders;
+        return scale >= 1 && rnd.NextDouble() < GameRules.RastChance ? AddRast(sliders, rnd) : sliders;
+    }
+
+    /// <summary>
+    /// «Раст» вставляется за обычной ячейкой из второй половины уровня и добавляет к нему новые ячейки,
+    /// поэтому помещается и в короткий уровень. Это две стрелки по очереди, скорости заполнения у них нет:
+    /// проходятся нажатиями в любом темпе. Пока ивент не начался, они выглядят обычными (Was).
+    /// </summary>
+    private static Slider[] AddRast(Slider[] sliders, Random rnd)
+    {
+        bool Plain(Slider s) => s is { Chart: false, Swam: false, Ufo: false, Event: null, Zone: null, Was: null };
+        var spots = Enumerable.Range(sliders.Length / 2, sliders.Length - sliders.Length / 2).Where(i => Plain(sliders[i])).ToList();
+        if (spots.Count == 0) return sliders;
+
+        var at = spots[rnd.Next(spots.Count)];
+        var first = (Arrow)rnd.Next(4);
+        var second = (Arrow)(((int)first + 1 + rnd.Next(3)) % 4);
+        var zone = Enumerable.Range(0, GameRules.RastCells)
+            .Select(i => new Slider(i % 2 == 0 ? first : second, 0, Was: (Arrow)rnd.Next(4), Zone: Rast));
+
+        sliders[at] = sliders[at] with { Event = Rast };
+        return [.. sliders.Take(at + 1), .. zone, .. sliders.Skip(at + 1)];
     }
 
     /// <summary>

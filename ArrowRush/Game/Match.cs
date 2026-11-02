@@ -45,6 +45,9 @@ public sealed class Player
     /// <summary>Сколько раз врезался в ячейку: клиент так узнаёт об ударе.</summary>
     public int Crashes { get; set; }
 
+    /// <summary>«Раст»: через сколько секунд чёрная дыра догонит игрока.</summary>
+    public double HoleGap { get; set; }
+
     public double? FinishTime { get; set; }
     public int Place { get; set; }
     public bool Left { get; set; }
@@ -155,6 +158,12 @@ public sealed class Match
             return;
         }
 
+        if (InRast(p))
+        {
+            Flee(p, dt);
+            return;
+        }
+
         if (Fast)
         {
             // люди продвигаются в SetInput, по нажатиям; здесь думает только бот
@@ -222,6 +231,46 @@ public sealed class Match
         else while (Level[p.Index - 1].Ufo) p.Index--;
     }
 
+    private bool InRast(Player p) => Level[p.Index].Zone == LevelGenerator.Rast;
+
+    /// <summary>«Раст»: дыра надвигается; догнала — игрок выбыл.</summary>
+    private void Flee(Player p, double dt)
+    {
+        if (p.IsBot) BotRast(p, dt);
+        if (!p.Active || !InRast(p)) return; // бот мог пройти последнюю ячейку
+
+        p.HoleGap -= _diff.RastDrain * dt;
+        if (p.HoleGap > 0) return;
+        p.HoleGap = 0;
+        p.Out = true;
+    }
+
+    /// <summary>«Раст»: нажатие считается сразу в любом темпе. Верное отгоняет дыру, неверное подпускает.</summary>
+    private void PressRast(Player p, int pressed)
+    {
+        if (pressed == 1 << TargetOf(p.Index))
+        {
+            p.HoleGap = Math.Min(GameRules.RastMaxGap, p.HoleGap + GameRules.RastGain);
+            Advance(p);
+        }
+        else
+        {
+            p.HoleGap = Math.Max(0, p.HoleGap - GameRules.RastWrong);
+        }
+    }
+
+    /// <summary>Бот жмёт в своём темпе: у каждого нажатия случайный разброс, иногда он ошибается.</summary>
+    private void BotRast(Player bot, double dt)
+    {
+        bot.BotWait -= dt;
+        if (bot.BotWait > 0) return;
+        // корень: нажимать бот может и на лёгкой, медленная реакция не должна отдавать его дыре всегда
+        bot.BotWait = (0.8 + _rnd.NextDouble() * 0.5) * Math.Sqrt(_diff.BotReaction) / GameRules.RastBotRate;
+
+        var wrong = _rnd.NextDouble() < 0.03 * _diff.BotMistakes;
+        PressRast(bot, 1 << (wrong ? (TargetOf(bot.Index) + 1) % 4 : TargetOf(bot.Index)));
+    }
+
     private void Advance(Player p)
     {
         p.Index++;
@@ -233,6 +282,10 @@ public sealed class Match
             p.Place = ++_finishedCount;
             _firstFinishAt ??= GameTime;
             _winningTeam ??= p.Team;
+        }
+        else if (InRast(p) && Level[p.Index - 1].Zone != LevelGenerator.Rast)
+        {
+            p.HoleGap = GameRules.RastStartGap;
         }
     }
 
@@ -269,6 +322,7 @@ public sealed class Match
         {
             p.Index = Math.Max(0, p.Index - _rules.Setback);
             p.Progress = 0;
+            if (InRast(p)) p.HoleGap = GameRules.RastStartGap; // ошибка отбросила обратно в «Раст»
         }
         else if (++p.Mistakes >= _rules.Lives)
         {
@@ -287,6 +341,7 @@ public sealed class Match
         if (pressed == 0) return;
 
         if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Ufo) Jump(p);
+        else if (Phase == MatchPhase.Running && p.Active && InRast(p)) PressRast(p, pressed);
         else if (Fast) Press(p, pressed);
         else if (Punishes && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Slip(p);
     }
@@ -426,6 +481,7 @@ public sealed class Match
         idleDrain = _diff.IdleDrainPerSecond,
         wrongDrain = _diff.WrongDrainPerSecond,
         jump = GameRules.SwamJumpSeconds,
+        holeMax = GameRules.RastMaxGap,
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone }),
         players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, hero = p.Hero, team = p.Team }),
     };
@@ -442,6 +498,7 @@ public sealed class Match
             stun = GameTime < p.StunUntil,
             miss = p.Mistakes,
             crash = p.Crashes,
+            hole = Math.Round(p.HoleGap, 2),
             // сколько секунд длится прыжок, -1 — на земле
             air = GameTime - p.JumpAt < GameRules.SwamJumpSeconds ? Math.Round(GameTime - p.JumpAt, 2) : -1,
             @out = p.Out,

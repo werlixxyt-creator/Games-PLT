@@ -1094,6 +1094,7 @@ function startMatch(d) {
     wrongDrain: d.wrongDrain,
     stun: d.stun,
     jump: d.jump,
+    holeMax: d.holeMax,
     tracks: new Map(),
   };
   pred = newPrediction();
@@ -1329,6 +1330,7 @@ const EVENT_TEXT = {
   over: "ОВЕРДРАЙВ! Ячейки заполняются быстрее",
   storm: "ШТОРМ! Дальние ячейки видно при молнии",
   flip: "ПЕРЕВОРОТ! Мир вверх ногами, стрелки те же",
+  rast: "РАСТ! Жми быстрее, чёрная дыра догоняет",
 };
 
 /** Пройдена ячейка ивента: он начинается. */
@@ -1431,7 +1433,8 @@ function playingRivals(st) {
 
 /** Зажата ли у игрока нужная стрелка: так сцена показывает его ошибки и удержание. */
 function handsOf(p, t) {
-  if (match.level[p.idx]?.ufo) return { wrong: false, holding: false };
+  const cell = match.level[p.idx];
+  if (cell?.ufo || cell?.zone === "rast") return { wrong: false, holding: false };
   if (match.press) return { wrong: p.stun, holding: false };
   const mask = t < 0 ? 0 : p.held, target = 1 << targetOf(match.level[p.idx].arrow);
   return { wrong: (mask & ~target) !== 0, holding: mask === target };
@@ -1454,7 +1457,7 @@ function startWatching(p) {
  */
 function updateWatch(st) {
   const mine = st.players.find((p) => p.slot === match.you);
-  if (!mine || !(mine.done || mine.out) || victory.active()) return null;
+  if (!mine || !(mine.done || mine.out) || victory.active() || performance.now() < (match.holdWatch || 0)) return null;
   const rivals = playingRivals(st);
   if (rivals.length === 0) return null;
 
@@ -1492,6 +1495,8 @@ function renderLives() {
   $("hud-lives").textContent = "♥".repeat(left) + "♡".repeat(match.lives - left);
 }
 
+const inRast = (p) => match.level[p.idx]?.zone === "rast";
+
 function render(now) {
   const st = lastState;
   const level = match.level;
@@ -1528,7 +1533,8 @@ function render(now) {
     let wrong = false;
     let holding = false;
 
-    if (speed) {
+    // «Раст» идёт нажатиями в любом темпе, поэтому и свой прогресс тут считаем сразу
+    if (speed || (isMe && inRast(p))) {
       progress = 0;
       if (isMe) {
         syncPrediction(p, now);
@@ -1565,6 +1571,13 @@ function render(now) {
     if (isMe) {
       if (p.crash > track.crash) crashed();
       track.crash = p.crash;
+      if (p.out && inRast(p) && !track.devoured) {
+        track.devoured = true;
+        match.holdWatch = now + 1200; // наблюдение начнётся, когда игрока поглотит
+        course.devour();
+        music.sting("devour");
+        showBanner("Чёрная дыра догнала тебя", "#ff3b5c");
+      }
       trackMine(track, idx, wrong, level);
       myPos = idx >= level.length ? level.length + 1 : idx + progress;
       myWrong = wrong;
@@ -1587,9 +1600,11 @@ function render(now) {
   if (mine && mine.done && mine.place === 1 && !match.teams) celebrateWin();
   const watched = updateWatch(st);
   const myAir = (now - pred.jumpAt) / 1000;
+  const shown = watched || mine;
+  const hole = shown && inRast(shown) ? shown.hole / match.holeMax : 1;
   const view = watched
-    ? { pos: watched.idx + watched.p, air: watched.air, ...handsOf(watched, t) }
-    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1 };
+    ? { pos: watched.idx + watched.p, air: watched.air, hole, ...handsOf(watched, t) }
+    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole };
   const pos = Math.min(Math.floor(view.pos), level.length);
   course.frame(now, { ...view, mates, energy: music.energy(), part: music.part(), final: pos / level.length >= MARKS[1][0] && pos < level.length });
 
@@ -1604,7 +1619,8 @@ function render(now) {
   if (!speed) { pred.miss = mine.miss; pred.out = mine.out; }
   if (match.lives) renderLives();
 
-  const myIdx = speed ? pred.idx : mine.idx;
+  const rasting = inRast(mine);
+  const myIdx = speed || rasting ? pred.idx : mine.idx;
   const myDone = mine.done || myIdx >= level.length;
   const shownIdx = watched ? watched.idx : myIdx;
   $("hud-count").textContent = `${Math.min(shownIdx + (myDone && !watched ? 0 : 1), level.length)} / ${level.length}`;
@@ -1616,12 +1632,14 @@ function render(now) {
   } else if (myDone) {
     need.textContent = `Финиш! Ждём остальных…`;
   } else if (pred.out || mine.out) {
-    need.textContent = "Ошибки кончились — ты выбыл. Ждём остальных…";
+    need.textContent = rasting ? "Чёрная дыра догнала тебя. Ждём остальных…" : "Ошибки кончились — ты выбыл. Ждём остальных…";
     need.classList.add("bad");
   } else if (t < 0) {
     need.textContent = match.mirror ? "Зеркало: жми наоборот!" : `Первая стрелка: ${ARROW_CHAR[level[0].arrow]}`;
   } else if (level[myIdx].ufo) {
     need.textContent = "Перепрыгни ячейку: любая стрелка";
+  } else if (rasting) {
+    need.textContent = match.mirror ? "Жми наоборот, быстрее!" : `Жми ${ARROW_CHAR[level[myIdx]?.arrow ?? level[mine.idx].arrow]}, быстрее!`;
   } else if (speed) {
     if (now < pred.stunUntil) {
       need.textContent = "Не та стрелка! Пауза…";
@@ -1741,7 +1759,8 @@ function predictJump() {
 
 /** Режимы с нажатиями: те же правила, что на сервере (Match.Press), — чтобы ползунок заполнялся мгновенно. */
 function predictPress(bit) {
-  if (!match || !match.press || !lastState) return;
+  const rast = match && match.level[pred.idx]?.zone === "rast";
+  if (!match || (!match.press && !rast) || !lastState) return;
   const now = performance.now();
   const t = lastState.t + Math.min((now - stateAt) / 1000, 0.2);
   if (t < 0 || pred.out || pred.idx >= match.level.length || now < pred.stunUntil || match.level[pred.idx].ufo) return;
@@ -1753,7 +1772,8 @@ function predictPress(bit) {
   } else {
     combo = 0;
     pred.hitUntil = now + 300;
-    if (match.setback) pred.idx = Math.max(0, pred.idx - match.setback);
+    if (rast) pred.hitUntil = now + 150; // в «Расте» ошибка стоит только расстояния до дыры
+    else if (match.setback) pred.idx = Math.max(0, pred.idx - match.setback);
     else if (!match.lives) pred.stunUntil = now + match.stun * 1000;
     else if (++pred.miss >= match.lives) pred.out = true;
   }

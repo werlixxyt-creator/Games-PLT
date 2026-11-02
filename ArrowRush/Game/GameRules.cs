@@ -54,6 +54,19 @@ public static class GameRules
     public const double SwamClearFrom = 0.12;
     public const double SwamClearTo = 0.88;
 
+    // Ивент «Раст»: следующие ячейки — две стрелки по очереди, сзади них надвигается чёрная дыра
+    /// <summary>В какой доле уровней он есть. Его ячейки добавляются к уровню, поэтому в «Спринте» его нет.</summary>
+    public const double RastChance = 0.5;
+    public const int RastCells = 40;
+    /// <summary>Сколько секунд дыра идёт до игрока в начале и насколько далеко её можно отогнать.</summary>
+    public const double RastStartGap = 3;
+    public const double RastMaxGap = 4;
+    /// <summary>Насколько отгоняет верное нажатие и подпускает неверное, в секундах.</summary>
+    public const double RastGain = 0.18;
+    public const double RastWrong = 0.4;
+    /// <summary>Сколько нажатий в секунду делает бот обычной реакции.</summary>
+    public const double RastBotRate = 6;
+
     // Режим «Хардкор»: без пауз за ошибку, но ошибки ограничены
     /// <summary>Столько ошибок — и игрок выбывает.</summary>
     public const int HardcoreLives = 3;
@@ -81,6 +94,7 @@ public enum Difficulty
 /// Штрафы — доля ползунка в секунду: ничего не нажато (Idle) и зажата не та стрелка (Wrong).
 /// FastWrongStun — пауза за ошибку в быстром темпе.
 /// BotReaction и BotMistakes — множители к тому, как долго бот замечает стрелку и как часто ошибается.
+/// RastDrain — скорость чёрной дыры в «Расте»: сколько секунд запаса она съедает за секунду.
 /// </summary>
 public sealed record DifficultyRules(
     string Wire,
@@ -89,7 +103,8 @@ public sealed record DifficultyRules(
     double MinFillSeconds, double MaxFillSeconds,
     double IdleDrainPerSecond, double WrongDrainPerSecond,
     double FastWrongStunSeconds,
-    double BotReaction, double BotMistakes);
+    double BotReaction, double BotMistakes,
+    double RastDrain);
 
 public static class Difficulties
 {
@@ -100,19 +115,22 @@ public static class Difficulties
             MinFillSeconds: 0.8, MaxFillSeconds: 1.8,
             IdleDrainPerSecond: 0.2, WrongDrainPerSecond: 0.7,
             FastWrongStunSeconds: 0.35,
-            BotReaction: 1.8, BotMistakes: 2),
+            BotReaction: 1.8, BotMistakes: 2,
+            RastDrain: 0.8),
         [Difficulty.Normal] = new("normal",
             MinSliders: 18, MaxSliders: 30, FastMinSliders: 60, FastMaxSliders: 90,
             MinFillSeconds: 0.6, MaxFillSeconds: 1.6,
             IdleDrainPerSecond: 0.35, WrongDrainPerSecond: 1.2,
             FastWrongStunSeconds: 0.5,
-            BotReaction: 1, BotMistakes: 1),
+            BotReaction: 1, BotMistakes: 1,
+            RastDrain: 1.05),
         [Difficulty.Hard] = new("hard",
             MinSliders: 27, MaxSliders: 39, FastMinSliders: 84, FastMaxSliders: 114,
             MinFillSeconds: 0.45, MaxFillSeconds: 1.2,
             IdleDrainPerSecond: 0.55, WrongDrainPerSecond: 1.7,
             FastWrongStunSeconds: 0.7,
-            BotReaction: 0.6, BotMistakes: 0.4),
+            BotReaction: 0.6, BotMistakes: 0.4,
+            RastDrain: 1.3),
     };
 
     public static DifficultyRules Rules(this Difficulty difficulty) => All[difficulty];
