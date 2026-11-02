@@ -32,6 +32,18 @@ public static class GameRules
     public const int ChartMaxGap = 12;
     public const int ChartMaxGapFast = 30;
 
+    // Ячейка «Свам»: персонаж падает на НЛО и перепрыгивает следующие ячейки
+    /// <summary>Какая доля особых ячеек — свамы, остальные — чарты.</summary>
+    public const double SwamChance = 0.5;
+    public const int SwamCells = 6;
+    /// <summary>За сколько секунд НЛО подлетает к следующей ячейке.</summary>
+    public const double SwamCellSeconds = 0.9;
+    /// <summary>Сколько длится прыжок. Должно быть меньше <see cref="SwamCellSeconds"/>, иначе не успеть приземлиться.</summary>
+    public const double SwamJumpSeconds = 0.75;
+    /// <summary>В какой доле прыжка персонаж выше ячейки: раньше и позже он в неё врезается.</summary>
+    public const double SwamClearFrom = 0.2;
+    public const double SwamClearTo = 0.8;
+
     // Режим «Хардкор»: без пауз за ошибку, но ошибки ограничены
     /// <summary>Столько ошибок — и игрок выбывает.</summary>
     public const int HardcoreLives = 3;

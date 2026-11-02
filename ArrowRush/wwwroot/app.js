@@ -108,7 +108,7 @@ let lastPractice = false; // «Ещё матч» повторяет тот же 
 let skinSlot = "slider"; // открытая вкладка на экране скинов
 
 function newPrediction() {
-  return { idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false };
+  return { idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false, jumpAt: -Infinity };
 }
 
 /** Какую стрелку надо нажать для нарисованной: в «Зеркале» — противоположную. */
@@ -1093,6 +1093,7 @@ function startMatch(d) {
     idleDrain: d.idleDrain,
     wrongDrain: d.wrongDrain,
     stun: d.stun,
+    jump: d.jump,
     tracks: new Map(),
   };
   pred = newPrediction();
@@ -1116,12 +1117,15 @@ function startMatch(d) {
     theme: d.theme,
     cell: me.skin,
     hero: profile ? profile.equipped.hero : "circle",
+    ufo: "classic", // скины НЛО появятся позже
+    jump: d.jump,
     trailOf: trailOf(me.skin),
   });
   match.tracks.set(d.you, {
     mine: true,
     skin: me.skin,
     idx: -1,
+    crash: 0,
     badge: nameRow($("my-name"), { ...me, name: me.name + " (ты)" }),
   });
 
@@ -1160,7 +1164,7 @@ function startMatch(d) {
   // стартовый снимок, пока сервер не прислал первый
   lastState = {
     t: -d.countdown,
-    players: d.players.map((p) => ({ slot: p.slot, idx: 0, p: 0, held: 0, stun: false, miss: 0, out: false, done: false, place: 0, left: false })),
+    players: d.players.map((p) => ({ slot: p.slot, idx: 0, p: 0, held: 0, stun: false, miss: 0, crash: 0, air: -1, out: false, done: false, place: 0, left: false })),
   };
   stateAt = performance.now();
   sentHeld = -1;
@@ -1278,7 +1282,10 @@ function trackMine(track, idx, wrong, level) {
     track.idx = idx;
     if (prev >= 0 && idx > prev) {
       celebrate(track, prev, idx, level);
-      for (let i = prev; i < Math.min(idx, level.length); i++) if (level[i].chart) chartPassed(i);
+      for (let i = prev; i < Math.min(idx, level.length); i++) {
+        if (level[i].chart) chartPassed(i);
+        if (level[i].swam) swamPassed();
+      }
     }
   }
   if (wrong && !track.wasWrong) {
@@ -1289,16 +1296,38 @@ function trackMine(track, idx, wrong, level) {
   track.wasWrong = wrong;
 }
 
-/** Пройден чарт: следующие ячейки на экране игрока стали одинаковыми. */
-function chartPassed(i) {
+/** Вывеска над сценой на пару секунд. */
+function showBanner(text) {
   const banner = $("chart-banner");
-  banner.textContent = "ЧАРТ! Следующие 10 — одинаковые";
+  banner.textContent = text;
   banner.hidden = false;
   fx.retrigger(banner, "pop");
   clearTimeout(banner._hide);
   banner._hide = setTimeout(() => { banner.hidden = true; }, 1800);
+}
+
+/** Пройден чарт: следующие ячейки на экране игрока стали одинаковыми. */
+function chartPassed(i) {
+  showBanner("ЧАРТ! Следующие 10 — одинаковые");
   course.chart(i);
   music.jingle(true);
+}
+
+/** Пройден свам: персонаж падает на НЛО. */
+function swamPassed() {
+  showBanner("СВАМ! Перепрыгивай ячейки");
+  course.swam();
+  music.jingle(true);
+}
+
+/** Удар о ячейку на участке с НЛО. */
+function crashed() {
+  fx.retrigger($("stage"), "hit");
+  course.hit();
+  music.miss();
+  pred.jumpAt = -Infinity;
+  combo = 0;
+  showCombo();
 }
 
 /** Соперник: полоса прогресса на весь уровень. */
@@ -1350,7 +1379,10 @@ function showCombo() {
 
 /** Режимы с нажатиями: сверяем своё предсказание с сервером. */
 function syncPrediction(server, now) {
+  const level = match.level;
   if (server.done) pred.idx = match.level.length;
+  // на НЛО игрока ведёт сервер: нажатия не двигают его вперёд
+  else if (level[server.idx]?.ufo || (level[pred.idx]?.ufo && server.idx > pred.idx)) pred.idx = server.idx;
   // сервер впереди — догоняем сразу; расходимся в другую сторону — ждём, пока дойдут последние нажатия.
   // В «Откате» после ошибки сервер какое-то время ещё впереди, поэтому там всегда ждём
   else if (server.idx !== pred.idx && ((server.idx > pred.idx && !match.setback) || now - pred.lastPress > 400)) pred.idx = server.idx;
@@ -1367,6 +1399,7 @@ function playingRivals(st) {
 
 /** Зажата ли у игрока нужная стрелка: так сцена показывает его ошибки и удержание. */
 function handsOf(p, t) {
+  if (match.level[p.idx]?.ufo) return { wrong: false, holding: false };
   if (match.press) return { wrong: p.stun, holding: false };
   const mask = t < 0 ? 0 : p.held, target = 1 << targetOf(match.level[p.idx].arrow);
   return { wrong: (mask & ~target) !== 0, holding: mask === target };
@@ -1491,14 +1524,22 @@ function render(now) {
       }
     }
 
+    // на НЛО прогресс сам идёт к ячейке, а стрелки не бывают неправильными
+    if (idx === p.idx && level[idx]?.ufo) {
+      progress = Math.min(1, p.p + elapsed / level[idx].fill);
+      wrong = holding = false;
+    }
+
     if (isMe) {
+      if (p.crash > track.crash) crashed();
+      track.crash = p.crash;
       trackMine(track, idx, wrong, level);
       myPos = idx >= level.length ? level.length + 1 : idx + progress;
       myWrong = wrong;
       myHolding = holding;
     } else {
       renderOpponent(track, idx, progress, wrong, level);
-      if (track.mate && !p.left && mates.length < MAX_MATES_DRAWN && !(match.watch && match.watch.slot === p.slot)) mates.push({ slot: p.slot, pos: p.idx + p.p, name: track.name, color: MATE_COLOR });
+      if (track.mate && !p.left && mates.length < MAX_MATES_DRAWN && !(match.watch && match.watch.slot === p.slot)) mates.push({ slot: p.slot, pos: p.idx + p.p, air: p.air, name: track.name, color: MATE_COLOR });
     }
 
     if (p.done || p.out) {
@@ -1513,7 +1554,10 @@ function render(now) {
   const mine = st.players.find((p) => p.slot === match.you);
   if (mine && mine.done && mine.place === 1 && !match.teams) celebrateWin();
   const watched = updateWatch(st);
-  const view = watched ? { pos: watched.idx + watched.p, ...handsOf(watched, t) } : { pos: myPos, wrong: myWrong, holding: myHolding };
+  const myAir = (now - pred.jumpAt) / 1000;
+  const view = watched
+    ? { pos: watched.idx + watched.p, air: watched.air, ...handsOf(watched, t) }
+    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1 };
   course.frame(now, { ...view, mates, energy: music.energy(), part: music.part() });
 
   // подсказки для меня
@@ -1538,6 +1582,8 @@ function render(now) {
     need.classList.add("bad");
   } else if (t < 0) {
     need.textContent = match.mirror ? "Зеркало: жми наоборот!" : `Первая стрелка: ${ARROW_CHAR[level[0].arrow]}`;
+  } else if (level[myIdx].ufo) {
+    need.textContent = "Прыгай: любая стрелка";
   } else if (speed) {
     if (now < pred.stunUntil) {
       need.textContent = "Не та стрелка! Пауза…";
@@ -1594,7 +1640,11 @@ window.addEventListener("keydown", (e) => {
 /** Стрелку зажали — с клавиатуры или экранной кнопкой. */
 function pressArrow(a) {
   const bit = 1 << a;
-  if (!(held & bit)) predictPress(bit); // автоповтор зажатой клавиши — не новое нажатие
+  // автоповтор зажатой клавиши — не новое нажатие
+  if (!(held & bit)) {
+    predictJump();
+    predictPress(bit);
+  }
   held |= bit;
   pushInput();
 }
@@ -1643,12 +1693,20 @@ for (const key of document.querySelectorAll("#touchpad [data-arrow]")) {
   key.addEventListener("contextmenu", (e) => e.preventDefault()); // долгое нажатие не открывает меню
 }
 
+/** Участок с НЛО: прыжок виден сразу, те же правила, что на сервере (Match.Jump). */
+function predictJump() {
+  const mine = match && lastState && lastState.players.find((p) => p.slot === match.you);
+  if (!mine || mine.out || mine.done) return;
+  const now = performance.now();
+  if (match.level[match.press ? pred.idx : mine.idx]?.ufo && now - pred.jumpAt >= match.jump * 1000) pred.jumpAt = now;
+}
+
 /** Режимы с нажатиями: те же правила, что на сервере (Match.Press), — чтобы ползунок заполнялся мгновенно. */
 function predictPress(bit) {
   if (!match || !match.press || !lastState) return;
   const now = performance.now();
   const t = lastState.t + Math.min((now - stateAt) / 1000, 0.2);
-  if (t < 0 || pred.out || pred.idx >= match.level.length || now < pred.stunUntil) return;
+  if (t < 0 || pred.out || pred.idx >= match.level.length || now < pred.stunUntil || match.level[pred.idx].ufo) return;
 
   pred.lastPress = now;
   if (bit === 1 << targetOf(match.level[pred.idx].arrow)) {

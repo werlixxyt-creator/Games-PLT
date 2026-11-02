@@ -85,8 +85,10 @@ public static class GameModes
 /// Один ползунок: какая стрелка нарисована и сколько секунд он заполняется (в быстром темпе — 0).
 /// Chart — ячейка «Чарт». Was — у ячеек за чартом: какой стрелкой она выглядит, пока чарт не пройден.
 /// Считается всегда Arrow: дойти до этих ячеек раньше чарта нельзя.
+/// Swam — ячейка «Свам», проходится как обычная. Ufo — ячейка за ней: её надо перепрыгнуть с НЛО,
+/// стрелка здесь не важна, а FillSeconds — сколько НЛО к ней подлетает.
 /// </summary>
-public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null);
+public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false);
 
 public static class LevelGenerator
 {
@@ -115,12 +117,12 @@ public static class LevelGenerator
             sliders[i] = new Slider(arrow, Math.Round(seconds, 2));
         }
 
-        AddCharts(sliders, fast, rnd);
+        AddSpecials(sliders, fast, rnd);
         return sliders;
     }
 
-    /// <summary>Расставляет чарты: за каждым идут одинаковые ячейки, прежняя стрелка остаётся в Was.</summary>
-    private static void AddCharts(Slider[] sliders, bool fast, Random rnd)
+    /// <summary>Расставляет чарты и свамы так, чтобы их участки не пересекались.</summary>
+    private static void AddSpecials(Slider[] sliders, bool fast, Random rnd)
     {
         var maxGap = fast ? GameRules.ChartMaxGapFast : GameRules.ChartMaxGap;
         var lastStart = sliders.Length - GameRules.ChartCells - 1;
@@ -129,13 +131,31 @@ public static class LevelGenerator
         var at = rnd.Next(1, Math.Min(maxGap, lastStart + 1));
         while (at <= lastStart)
         {
-            sliders[at] = sliders[at] with { Chart = true };
-            var same = (Arrow)rnd.Next(4);
-            for (var i = at + 1; i <= at + GameRules.ChartCells; i++)
-            {
-                sliders[i] = sliders[i] with { Arrow = same, Was = sliders[i].Arrow };
-            }
-            at += GameRules.ChartCells + 1 + rnd.Next(GameRules.ChartMinGap, maxGap);
+            var cells = rnd.NextDouble() < GameRules.SwamChance ? AddSwam(sliders, at) : AddChart(sliders, at, rnd);
+            at += cells + 1 + rnd.Next(GameRules.ChartMinGap, maxGap);
         }
+    }
+
+    /// <summary>Чарт: за ним идут одинаковые ячейки, прежняя стрелка остаётся в Was.</summary>
+    private static int AddChart(Slider[] sliders, int at, Random rnd)
+    {
+        sliders[at] = sliders[at] with { Chart = true };
+        var same = (Arrow)rnd.Next(4);
+        for (var i = at + 1; i <= at + GameRules.ChartCells; i++)
+        {
+            sliders[i] = sliders[i] with { Arrow = same, Was = sliders[i].Arrow };
+        }
+        return GameRules.ChartCells;
+    }
+
+    /// <summary>Свам: за ним идут ячейки-препятствия. Стрелка вверх на них только подсказывает, что надо прыгать.</summary>
+    private static int AddSwam(Slider[] sliders, int at)
+    {
+        sliders[at] = sliders[at] with { Swam = true };
+        for (var i = at + 1; i <= at + GameRules.SwamCells; i++)
+        {
+            sliders[i] = new Slider(Arrow.Up, GameRules.SwamCellSeconds, Ufo: true);
+        }
+        return GameRules.SwamCells;
     }
 }

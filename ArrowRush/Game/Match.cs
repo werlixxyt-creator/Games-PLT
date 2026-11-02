@@ -40,6 +40,11 @@ public sealed class Player
     public int Mistakes { get; set; }
     public bool Out { get; set; }
 
+    /// <summary>Участок с НЛО: когда начался последний прыжок, по игровому времени.</summary>
+    public double JumpAt { get; set; } = double.NegativeInfinity;
+    /// <summary>Сколько раз врезался в ячейку: клиент так узнаёт об ударе.</summary>
+    public int Crashes { get; set; }
+
     public double? FinishTime { get; set; }
     public int Place { get; set; }
     public bool Left { get; set; }
@@ -144,6 +149,12 @@ public sealed class Match
     {
         if (!p.Active) return;
 
+        if (Level[p.Index].Ufo)
+        {
+            Ride(p, dt);
+            return;
+        }
+
         if (Fast)
         {
             // люди продвигаются в SetInput, по нажатиям; здесь думает только бот
@@ -173,6 +184,42 @@ public sealed class Match
 
         if (p.Progress < 0) p.Progress = 0;
         if (p.Progress >= 1) Advance(p);
+    }
+
+    /// <summary>Участок с НЛО: персонаж сам летит к ячейке, и к её концу он должен быть в прыжке выше неё.</summary>
+    private void Ride(Player p, double dt)
+    {
+        if (p.IsBot) BotRide(p);
+
+        p.Progress += dt / Level[p.Index].FillSeconds;
+        if (p.Progress < 1) return;
+
+        if (ClearsCell(p)) Advance(p);
+        else Crash(p);
+    }
+
+    private bool ClearsCell(Player p)
+    {
+        var jump = (GameTime - p.JumpAt) / GameRules.SwamJumpSeconds;
+        return jump is >= GameRules.SwamClearFrom and <= GameRules.SwamClearTo;
+    }
+
+    /// <summary>Прыжок с НЛО; в воздухе ещё раз прыгнуть нельзя.</summary>
+    private void Jump(Player p)
+    {
+        if (GameTime - p.JumpAt >= GameRules.SwamJumpSeconds) p.JumpAt = GameTime;
+    }
+
+    /// <summary>Удар о ячейку. Где ошибка стоит дорого, считает режим, иначе участок с НЛО начинается заново.</summary>
+    private void Crash(Player p)
+    {
+        p.Crashes++;
+        p.JumpAt = double.NegativeInfinity;
+        p.BotSeenIndex = -1;
+        p.Progress = 0;
+
+        if (Punishes) Slip(p);
+        else while (Level[p.Index - 1].Ufo) p.Index--;
     }
 
     private void Advance(Player p)
@@ -239,7 +286,8 @@ public sealed class Match
         p.HeldMask = mask;
         if (pressed == 0) return;
 
-        if (Fast) Press(p, pressed);
+        if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Ufo) Jump(p);
+        else if (Fast) Press(p, pressed);
         else if (Punishes && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Slip(p);
     }
 
@@ -275,6 +323,22 @@ public sealed class Match
         {
             Press(bot, 1 << target);
         }
+    }
+
+    /// <summary>Бот прыгает так, чтобы над ячейкой быть в верхней точке, а иногда прозёвывает прыжок и врезается.</summary>
+    private void BotRide(Player bot)
+    {
+        bot.HeldMask = 0;
+        if (bot.BotSeenIndex != bot.Index)
+        {
+            bot.BotSeenIndex = bot.Index;
+            bot.BotWrong = _rnd.NextDouble() < BotMistakeChance(0.05) ? 1 : 0;
+            // разброс меньше окна, где персонаж выше ячейки
+            bot.BotWait = GameRules.SwamJumpSeconds * (0.5 + (_rnd.NextDouble() - 0.5) * 0.3);
+        }
+
+        var left = (1 - bot.Progress) * Level[bot.Index].FillSeconds;
+        if (bot.BotWrong == 0 && left <= bot.BotWait) Jump(bot);
     }
 
     private void BotThink(Player bot, double dt)
@@ -361,7 +425,8 @@ public sealed class Match
         stun = _diff.FastWrongStunSeconds,
         idleDrain = _diff.IdleDrainPerSecond,
         wrongDrain = _diff.WrongDrainPerSecond,
-        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was }),
+        jump = GameRules.SwamJumpSeconds,
+        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo }),
         players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, hero = p.Hero, team = p.Team }),
     };
 
@@ -376,6 +441,9 @@ public sealed class Match
             held = p.HeldMask,
             stun = GameTime < p.StunUntil,
             miss = p.Mistakes,
+            crash = p.Crashes,
+            // сколько секунд длится прыжок, -1 — на земле
+            air = GameTime - p.JumpAt < GameRules.SwamJumpSeconds ? Math.Round(GameTime - p.JumpAt, 2) : -1,
             @out = p.Out,
             done = p.Done,
             place = p.Place,

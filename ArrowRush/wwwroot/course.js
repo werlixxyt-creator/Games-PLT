@@ -25,6 +25,9 @@ const course = (() => {
   const CELL = 40;           // шаг стен коридора
   const TO_PORTAL = 340;     // от последнего ползунка до финишного портала
   const POP_SECONDS = 0.35;  // как долго лопается заполненная ячейка
+  const UFO_STEP = 320;      // участок с НЛО: расстояние между ячейками
+  const UFO_DROP = 150;      // насколько НЛО ниже пути
+  const JUMP_HEIGHT = 320;   // высота прыжка с НЛО: выше ячейки он в той же доле прыжка, что на сервере (SwamClearFrom)
 
   const KINDS = ["wave", "ship", "ball", "dash"];
   const THEME_IDS = ["violet", "ocean", "neon", "night"]; // как THEMES; лобби выбирает дизайн по этим именам
@@ -72,6 +75,9 @@ const course = (() => {
     const cell = opts.level[i];
     return cell.was !== null && reached <= cell.chartAt ? cell.was : cell.arrow;
   }
+
+  /** Ячейка, которую надо перепрыгнуть с НЛО. */
+  const ufoCell = (i) => !!opts.level[i]?.ufo;
 
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const rgba = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
@@ -125,9 +131,20 @@ const course = (() => {
     const colors = scene ? scenes.palettes[scene] : THEMES[style];
 
     for (let i = 0; i < level.length;) {
+      if (level[i].ufo) {
+        // участок с НЛО: ячейки стоят по прямой, иначе не рассчитать прыжок
+        const from = i, sx = x;
+        for (; i < level.length && level[i].ufo; i++) {
+          segs.push([[x, y], [x + UFO_STEP, y]]);
+          x += UFO_STEP;
+        }
+        sections.push({ from, to: i, kind: "ufo", x: sx });
+        continue;
+      }
       const prev = kind;
       do kind = Math.floor(rand() * KINDS.length); while (kind === prev);
-      const end = Math.min(level.length, i + (fast ? 6 + Math.floor(rand() * 7) : 2 + Math.floor(rand() * 2)));
+      let end = Math.min(level.length, i + (fast ? 6 + Math.floor(rand() * 7) : 2 + Math.floor(rand() * 2)));
+      for (let k = i; k < end; k++) if (level[k].ufo) end = k;
       sections.push({ from: i, to: end, kind: KINDS[kind], x });
       for (; i < end; i++) {
         const len = fast ? FAST_STEP : level[i].fill * HOLD_SPEED;
@@ -279,6 +296,17 @@ const course = (() => {
     bolt: { path: new Path2D("M9 -33 L-21 6 L-3 6 L-9 33 L21 -8 L3 -8 Z"), color: "#ffe14d" },
     gear: { path: starPath(10, 31, 22), color: "#9fb4d8" },
     moon: { path: new Path2D("M12 -30 A30 30 0 1 0 12 30 A23 23 0 1 1 12 -30 Z"), color: "#fff1b8" },
+  };
+
+  // скины НЛО: корпус, купол и цвета; какой надет, передаёт opts.ufo
+  const UFOS = {
+    classic: {
+      hull: new Path2D("M-66 6 C-44 -16 44 -16 66 6 C44 26 -44 26 -66 6 Z"),
+      dome: new Path2D("M-30 -8 C-26 -38 26 -38 30 -8 Z"),
+      color: "#7a8cff",
+      glass: "rgba(190,245,255,.7)",
+      lights: "#ffe14d",
+    },
   };
 
   // ---------- Частицы ----------
@@ -551,6 +579,33 @@ const course = (() => {
     ctx.lineTo(last.x, last.y);
   }
 
+  /** Части пути между a и b без участков с НЛО: там нет дороги, только ячейки. */
+  function roadRuns(a, b) {
+    const runs = [];
+    let from = a;
+    for (let i = Math.floor(a); i < b; i++) {
+      if (!ufoCell(i)) continue;
+      if (i > from) runs.push([from, i]);
+      from = i + 1;
+    }
+    if (b > from) runs.push([from, b]);
+    return runs;
+  }
+
+  /** Насколько персонаж сейчас ниже пути: падает на НЛО в начале участка, взлетает с него после конца. */
+  function dropAt(pos) {
+    const i = Math.floor(pos);
+    if (ufoCell(i)) return ufoCell(i - 1) ? UFO_DROP : UFO_DROP * Math.sin(Math.min(1, (pos - i) / 0.4) * Math.PI / 2);
+    return ufoCell(i - 1) ? UFO_DROP * (1 - Math.min(1, (pos - i) / 0.5)) : 0;
+  }
+
+  /** Высота прыжка; air — сколько секунд он длится, меньше нуля — на земле. */
+  function jumpLift(air) {
+    if (!(air >= 0)) return 0;
+    const k = Math.min(1, air / opts.jump);
+    return JUMP_HEIGHT * 4 * k * (1 - k);
+  }
+
   function visibleRange(right) {
     let i = Math.floor(s);
     const n = map.segs.length;
@@ -567,17 +622,18 @@ const course = (() => {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    ctx.strokeStyle = "rgba(255,255,255,.34)";
-    ctx.lineWidth = width + 8;
-    trace(s, last);
-    ctx.stroke();
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = width + 2;
-    trace(s, last);
-    ctx.stroke();
+    for (const [color, w] of [["rgba(255,255,255,.34)", width + 8], [OUTLINE, width + 2]]) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = w;
+      for (const [a, b] of roadRuns(s, last)) {
+        trace(a, b);
+        ctx.stroke();
+      }
+    }
 
     ctx.setLineDash(cells.dash(opts.cell));
     for (let i = cur; i < last && i < n; i++) {
+      if (ufoCell(i)) continue;
       const hidden = hiddenCell(i);
       ctx.globalAlpha = i === cur ? 0.62 : 0.3;
       ctx.strokeStyle = hidden ? "#8c88b4" : COLORS[arrowOf(i)];
@@ -597,14 +653,44 @@ const course = (() => {
     ctx.lineJoin = "round";
     ctx.lineWidth = opts.fast ? 22 : 30;
     for (let i = Math.floor(tail); i <= Math.min(Math.floor(s), n); i++) {
+      if (ufoCell(i)) continue;
       ctx.strokeStyle = opts.trailOf(Math.min(i, n - 1));
       trace(Math.max(tail, i), Math.min(s, i + 1));
       ctx.stroke();
     }
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = opts.fast ? 13 : 20;
-    trace(tail, s);
+    for (const [a, b] of roadRuns(tail, s)) {
+      trace(a, b);
+      ctx.stroke();
+    }
+  }
+
+  /** Подпись особой ячейки, видна издалека, в том числе во «Вслепую»: цветное кольцо и слово под ним. */
+  function drawBadge(r, text, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 9, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.font = "900 17px Unbounded, sans-serif";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 5;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = OUTLINE;
+    ctx.strokeText(text, 0, r + 36);
+    ctx.fillStyle = color;
+    ctx.fillText(text, 0, r + 36);
+  }
+
+  /** Столб под ячейкой-препятствием: через него НЛО не пролетит, поэтому ячейку надо перепрыгнуть. */
+  function drawPole() {
+    const h = UFO_DROP + 90;
+    ctx.fillStyle = rgba(mixRgb(palette.wall, [0, 0, 0], 0.18));
+    ctx.fillRect(-10, 0, 20, h);
+    ctx.strokeStyle = rgba(palette.wall2, 0.9);
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-10, 0, 20, h);
   }
 
   function drawKey(i, current, progress, wrong) {
@@ -616,6 +702,8 @@ const course = (() => {
 
     ctx.save();
     ctx.translate(p[0], p[1]);
+
+    if (ufoCell(i)) drawPole();
 
     if (current) {
       // кольцо сходится к стрелке — куда смотреть прямо сейчас
@@ -629,7 +717,7 @@ const course = (() => {
 
     cells.draw(ctx, {
       skin: opts.cell, r, color, t: time, hidden,
-      k: current && !opts.fast ? progress : 0,
+      k: current && !opts.fast && !ufoCell(i) ? progress : 0,
       wrong: wrong && current,
     });
 
@@ -645,22 +733,8 @@ const course = (() => {
       ctx.setLineDash([]);
     }
 
-    if (opts.level[i].chart) {
-      // чарт виден издалека: золотое кольцо и подпись, в том числе во «Вслепую»
-      ctx.strokeStyle = "#ffc93c";
-      ctx.lineWidth = 7;
-      ctx.beginPath();
-      ctx.arc(0, 0, r + 9, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.font = "900 17px Unbounded, sans-serif";
-      ctx.textAlign = "center";
-      ctx.lineWidth = 5;
-      ctx.lineJoin = "round";
-      ctx.strokeStyle = OUTLINE;
-      ctx.strokeText("ЧАРТ", 0, r + 36);
-      ctx.fillStyle = "#ffc93c";
-      ctx.fillText("ЧАРТ", 0, r + 36);
-    }
+    if (opts.level[i].chart) drawBadge(r, "ЧАРТ", "#ffc93c");
+    if (opts.level[i].swam) drawBadge(r, "СВАМ", "#39e6ff");
 
     if (hidden) {
       ctx.fillStyle = "#fff";
@@ -697,7 +771,7 @@ const course = (() => {
   function drawPortals(left, right) {
     for (let i = 1; i < map.sections.length; i++) {
       const sec = map.sections[i];
-      if (sec.x < left - 200 || sec.x > right + 200) continue;
+      if (sec.kind === "ufo" || sec.x < left - 200 || sec.x > right + 200) continue;
       const p = map.segs[sec.from][0];
       drawPortal(p[0], p[1], palette.glow, 104);
     }
@@ -723,6 +797,36 @@ const course = (() => {
     c.restore();
   }
 
+  /** НЛО под персонажем; k — насколько оно появилось, 0..1. */
+  function drawUfo(id, x, y, k) {
+    const ufo = UFOS[id] || UFOS.classic;
+    ctx.save();
+    ctx.translate(x, y + Math.sin(time * 6) * 4);
+    ctx.scale(k, k);
+    ctx.lineJoin = "round";
+    ctx.fillStyle = ufo.glass;
+    ctx.fill(ufo.dome);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 4;
+    ctx.stroke(ufo.dome);
+    ctx.fillStyle = ufo.color;
+    ctx.fill(ufo.hull);
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 7;
+    ctx.stroke(ufo.hull);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3.5;
+    ctx.stroke(ufo.hull);
+    ctx.fillStyle = ufo.lights;
+    for (let i = -2; i <= 2; i++) {
+      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(time * 9 + i * 1.4);
+      ctx.beginPath();
+      ctx.arc(i * 21, 7, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   /** Напарник летит по той же траектории со своим прогрессом; ушёл за край экрана — метка у края. */
   function drawMates(mates, dt) {
     const n = map.segs.length;
@@ -735,13 +839,19 @@ const course = (() => {
       const pos = clamp(was + (m.pos - was) * (1 - Math.exp(-dt * (opts.fast ? 24 : 34))), 0, n + 1);
       mateShown.set(m.slot, pos);
       const p = at(pos);
+      const drop = dropAt(pos);
 
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.strokeStyle = m.color;
       ctx.lineWidth = opts.fast ? 6 : 8;
-      trace(Math.max(0, pos - (opts.fast ? 8 : 3)), pos);
-      ctx.stroke();
+      for (const [a, b] of roadRuns(Math.max(0, pos - (opts.fast ? 8 : 3)), pos)) {
+        trace(a, b);
+        ctx.stroke();
+      }
+
+      if (drop > 1) drawUfo(opts.ufo, p.x, p.y + UFO_DROP + 46, 0.8 * drop / UFO_DROP);
+      p.y += drop - jumpLift(m.air);
 
       const x = clamp(p.x, edgeL, edgeR);
       const inside = x === p.x;
@@ -859,7 +969,7 @@ const course = (() => {
 
   // ---------- Что вызывает app.js ----------
 
-  /** @param o { seed, level, fast, sight — сколько ячеек видно (0 — все), mirror, theme — дизайн из лобби, cell — скин ячеек, hero — скин персонажа, trailOf(i) — кайма следа } */
+  /** @param o { seed, level, fast, sight — сколько ячеек видно (0 — все), mirror, theme — дизайн из лобби, cell — скин ячеек, hero — скин персонажа, ufo — скин НЛО, jump — секунд в прыжке с НЛО, trailOf(i) — кайма следа } */
   function start(o) {
     opts = o;
     // ячейки за чартом запоминают, какой чарт их меняет
@@ -898,6 +1008,12 @@ const course = (() => {
     pixels(p.x, p.y, 16, "#ff3b5c");
   }
 
+  /** Свам пройден: снизу выезжает НЛО. */
+  function swam() {
+    flash = Math.max(flash, 0.3);
+    shake = Math.max(shake, 0.3);
+  }
+
   /** Экранные координаты стрелки ползунка i — для искр на общем слое эффектов. */
   function point(i) {
     if (!map || !resize()) return [0, 0];
@@ -933,7 +1049,7 @@ const course = (() => {
   }
 
   /**
-   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, mates: [{ slot, pos, name, color }],
+   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, mates: [{ slot, pos, air, name, color }],
    * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null }.
    */
   function frame(now, o) {
@@ -970,6 +1086,9 @@ const course = (() => {
     }
 
     const me = at(s);
+    // камера смотрит на путь: НЛО и прыжки её не качают
+    const pathY = me.y, drop = dropAt(s);
+    me.y += drop - jumpLift(o.air);
     const sec = map.sections[section];
     camX = me.x;
     const camTarget = s >= n ? map.endY : wallAt(map.walls, me.x, map.walls.mid);
@@ -1011,6 +1130,7 @@ const course = (() => {
     drawPops(dt);
     drawMates(o.mates, dt);
     drawParts(dt);
+    if (drop > 1) drawUfo(opts.ufo, me.x, pathY + UFO_DROP + 46, drop / UFO_DROP);
 
     // у финишного портала персонаж уменьшается и исчезает
     const gone = clamp(n + 1 - s, 0, 1);
@@ -1033,5 +1153,5 @@ const course = (() => {
     }
   }
 
-  return { start, follow, frame, hit, filled, chart, point, paintHero };
+  return { start, follow, frame, hit, filled, chart, swam, point, paintHero };
 })();
