@@ -108,7 +108,7 @@ let lastPractice = false; // «Ещё матч» повторяет тот же 
 let skinSlot = "slider"; // открытая вкладка на экране скинов
 
 function newPrediction() {
-  return { idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false, jumpAt: -Infinity, lane: 1, laneAt: -Infinity };
+  return { idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false, jumpAt: -Infinity, lane: 1, laneAt: -Infinity, hops: 0 };
 }
 
 /** Какую стрелку надо нажать для нарисованной: в «Зеркале» — противоположную. */
@@ -1635,8 +1635,7 @@ function render(now) {
   const shown = watched || mine;
   const hole = shown && inRast(shown) ? shown.hole / match.holeStart : 1;
   const hp = shown && level[shown.idx]?.wall ? shown.hp : null;
-  // свой прыжок виден сразу, а потом верим серверу
-  const myLane = mine && now - pred.laneAt > 250 ? mine.lane : pred.lane;
+  const myLane = mine ? laneOf(mine, now) : pred.lane;
   const view = watched
     ? { pos: watched.idx + watched.p, air: watched.air, hole, hp, lane: watched.lane, ...handsOf(watched, t) }
     : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp, lane: myLane };
@@ -1799,13 +1798,26 @@ function predictJump() {
   if (match.level[match.press ? pred.idx : mine.idx]?.ufo && now - pred.jumpAt >= match.jump * 1000) pred.jumpAt = now;
 }
 
+const HOP_TIMEOUT = 1500; // столько ждём, что сервер учтёт прыжок: дольше — считаем нажатие потерянным
+
+/**
+ * Где паук: свой прыжок виден сразу, и эта линия держится, пока сервер его не учтёт.
+ * Верить серверу по времени нельзя: при большой задержке паук дёргается туда-обратно.
+ */
+function laneOf(mine, now) {
+  return mine.hops >= pred.hops || now - pred.laneAt > HOP_TIMEOUT ? mine.lane : pred.lane;
+}
+
 /** «Кловд»: паук перескакивает сразу, те же правила, что на сервере (Match.Hop). */
 function predictHop(bit) {
   const mine = match && lastState && lastState.players.find((p) => p.slot === match.you);
   if (!mine || mine.out || mine.done || match.level[mine.idx]?.zone !== "cloud") return;
-  const from = performance.now() - pred.laneAt > 250 ? mine.lane : pred.lane;
+  const now = performance.now();
+  const from = laneOf(mine, now);
+  if (now - pred.laneAt > HOP_TIMEOUT) pred.hops = mine.hops;
+  pred.hops = Math.max(pred.hops, mine.hops) + 1;
   pred.lane = bit === 2 ? 0 : bit === 8 ? 1 : 1 - from;
-  pred.laneAt = performance.now();
+  pred.laneAt = now;
   if (pred.lane !== from) music.sting("hop");
 }
 

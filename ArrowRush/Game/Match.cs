@@ -52,6 +52,8 @@ public sealed class Player
 
     /// <summary>«Кловд»: на какой линии паук, 0 — потолок, 1 — пол.</summary>
     public int Lane { get; set; } = 1;
+    /// <summary>Сколько прыжков паука дошло до сервера: так клиент узнаёт, что его прыжок учтён.</summary>
+    public int Hops { get; set; }
 
     /// <summary>«Радуга»: какую стену ломает игрок, -1 — никакую.</summary>
     public int WallAt { get; set; } = -1;
@@ -270,8 +272,11 @@ public sealed class Match
     }
 
     /// <summary>↑ — на потолок, ↓ — на пол, остальные стрелки перебрасывают на другую линию.</summary>
-    private static void Hop(Player p, int pressed) =>
+    private static void Hop(Player p, int pressed)
+    {
+        p.Hops++;
         p.Lane = (pressed & (1 << (int)Arrow.Up)) != 0 ? 0 : (pressed & (1 << (int)Arrow.Down)) != 0 ? 1 : 1 - p.Lane;
+    }
 
     /// <summary>Бот уходит с линии стрелки незадолго до неё, а иногда зевает.</summary>
     private void BotDodge(Player bot)
@@ -618,6 +623,7 @@ public sealed class Match
             crash = p.Crashes,
             hole = Math.Round(p.HoleGap, 2),
             lane = p.Lane,
+            hops = p.Hops,
             hp = p.WallAt == p.Index ? Math.Max(0, p.WallLives) : GameRules.WallLives,
             hits = p.WallAt == p.Index ? p.WallHits : 0,
             // сколько секунд длится прыжок, -1 — на земле
