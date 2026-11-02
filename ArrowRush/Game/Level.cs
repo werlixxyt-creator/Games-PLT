@@ -104,7 +104,7 @@ public static class LevelGenerator
     /// <summary>Ивент «Раст»: он длиннее других и стоит отдельно, см. <see cref="AddRast"/>.</summary>
     public const string Rast = "rast";
 
-    /// <summary>Ивент «Радуга»: человечки на радуге ставят стены, см. <see cref="AddRainbow"/>.</summary>
+    /// <summary>Ивент «Радуга»: глаза с крыльями ставят стены, см. <see cref="AddRainbow"/>. Его ячейка выглядит обычной: он начинается внезапно.</summary>
     public const string Rainbow = "rainbow";
 
     /// <param name="fast">Быстрый темп: ползунок — одно нажатие, зато их больше.</param>
