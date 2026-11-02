@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
   <!-- Летящие стрелки на canvas; занавес закрывает смену экранов. -->
@@ -640,18 +640,19 @@
     </symbol>
   </svg>
 
-  <script src="lib/signalr.min.js"></script>
-  <script src="fx.js"></script>
-  <script src="rhythm.js"></script>
-  <script src="music.js"></script>
-  <script src="scenes.js"></script>
-  <script src="cells.js"></script>
-  <script src="course.js"></script>
-  <script src="victory.js"></script>
-  <script src="social.js"></script>
-  <script src="rewards.js"></script>
-  <script src="lobby.js"></script>
-  <script src="app.js"></script>
-  <script src="fullscreen.js"></script>
+  <!-- ?v=2 разово сбрасывает файлы, закэшированные до Cache-Control: no-cache (Program.cs); менять при деплое не нужно -->
+  <script src="lib/signalr.min.js?v=2"></script>
+  <script src="fx.js?v=2"></script>
+  <script src="rhythm.js?v=2"></script>
+  <script src="music.js?v=2"></script>
+  <script src="scenes.js?v=2"></script>
+  <script src="cells.js?v=2"></script>
+  <script src="course.js?v=2"></script>
+  <script src="victory.js?v=2"></script>
+  <script src="social.js?v=2"></script>
+  <script src="rewards.js?v=2"></script>
+  <script src="lobby.js?v=2"></script>
+  <script src="app.js?v=2"></script>
+  <script src="fullscreen.js?v=2"></script>
 </body>
 </html>

@@ -66,7 +66,11 @@ app.EnsureDatabase();
 
 app.UseForwardedHeaders();
 app.UseDefaultFiles();   // отдаёт wwwroot/index.html на "/"
-app.UseStaticFiles();
+// no-cache: браузер хранит файл, но сверяет его с сервером, иначе после деплоя смешает новую страницу со старыми стилями
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
+});
 
 app.UseAuthentication();
 app.UseAuthorization();
