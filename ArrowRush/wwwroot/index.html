@@ -4,6 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Arrow Rush</title>
+  <script>
+    // телефон открывает игру в рамке размером с экран ПК (phone.html); планшету хватает обычной страницы
+    if (top === self && matchMedia("(hover: none) and (pointer: coarse)").matches
+      && Math.min(screen.width, screen.height) < 600) location.replace("phone.html");
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
@@ -16,15 +21,11 @@
   <div class="planet" aria-hidden="true"></div>
   <div id="curtain" class="curtain" aria-hidden="true"><span>ARROW <i>RUSH</i></span></div>
 
-  <!-- Чёрный экран при входе (fullscreen.js) и просьба повернуть телефон там, где браузер не умеет сам (iPhone). -->
+  <!-- Чёрный экран при входе (fullscreen.js); у телефона он в phone.html. -->
   <div id="fs-gate" class="fs-gate">
     <p class="fs-touch">Нажми на кнопку для полноэкранного режима</p>
     <button id="fs-button" class="btn primary fs-touch" type="button">На весь экран</button>
     <p class="fs-desktop">Нажми F11 для полноэкранного режима</p>
-  </div>
-  <div class="rotate-hint">
-    <p>Поверни телефон горизонтально</p>
-    <p class="muted">Если экран не поворачивается, отключи блокировку поворота</p>
   </div>
 
   <main id="app">

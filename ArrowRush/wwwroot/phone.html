@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Arrow Rush</title>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@900&family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="phone-shell">
+  <!-- Игра на телефоне: обычная страница в рамке размером с экран ПК, phone.js уменьшает рамку под телефон.
+       Полноэкранный Chrome игнорирует ширину из meta viewport, а размер рамки соблюдает всегда. -->
+  <iframe id="app" src="index.html" title="Arrow Rush" allow="autoplay"></iframe>
+
+  <div id="fs-gate" class="fs-gate">
+    <p class="fs-touch">Нажми на кнопку для полноэкранного режима</p>
+    <button id="fs-button" class="btn primary fs-touch" type="button">На весь экран</button>
+  </div>
+  <!-- там, где браузер не умеет поворачивать экран сам (iPhone) -->
+  <div class="rotate-hint">
+    <p>Поверни телефон горизонтально</p>
+    <p class="muted">Если экран не поворачивается, отключи блокировку поворота</p>
+  </div>
+
+  <script src="phone.js"></script>
+  <script src="fullscreen.js"></script>
+</body>
+</html>

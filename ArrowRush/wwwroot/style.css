@@ -113,8 +113,21 @@ body {
   .fs-gate .fs-touch { display: block; }
   .fs-gate .fs-desktop { display: none; }
 }
-@media (hover: none) and (pointer: coarse) and (orientation: portrait) and (max-width: 600px) {
+@media (hover: none) and (pointer: coarse) and (orientation: portrait) {
   .rotate-hint { display: flex; }
+}
+
+/* phone.html: рамка с игрой, размер и масштаб задаёт phone.js */
+body.phone-shell { overflow: hidden; background: #000; animation: none; }
+.phone-shell #app {
+  position: fixed;
+  top: 0;
+  left: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  transform-origin: 0 0;
 }
 
 /* ---------- Смена экранов: занавес уезжает вверх ---------- */
@@ -1420,8 +1433,9 @@ h3 {
 }
 
 /* телефон горизонтально: высоты мало, поэтому кнопки встают по бокам от сцены — под большие пальцы */
-@media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 600px) {
-  :root { --key: min(84px, 36vh); --side: calc(var(--key) + 20px); }
+@media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 800px) {
+  /* страница здесь уменьшена как на ПК (phone.js), поэтому кнопки в CSS-пикселях крупнее */
+  :root { --key: min(130px, 36vh); --side: calc(var(--key) + 24px); }
 
   .touchpad {
     --tk: var(--key);
@@ -1441,25 +1455,29 @@ h3 {
 
   #screen-game.active { background: #0e0a26; }
   #screen-game .stage { inset: 0 var(--side); }
-  #screen-game .hud { top: 6px; left: calc(var(--side) + 8px); right: calc(var(--side) + 8px); gap: 14px; padding: 4px 10px; }
-  #screen-game .hud-label, #hud-tag, #rh-title { display: none; }
-  .hud-value { font-size: 18px; }
-  #btn-leave { padding: 4px 12px; flex: none; }
-  #screen-game .opponents { left: calc(var(--side) + 8px); right: calc(var(--side) + 8px); bottom: 6px; gap: 4px; }
-  #screen-game .opp { padding: 2px 8px; }
-  #screen-game .opp .track-name { font-size: 12px; }
-  #screen-game .opp-bar { height: 12px; }
-  #screen-game .opp-bar span { display: none; }
-  #screen-game .combo, #screen-game .stage .track-name { top: 64px; }
-  #screen-game .need { bottom: 40px; font-size: 15px; }
-  #cd-num { font-size: 100px; }
-  .countdown.go #cd-num { font-size: 60px; }
+  #screen-game .hud { left: calc(var(--side) + 12px); right: calc(var(--side) + 12px); }
+  #screen-game .opponents { left: calc(var(--side) + 12px); right: calc(var(--side) + 12px); bottom: 10px; }
 
-  #screen-rhythm.active { position: fixed; inset: 0; padding: 6px var(--side); background: #0e0a26; }
-  #screen-rhythm .hud { gap: 14px; padding: 4px 10px; }
-  .rh-stage { flex: 1; height: auto; min-height: 0; margin-top: 6px; }
+  #screen-rhythm.active { position: fixed; inset: 0; padding: 10px var(--side); background: #0e0a26; }
+  .rh-stage { flex: 1; height: auto; min-height: 0; }
 
-  #screen-lobby .lobby-logo { display: none; } /* на его месте кнопка профиля */
+  /* выбор режима не помещается по высоте: карусель слева, настройки и «Найти матч» справа */
+  body[data-screen="modes"] #app { max-width: 1320px; }
+  #mode-panel-match {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 440px;
+    column-gap: 24px;
+    justify-items: center;
+    align-items: center;
+    width: 100%;
+  }
+  #mode-panel-match .carousel { grid-area: 1 / 1 / 5 / 2; }
+  #mode-panel-match .mode-dots { grid-area: 5 / 1; margin-bottom: 0; }
+  #mode-panel-match .tabs.pace { grid-area: 1 / 2; }
+  #mode-panel-match .tabs.diff { grid-area: 2 / 2; }
+  #mode-panel-match .diff-desc { grid-area: 3 / 2; }
+  #mode-panel-match .mode-actions { grid-area: 4 / 2; }
+  #mode-panel-match .keys-hint { display: none; }
 }
 
 /* ---------- Режимы в игре ---------- */
