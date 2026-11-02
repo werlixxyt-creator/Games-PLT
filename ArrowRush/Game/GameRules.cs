@@ -32,8 +32,13 @@ public static class GameRules
     public const int ChartMaxGap = 5;
     public const int ChartMaxGapFast = 14;
 
-    // Ивенты: особая ячейка меняет следующие ячейки. Каждая особая ячейка выбирается
-    // из явлений поровну: свам, чарт, овердрайв, шторм, переворот, «Радуга», «Кловд» и «Раст» (см. LevelGenerator)
+    // Ивенты: особая ячейка меняет следующие ячейки. Какое явление выпадет, зависит от веса:
+    // чем он больше, тем чаще (см. LevelGenerator)
+    /// <summary>Свам, чарт, овердрайв, шторм, переворот и «Раст».</summary>
+    public const int SpecialWeight = 2;
+    public const int CloudWeight = 4;
+    /// <summary>«Радуга» ещё и бывает не больше раза за уровень.</summary>
+    public const int RainbowWeight = 1;
     /// <summary>Длина ивента: не длиннее <see cref="SwamCells"/>, чтобы он помещался и в короткий уровень.</summary>
     public const int EventCells = 6;
     /// <summary>«Овердрайв»: во сколько раз быстрее заполняются ячейки при удержании.</summary>
@@ -52,7 +57,7 @@ public static class GameRules
     public const double SwamClearTo = 0.88;
 
     // Ивент «Кловд»: игрок становится пауком и уклоняется от стрелок, перескакивая между потолком и полом
-    /// <summary>Сколько стрелок летит: по одной на ячейку.</summary>
+    /// <summary>Сколько стрелок летит: по одной на ячейку. Эти ячейки добавляются к уровню.</summary>
     public const int CloudCells = 8;
     /// <summary>Через сколько секунд прилетает следующая стрелка.</summary>
     public const double CloudCellSeconds = 0.7;
