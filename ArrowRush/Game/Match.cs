@@ -47,6 +47,8 @@ public sealed class Player
 
     /// <summary>«Раст»: через сколько секунд чёрная дыра догонит игрока.</summary>
     public double HoleGap { get; set; }
+    /// <summary>«Раст»: сколько секунд дыра ещё стоит на месте.</summary>
+    public double HolePause { get; set; }
 
     public double? FinishTime { get; set; }
     public int Place { get; set; }
@@ -239,10 +241,23 @@ public sealed class Match
         if (p.IsBot) BotRast(p, dt);
         if (!p.Active || !InRast(p)) return; // бот мог пройти последнюю ячейку
 
+        if (p.HolePause > 0)
+        {
+            p.HolePause -= dt;
+            return;
+        }
+
         p.HoleGap -= _diff.RastDrain * dt;
         if (p.HoleGap > 0) return;
         p.HoleGap = 0;
         p.Out = true;
+    }
+
+    /// <summary>Дыра появляется у правого края и стоит, пока игрок её не увидит.</summary>
+    private static void StartHole(Player p)
+    {
+        p.HoleGap = GameRules.RastStartGap;
+        p.HolePause = GameRules.RastPauseSeconds;
     }
 
     /// <summary>«Раст»: нажатие считается сразу в любом темпе. Верное отгоняет дыру, неверное подпускает.</summary>
@@ -285,7 +300,7 @@ public sealed class Match
         }
         else if (InRast(p) && Level[p.Index - 1].Zone != LevelGenerator.Rast)
         {
-            p.HoleGap = GameRules.RastStartGap;
+            StartHole(p);
         }
     }
 
@@ -322,7 +337,7 @@ public sealed class Match
         {
             p.Index = Math.Max(0, p.Index - _rules.Setback);
             p.Progress = 0;
-            if (InRast(p)) p.HoleGap = GameRules.RastStartGap; // ошибка отбросила обратно в «Раст»
+            if (InRast(p)) StartHole(p); // ошибка отбросила обратно в «Раст»
         }
         else if (++p.Mistakes >= _rules.Lives)
         {
@@ -481,7 +496,7 @@ public sealed class Match
         idleDrain = _diff.IdleDrainPerSecond,
         wrongDrain = _diff.WrongDrainPerSecond,
         jump = GameRules.SwamJumpSeconds,
-        holeMax = GameRules.RastMaxGap,
+        holeStart = GameRules.RastStartGap,
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone }),
         players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, hero = p.Hero, team = p.Team }),
     };

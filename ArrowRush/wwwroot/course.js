@@ -1077,12 +1077,12 @@ const course = (() => {
     ctx.fillRect(0, 0, w, h);
   }
 
-  /** Где чёрная дыра на экране: k — насколько она далеко, 1 — у правого края; пока ивент начинается, она выезжает из-за него. */
+  /** Где чёрная дыра на экране: k — насколько она далеко: 1 — старт у правого края, больше — отогнана за него; пока ивент начинается, она выезжает справа. */
   function holePoint(k, pathY) {
     return {
-      x: cssW * PLAYER_AT + 70 * scale + k * cssW * 0.6 + (1 - zones.rast) * cssW * 0.6,
+      x: cssW * PLAYER_AT + 70 * scale + k * cssW * 0.68 + (1 - zones.rast) * cssW * 0.6,
       y: cssH / 2 + (pathY - camY) * scale,
-      r: cssH * (0.24 + (1 - k) * 0.12),
+      r: cssH * (0.24 + Math.max(0, 1 - k) * 0.12),
     };
   }
 
@@ -1434,7 +1434,7 @@ const course = (() => {
   }
 
   /**
-   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, hole — дыра «Раста», 0..1 от игрока к краю, mates: [{ slot, pos, air, name, color }],
+   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, hole — дыра «Раста»: 0 — у игрока, 1 — у правого края, больше — за ним, mates: [{ slot, pos, air, name, color }],
    * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null, final — близко к финишу }.
    */
   function frame(now, o) {
@@ -1488,7 +1488,7 @@ const course = (() => {
 
     // «Раст»: чем ближе дыра, тем сильнее трясёт; она затягивает частицы
     holeShown += ((o.hole ?? 1) - holeShown) * (1 - Math.exp(-dt * 14));
-    const close = zoneNow === "rast" ? 1 - holeShown : 0;
+    const close = zoneNow === "rast" ? Math.max(0, 1 - holeShown) : 0;
     shake = Math.max(shake, close * close * 0.9);
     if (eaten > 0) eaten = Math.min(1, eaten + dt / 0.7);
 

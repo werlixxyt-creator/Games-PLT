@@ -1094,7 +1094,7 @@ function startMatch(d) {
     wrongDrain: d.wrongDrain,
     stun: d.stun,
     jump: d.jump,
-    holeMax: d.holeMax,
+    holeStart: d.holeStart,
     tracks: new Map(),
   };
   pred = newPrediction();
@@ -1601,7 +1601,7 @@ function render(now) {
   const watched = updateWatch(st);
   const myAir = (now - pred.jumpAt) / 1000;
   const shown = watched || mine;
-  const hole = shown && inRast(shown) ? shown.hole / match.holeMax : 1;
+  const hole = shown && inRast(shown) ? shown.hole / match.holeStart : 1;
   const view = watched
     ? { pos: watched.idx + watched.p, air: watched.air, hole, ...handsOf(watched, t) }
     : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole };

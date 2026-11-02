@@ -56,6 +56,8 @@ public static class GameRules
     public const int RastCells = 40;
     /// <summary>Сколько секунд дыра идёт до игрока в начале и насколько далеко её можно отогнать.</summary>
     public const double RastStartGap = 3;
+    /// <summary>Сколько секунд дыра стоит у правого края, пока гаснет мир: игрок должен увидеть её там и успеть среагировать.</summary>
+    public const double RastPauseSeconds = 1.3;
     public const double RastMaxGap = 4;
     /// <summary>Насколько отгоняет верное нажатие и подпускает неверное, в секундах.</summary>
     public const double RastGain = 0.18;
@@ -112,21 +114,21 @@ public static class Difficulties
             IdleDrainPerSecond: 0.2, WrongDrainPerSecond: 0.7,
             FastWrongStunSeconds: 0.35,
             BotReaction: 1.8, BotMistakes: 2,
-            RastDrain: 0.8),
+            RastDrain: 0.95),
         [Difficulty.Normal] = new("normal",
             MinSliders: 18, MaxSliders: 30, FastMinSliders: 60, FastMaxSliders: 90,
             MinFillSeconds: 0.6, MaxFillSeconds: 1.6,
             IdleDrainPerSecond: 0.35, WrongDrainPerSecond: 1.2,
             FastWrongStunSeconds: 0.5,
             BotReaction: 1, BotMistakes: 1,
-            RastDrain: 1.05),
+            RastDrain: 1.25),
         [Difficulty.Hard] = new("hard",
             MinSliders: 27, MaxSliders: 39, FastMinSliders: 84, FastMaxSliders: 114,
             MinFillSeconds: 0.45, MaxFillSeconds: 1.2,
             IdleDrainPerSecond: 0.55, WrongDrainPerSecond: 1.7,
             FastWrongStunSeconds: 0.7,
             BotReaction: 0.6, BotMistakes: 0.4,
-            RastDrain: 1.3),
+            RastDrain: 1.6),
     };
 
     public static DifficultyRules Rules(this Difficulty difficulty) => All[difficulty];
