@@ -33,8 +33,8 @@ public static class GameRules
     public const int ChartMaxGapFast = 30;
 
     // Ячейка «Свам»: персонаж падает на НЛО и перепрыгивает следующие ячейки
-    /// <summary>Какая доля особых ячеек — свамы, остальные — чарты.</summary>
-    public const double SwamChance = 0.5;
+    /// <summary>Какая доля особых ячеек после первой — свамы, остальные — чарты. Первая всегда свам.</summary>
+    public const double SwamChance = 0.6;
     public const int SwamCells = 6;
     /// <summary>За сколько секунд НЛО подлетает к следующей ячейке.</summary>
     public const double SwamCellSeconds = 0.9;

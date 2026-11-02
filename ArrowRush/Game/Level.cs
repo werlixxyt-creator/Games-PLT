@@ -121,18 +121,26 @@ public static class LevelGenerator
         return sliders;
     }
 
-    /// <summary>Расставляет чарты и свамы так, чтобы их участки не пересекались.</summary>
+    /// <summary>
+    /// Расставляет чарты и свамы так, чтобы их участки не пересекались.
+    /// Первая особая ячейка уровня всегда свам: он есть в каждом матче, даже самом коротком.
+    /// Участок свама короче, поэтому у конца уровня, где чарт не помещается, тоже встаёт свам.
+    /// </summary>
     private static void AddSpecials(Slider[] sliders, bool fast, Random rnd)
     {
         var maxGap = fast ? GameRules.ChartMaxGapFast : GameRules.ChartMaxGap;
-        var lastStart = sliders.Length - GameRules.ChartCells - 1;
-        if (lastStart < 1) return;
+        var lastSwam = sliders.Length - GameRules.SwamCells - 1;
+        var lastChart = sliders.Length - GameRules.ChartCells - 1;
+        if (lastSwam < 1) return;
 
-        var at = rnd.Next(1, Math.Min(maxGap, lastStart + 1));
-        while (at <= lastStart)
+        var at = rnd.Next(1, Math.Min(maxGap, lastSwam + 1));
+        var first = true;
+        while (at <= lastSwam)
         {
-            var cells = rnd.NextDouble() < GameRules.SwamChance ? AddSwam(sliders, at) : AddChart(sliders, at, rnd);
+            var swam = first || at > lastChart || rnd.NextDouble() < GameRules.SwamChance;
+            var cells = swam ? AddSwam(sliders, at) : AddChart(sliders, at, rnd);
             at += cells + 1 + rnd.Next(GameRules.ChartMinGap, maxGap);
+            first = false;
         }
     }
 
