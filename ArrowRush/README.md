@@ -147,7 +147,7 @@ HTTP API: `POST /api/account/register`, `POST /api/account/login` (тело `{ u
 `POST /api/account/skin` (тело `{ slot, id }`, надеть открытый скин),
 `POST /api/account/profile` (тело `{ userName, about, color }`, изменить свой профиль).
 
-Профили и друзья: `GET /api/account/players?q=` (поиск по началу ника), `GET /api/account/players/{ник}`,
+Профили и друзья: `GET /api/account/players?q=` (до 50 игроков по началу ника, без `q` — все по алфавиту), `GET /api/account/players/{ник}`,
 `GET /api/account/friends`, `POST /api/account/friends/request`, `/accept` и `/remove` (тело `{ userName }`).
 При изменении заявок второй игрок получает из хаба событие `friends`.
 Когда матч записан в базу, его участники получают событие `stats`.

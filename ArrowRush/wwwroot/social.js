@@ -61,6 +61,7 @@ const social = (() => {
 
   /** Закрывает панель. */
   function close() {
+    clearTimeout(searchTimer);
     setOpen(false);
     showList();
     $("friend-search").value = "";
@@ -327,30 +328,51 @@ const social = (() => {
     setOpen(true);
   }
 
-  /** Поиск по мере ввода: ждём паузу, устаревший ответ отбрасываем. */
+  /** Строка списка игроков: кнопка зависит от того, кем игрок тебе приходится. */
+  function searchRow(p) {
+    const act = (path) => async () => {
+      if (await call(path, p.userName, $("friend-error"))) await Promise.all([loadFriends(), loadPlayers()]);
+    };
+    const label = (text) => {
+      const b = button(text, "ghost", () => {});
+      b.disabled = true;
+      return b;
+    };
+    if (p.relation === "none") return personRow(p, button("Добавить", "primary", act("friends/request")));
+    if (p.relation === "incoming") return personRow(p, button("Принять", "primary", act("friends/accept")));
+    return personRow(p, label(p.relation === "friends" ? "В друзьях" : "Заявка отправлена"));
+  }
+
+  function note(text) {
+    const li = document.createElement("li");
+    li.className = "muted small";
+    li.textContent = text;
+    return li;
+  }
+
+  /** Список игроков: все зарегистрированные или те, чей ник начинается с введённого. Устаревший ответ отбрасываем. */
+  async function loadPlayers() {
+    const q = $("friend-search").value.trim();
+    try {
+      const r = await o.api("GET", "players?q=" + encodeURIComponent(q));
+      if (!r.ok || !isOpen() || $("friend-search").value.trim() !== q) return;
+      const rows = r.data.players.map(searchRow);
+      if (rows.length === 0) rows.push(note("Никого не нашли"));
+      if (r.data.more) rows.push(note("Показаны не все: продолжи вводить ник"));
+      $("search-list").replaceChildren(...rows);
+    } catch { /* попробует при следующем вводе */ }
+  }
+
+  /** Ждём паузу в наборе. */
   function onSearch() {
     clearTimeout(searchTimer);
-    const q = $("friend-search").value.trim();
-    if (q.length < 2) { $("search-list").innerHTML = ""; return; }
-    searchTimer = setTimeout(async () => {
-      try {
-        const r = await o.api("GET", "players?q=" + encodeURIComponent(q));
-        if (!r.ok || $("friend-search").value.trim() !== q) return;
-        if (r.data.length === 0) {
-          const none = document.createElement("li");
-          none.className = "muted small";
-          none.textContent = "Никого не нашли";
-          $("search-list").replaceChildren(none);
-        } else {
-          fillList("search-list", r.data, (p) => personRow(p));
-        }
-      } catch { /* попробует при следующем вводе */ }
-    }, 250);
+    searchTimer = setTimeout(loadPlayers, 250);
   }
 
   /** Сервер сообщил, что заявки изменились. */
   function changed() {
     loadFriends();
+    if ($("search-list").childElementCount > 0) loadPlayers();
     if ($("pf-edit").hidden) reload();
   }
 
@@ -372,6 +394,7 @@ const social = (() => {
     $("btn-my-profile").addEventListener("click", () => open(o.me().userName));
     $("btn-profile-back").addEventListener("click", showList);
     $("friend-search").addEventListener("input", onSearch);
+    $("friend-search").addEventListener("focus", loadPlayers);
     $("pf-edit").addEventListener("submit", saveEdit);
     $("pf-edit-cancel").addEventListener("click", stopEdit);
     $("pf-edit-about").addEventListener("input", renderCount);

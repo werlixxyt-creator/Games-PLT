@@ -14,8 +14,8 @@ public static class SocialEndpoints
 {
     /// <summary>Сколько всего друзей и отправленных заявок может быть у игрока.</summary>
     public const int MaxFriends = 100;
-    public const int MinSearchLength = 2;
-    public const int SearchResults = 10;
+    /// <summary>Сколько игроков в списке за раз; остальных находят, вводя ник.</summary>
+    public const int SearchResults = 50;
     /// <summary>Сколько последних матчей видно в чужом профиле.</summary>
     public const int ProfileMatches = 5;
 
@@ -46,22 +46,38 @@ public static class SocialEndpoints
 
     private static IResult NotFound() => AccountEndpoints.Error("Игрок не найден", 404);
 
-    /// <summary>Поиск игроков по началу ника, без учёта регистра.</summary>
+    /// <summary>Кем другой игрок приходится мне: none, outgoing, incoming или friends.</summary>
+    private static string Relation(Friendship? link, string me) =>
+        link is null ? "none" : link.Accepted ? "friends" : link.FromId == me ? "outgoing" : "incoming";
+
+    /// <summary>Игроки по началу ника, без учёта регистра; пустой запрос — все по алфавиту. more — в список вошли не все.</summary>
     private static async Task<IResult> Search(string? q, ClaimsPrincipal principal, UserManager<AppUser> users, AppDb db)
     {
-        var query = (q ?? "").Trim();
-        if (query.Length < MinSearchLength) return Results.Ok(Array.Empty<object>());
-
         var me = Me(principal);
-        var prefix = users.NormalizeName(query);
+        var prefix = users.NormalizeName((q ?? "").Trim());
         var found = await db.Users
             .Where(u => u.Id != me && u.NormalizedUserName!.StartsWith(prefix))
             .OrderBy(u => u.NormalizedUserName)
-            .Take(SearchResults)
-            .Select(u => new { userName = u.UserName, u.AvatarColor })
+            .Take(SearchResults + 1)
+            .Select(u => new { u.Id, u.UserName, u.AvatarColor })
             .ToListAsync();
 
-        return Results.Ok(found.Select(u => new { u.userName, color = AccountEndpoints.AvatarColor(u.AvatarColor) }));
+        var shown = found.Take(SearchResults).ToList();
+        var ids = shown.Select(u => u.Id).ToList();
+        var links = await db.Friendships
+            .Where(f => (f.FromId == me && ids.Contains(f.ToId)) || (f.ToId == me && ids.Contains(f.FromId)))
+            .ToListAsync();
+
+        return Results.Ok(new
+        {
+            players = shown.Select(u => new
+            {
+                userName = u.UserName,
+                color = AccountEndpoints.AvatarColor(u.AvatarColor),
+                relation = Relation(links.FirstOrDefault(f => f.FromId == u.Id || f.ToId == u.Id), me),
+            }),
+            more = found.Count > SearchResults,
+        });
     }
 
     /// <summary>Профиль игрока. relation: self, none, outgoing, incoming или friends.</summary>
@@ -72,10 +88,7 @@ public static class SocialEndpoints
 
         var me = Me(principal);
         var link = await FindLinkAsync(db, me, user.Id);
-        var relation = user.Id == me ? "self"
-            : link is null ? "none"
-            : link.Accepted ? "friends"
-            : link.FromId == me ? "outgoing" : "incoming";
+        var relation = user.Id == me ? "self" : Relation(link, me);
 
         var achievements = await AccountEndpoints.LoadAchievementsAsync(db, user.Id);
 
