@@ -434,6 +434,7 @@ const music = (() => {
     unlock();
     stop(0);
     stopOnce(0.4);
+    stopPreview();
     levelNow = null;
     finalNow = false;
     slotOffsets.clear(); // в новом матче свои треки начинаются сначала
@@ -472,11 +473,10 @@ const music = (() => {
       lp.frequency.setValueAtTime(700, drop - 0.3);
       lp.frequency.exponentialRampToValueAtTime(20000, drop);
     }
-    const s = ctx.createBufferSource();
-    s.buffer = buf;
-    s.loop = true;
+    const st = startOf("match", buf);
+    const s = loopFrom(buf, st);
     s.connect(lp).connect(g).connect(out);
-    s.start(t);
+    s.start(t, st);
     matchSource = s;
     return true;
   }
@@ -981,6 +981,7 @@ const music = (() => {
     menuWanted = on;
     if (!ctx) return; // заиграет по первому нажатию — см. unlock()
     if (on) stopOnce(); // трек победы или поражения уступает меню
+    else stopPreview();
     if (on) startMenu();
     else stopMenu();
   }
@@ -1026,11 +1027,10 @@ const music = (() => {
   async function playCustom(out) {
     const buf = await loadFile("menu");
     if (menuBus !== out || !buf) return; // пока грузили, ушли с экрана меню
-    const s = ctx.createBufferSource();
-    s.buffer = buf;
-    s.loop = true;
+    const st = startOf("menu", buf);
+    const s = loopFrom(buf, st);
     s.connect(out);
-    s.start();
+    s.start(ctx.currentTime, st);
     menuSource = s;
   }
 
@@ -1041,6 +1041,8 @@ const music = (() => {
     f.buffer = await ctx.decodeAudioData(await file.arrayBuffer()); // бросит ошибку, если файл не аудио
     f.name = file.name.replace(/\.[^.]+$/, "") || "Свой трек";
     try { localStorage.setItem(`arrowrush.${kind}TrackName`, f.name); } catch { /* ничего */ }
+    delete starts[kind]; // новый файл — с начала
+    saveStarts();
     let saved = true;
     try { await idbRequest("readwrite", (s) => s.put({ name: f.name, blob: file }, kind + "Track")); } catch { saved = false; }
     if (kind === "menu") setMenuTrack("custom");
@@ -1117,11 +1119,11 @@ const music = (() => {
       gain.gain.exponentialRampToValueAtTime(CUSTOM_LEVEL, ctx.currentTime + SLOT_FADE);
       gain.connect(master);
       gain.connect(meter); // сцена качается и под свой трек
-      const source = ctx.createBufferSource();
-      source.buffer = buf;
-      source.loop = true;
+      // с выбранного начала, а если трек уже играл в этом матче — с того места, где остановился
+      const st = startOf(want, buf);
+      const source = loopFrom(buf, st);
       source.connect(gain);
-      const offset = (slotOffsets.get(want) || 0) % buf.duration;
+      const offset = slotOffsets.has(want) ? wrapTo(slotOffsets.get(want), st, buf.duration) : st;
       source.start(ctx.currentTime, offset);
       layer = { slot: want, source, gain, startedAt: ctx.currentTime, offset };
     });
@@ -1166,7 +1168,7 @@ const music = (() => {
         if (once === mine) once = null;
         gain.disconnect();
       };
-      s.start();
+      s.start(ctx.currentTime, startOf(slot, buf));
       mine.source = s;
     });
     return true;
@@ -1191,6 +1193,7 @@ const music = (() => {
     slotOffsets.delete(slot);
     slotNames[slot] = file.name.replace(/\.[^.]+$/, "") || "Свой трек";
     saveSlotNames();
+    setStart(slot, 0); // новый файл — с начала
     try {
       await idbRequest("readwrite", (s) => s.put({ name: slotNames[slot], blob: file }, "slot:" + slot));
       return true;
@@ -1203,8 +1206,89 @@ const music = (() => {
     delete slotNames[slot];
     saveSlotNames();
     slotBuffers.delete(slot);
-    slotOffsets.delete(slot);
+    setStart(slot, 0);
+    if (preview && preview.key === slot) stopPreview();
     try { await idbRequest("readwrite", (s) => s.delete("slot:" + slot)); } catch { /* и так нет */ }
+  }
+
+  // ---------- С какого места играет свой трек ----------
+  // У каждого своего файла (ключ — "menu", "match" или слот) можно выбрать начало в секундах:
+  // трек стартует с него и по кругу возвращается к нему же, а не к началу файла.
+  const starts = {};
+  try { Object.assign(starts, JSON.parse(localStorage.getItem("arrowrush.trackStarts")) || {}); } catch { /* ничего */ }
+  const PREVIEW_SECONDS = 12;
+  let preview = null; // идёт прослушивание: { key, source, gain, timer, onEnd }
+
+  const bufferOf = (key) => (key === "menu" || key === "match" ? loadFile(key) : loadSlot(key));
+
+  /** Начало трека в секундах; если файл короче — за полсекунды до его конца. */
+  function startOf(key, buf) {
+    const st = starts[key] || 0;
+    return buf ? Math.max(0, Math.min(st, buf.duration - 0.5)) : st;
+  }
+
+  /** Источник, который играет buf по кругу: после конца файла — снова с st. */
+  function loopFrom(buf, st) {
+    const s = ctx.createBufferSource();
+    s.buffer = buf;
+    s.loop = true;
+    s.loopStart = st;
+    s.loopEnd = buf.duration;
+    return s;
+  }
+
+  /** Где окажется трек, отыграв до pos: за концом файла он уже идёт по кругу с st. */
+  function wrapTo(pos, st, dur) {
+    return pos < dur ? pos : st + ((pos - st) % (dur - st));
+  }
+
+  function saveStarts() {
+    try { localStorage.setItem("arrowrush.trackStarts", JSON.stringify(starts)); } catch { /* ничего */ }
+  }
+
+  /** Новое начало трека. Свой трек меню, если играет, сразу перезапускается с него. */
+  function setStart(key, seconds) {
+    if (seconds > 0) starts[key] = seconds;
+    else delete starts[key];
+    saveStarts();
+    slotOffsets.delete(key);
+    if (key === "menu" && menuId === "custom" && menuBus) {
+      stopMenu(0.4);
+      startMenu();
+    }
+  }
+
+  /** Послушать свой трек с выбранного начала: 12 секунд, музыка меню на это время притихает. Повторно — стоп. */
+  async function listen(key, onEnd) {
+    unlock();
+    const same = preview && preview.key === key;
+    stopPreview();
+    if (same) return;
+    const buf = await bufferOf(key);
+    if (!buf || preview) return; // файла нет или, пока грузили, включили другой
+    const st = startOf(key, buf);
+    const gain = ctx.createGain();
+    gain.gain.value = CUSTOM_LEVEL;
+    gain.connect(master);
+    const source = loopFrom(buf, st);
+    source.connect(gain);
+    source.start(ctx.currentTime, st);
+    if (menuBus) menuBus.gain.setTargetAtTime(0.05, ctx.currentTime, 0.1);
+    preview = { key, source, gain, onEnd, timer: setTimeout(stopPreview, PREVIEW_SECONDS * 1000) };
+  }
+
+  function stopPreview() {
+    if (!preview) return;
+    const { source, gain, timer, onEnd } = preview;
+    preview = null;
+    clearTimeout(timer);
+    gain.gain.setTargetAtTime(0, ctx.currentTime, 0.08);
+    setTimeout(() => {
+      try { source.stop(); } catch { /* уже */ }
+      gain.disconnect();
+    }, 400);
+    if (menuBus) menuBus.gain.setTargetAtTime(MENU_LEVEL, ctx.currentTime, 0.2);
+    if (onEnd) onEnd();
   }
 
   /** Подключить анализатор к общему выходу — для проверки громкости. */
@@ -1221,6 +1305,7 @@ const music = (() => {
     isMuted: () => muted, isPlaying: () => !!song, part: () => (song ? song.part : null),
     menu, setMenuTrack, setMatchTrack, setCustomFile,
     level, playMoment, setSlotFile, clearSlot, slotName: (slot) => slotNames[slot] || null,
+    setStart, startAt: (key) => starts[key] || 0, listen, stopPreview, listening: () => (preview ? preview.key : null),
     menuTracks: MENU_TRACKS, menuTrack: () => menuId, matchTrack: () => matchId,
     customName: (kind = "menu") => files[kind].name, isMenuPlaying: () => !!menuBus,
   };

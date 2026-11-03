@@ -876,6 +876,20 @@ h3 {
 .skin-progress i { display: block; height: 100%; background: var(--a3); }
 .skin-buttons { display: flex; gap: 8px; margin-top: auto; }
 .skin-buttons .btn { flex: 1; padding: 7px 6px; font-size: 13px; white-space: nowrap; box-shadow: 0 4px 0 var(--outline); }
+/* с какого времени играет свой трек */
+.track-start { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: var(--muted); }
+.track-start input {
+  flex: 1; min-width: 0; width: 0;
+  font: 800 14px var(--font-body);
+  color: var(--text);
+  background: var(--panel-2);
+  border: 3px solid var(--outline);
+  border-radius: 10px;
+  padding: 4px 8px;
+  outline: none;
+}
+.track-start input:focus { background: #fff; }
+.track-start .btn { padding: 4px 10px; font-size: 13px; box-shadow: 0 3px 0 var(--outline); }
 
 .fx-tile {
   --c: var(--a2);

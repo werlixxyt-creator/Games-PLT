@@ -920,9 +920,60 @@ function slotGroup(title, items) {
       buttons.appendChild(clear);
     }
 
-    card.append(preview, name, req, buttons);
+    card.append(preview, name, req);
+    if (file) card.appendChild(startControls(it.slot));
+    card.appendChild(buttons);
     grid.appendChild(card);
   }
+}
+
+/** Строка «Начало»: с какого времени играет свой трек (key — "menu", "match" или слот) и кнопка послушать оттуда. */
+function startControls(key) {
+  const row = document.createElement("div");
+  row.className = "track-start";
+  const label = document.createElement("span");
+  label.textContent = "Начало";
+  const input = document.createElement("input");
+  input.value = formatTrackTime(music.startAt(key));
+  input.placeholder = "0:00";
+  input.inputMode = "decimal";
+  input.spellcheck = false;
+  input.setAttribute("aria-label", "С какого времени играет трек: минуты и секунды");
+  input.addEventListener("change", () => {
+    const sec = parseTrackTime(input.value);
+    if (sec === null) {
+      $("skin-error").textContent = "Время пишется как 1:30 или 90 (секунды)";
+      input.value = formatTrackTime(music.startAt(key));
+      return;
+    }
+    $("skin-error").textContent = "";
+    music.setStart(key, sec);
+    input.value = formatTrackTime(sec);
+  });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+
+  const play = document.createElement("button");
+  play.type = "button";
+  play.className = "btn ghost small";
+  play.title = "Послушать 12 секунд с этого места";
+  const mark = () => { play.textContent = music.listening() === key ? "■" : "▶"; };
+  mark();
+  play.addEventListener("click", () => music.listen(key, mark).then(mark));
+  row.append(label, input, play);
+  return row;
+}
+
+/** «1:30», «90» или «1:05.5» → секунды; пусто — 0; не время — null. */
+function parseTrackTime(text) {
+  const m = text.trim().replace(",", ".").match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/);
+  if (!text.trim()) return 0;
+  return m ? (m[1] ? +m[1] * 60 : 0) + +m[2] : null;
+}
+
+/** Секунды → «1:05» или «1:05.5». */
+function formatTrackTime(sec) {
+  const t = Math.round(sec * 10) / 10, m = Math.floor(t / 60), s = t - m * 60;
+  return `${m}:${Number.isInteger(s) ? String(s).padStart(2, "0") : s.toFixed(1).padStart(4, "0")}`;
 }
 
 /** Заголовок и карточки одной группы. kind — "menu" или "match": чей свой файл, set — что включает кнопка. */
@@ -975,7 +1026,9 @@ function musicGroup(title, kind, items, current, set) {
       buttons.appendChild(use);
     }
 
-    card.append(preview, name, req, buttons);
+    card.append(preview, name, req);
+    if (it.id === "custom" && fileName) card.appendChild(startControls(kind));
+    card.appendChild(buttons);
     grid.appendChild(card);
   });
 }
