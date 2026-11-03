@@ -44,7 +44,7 @@ const course = (() => {
   };
   const CLOUD_PALETTE = { sky: [30, 70, 140], sky2: [90, 170, 230], neb: [190, 240, 255], neb2: [120, 180, 255], wall: [40, 70, 130], wall2: [190, 235, 255], glow: [235, 250, 255] };
   const CLOUD_LANE = 112;    // «Кловд»: насколько потолок и пол от пути
-  const CLOUD_SPEED = 355;   // единиц в секунду: столько стрелка пролетает к пауку
+  const CLOUD_SPEED = 355;   // единиц в секунду: столько стрелка пролетает к гусенице
   const PUFF_STEP = 62;      // шаг облачков вдоль потолка и пола
   const RAINBOW = ["#ff3b5c", "#ff8a2b", "#ffd84d", "#5dffb0", "#39d8ff", "#5f6dff", "#c06bff"];
   const EYES = 4;            // сколько крылатых глаз летит над радугой
@@ -92,10 +92,10 @@ const course = (() => {
   let bolts = [];       // шторм: молнии на экране: { pts, life }
   let zones = { over: 0, storm: 0, flip: 0, rast: 0, rainbow: 0, cloud: 0 }; // насколько идёт каждый ивент, 0..1, меняется плавно
   let puff = null;      // «Кловд» начался: { start, from — номер его ячейки }
-  let spiderY = 1;      // где паук между линиями: -1 — потолок, 1 — пол
+  let crawlY = 1;      // где гусеница между линиями: -1 — потолок, 1 — пол
   let lastLane = 1;     // на какой линии он был в прошлом кадре
-  let zaps = [];        // вспышки прыжка паука: { x, y0, y1, life }
-  let morphed = 0;      // превращение в паука: вспышка затухает
+  let zaps = [];        // вспышки прыжка гусеницы: { x, y0, y1, life }
+  let morphed = 0;      // превращение в гусеницу: вспышка затухает
   let rain = null;      // «Радуга» началась: { start, from — номер её ячейки, fired — какие стены уже подстрелили }
   let lasers = [];      // лазеры: { eye, x, y — точка мира, delay — сколько ещё целится, life, color, hit }
   let shotAt = [];      // когда стрелял каждый глаз: от выстрела его отбрасывает
@@ -1124,7 +1124,7 @@ const course = (() => {
     if (k < 0.1 || reduce) return;
     for (let i = 0; i + 2 < ghosts.length; i += 2) {
       ctx.globalAlpha = (i / ghosts.length) * 0.4 * k;
-      if (cloudShown(Math.floor(s))) drawSpider(ghosts[i].x, ghosts[i].y, ghosts[i].y < me.y - 1 || spiderY < 0 ? -1 : 1, 1);
+      if (cloudShown(Math.floor(s))) drawCaterpillar(ghosts[i].x, ghosts[i].y, ghosts[i].y < me.y - 1 || crawlY < 0 ? -1 : 1, 1);
       else drawHero(ctx, opts.hero, ghosts[i].x, ghosts[i].y, me.a, 1, zones.cloud > zones.over ? "#8fe6ff" : "#ffb060");
     }
     ctx.globalAlpha = 1;
@@ -1140,53 +1140,123 @@ const course = (() => {
     ctx.fillRect(0, 0, w, h);
   }
 
-  /** Цвета паука: тело берёт цвет скина персонажа. */
-  const spiderColor = () => (HEROES[opts.hero] || HEROES.circle).color;
+  /** Цвета гусеницы: светлое тело, тёмные пятна с жёлтыми точками, коричневый контур. */
+  const CAT = { body: "#8dc63f", light: "#c6e675", patch: "#2f5f1f", spot: "#f6e840", line: "#5b3012", leg: "#a6d65a" };
 
-  /** Паук как в GD: брюшко, голова и лапы, которые бегут по потолку или полу. side: 1 — на полу, -1 — на потолке. */
-  function drawSpider(x, y, side, size) {
+  /**
+   * Гусеница: по сегментам от хвоста к голове бежит волна, ножки переступают, голова кивает, усики качаются.
+   * Ножки стоят на y = 24. side: 1 — на полу, -1 — на потолке.
+   */
+  function drawCaterpillar(x, y, side, size) {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(size, size * side);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    // лапы: по три с каждой стороны, идут вразнобой
-    for (const dir of [-1, 1]) {
-      for (let leg = 0; leg < 3; leg++) {
-        const step = Math.sin(time * 26 + leg * 2.1 + (dir > 0 ? 1.5 : 0));
-        const hipX = dir * (5 + leg * 6), footX = dir * (19 + leg * 10) + step * 7;
-        for (const [width, color] of [[8, "#fff"], [4.5, OUTLINE]]) {
-          ctx.strokeStyle = color;
-          ctx.lineWidth = width;
-          ctx.beginPath();
-          ctx.moveTo(hipX, 4);
-          ctx.lineTo(hipX + dir * 9, -9 - Math.max(0, step) * 4);
-          ctx.lineTo(footX, 24);
-          ctx.stroke();
-        }
-      }
+    // сегмент приподнимается и подтягивается вперёд, когда до него доходит волна
+    const segs = [];
+    for (let i = 0; i < 7; i++) {
+      const r = 8.5 + i * 0.9, wave = Math.sin(time * 12 - i * 0.95), lift = Math.max(0, wave) * 6;
+      segs.push({ x: -44 + i * 10.5 + wave * 1.4, y: 17 - r - lift, r, lift, wave });
+    }
+    const nod = Math.sin(time * 12 - 7 * 0.95);
+    const head = { x: 32 + nod * 1.4, y: 6 - Math.max(0, nod) * 3, r: 13 };
+    const stroke = (width, color) => {
+      ctx.lineWidth = width;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    };
+
+    // ножки-присоски: поднятый сегмент отрывает свою от земли
+    for (const s of segs) {
+      ctx.beginPath();
+      ctx.moveTo(s.x - 1, s.y + s.r * 0.7);
+      ctx.lineTo(s.x + s.wave * 3, 24 - s.lift * 0.6);
+      stroke(9, "#fff");
+      stroke(6.5, CAT.line);
+      stroke(3.5, CAT.leg);
     }
 
-    // брюшко и голова
-    ctx.fillStyle = spiderColor();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 4;
+    // белая обводка всего тела, чтобы гусеница читалась на тёмном фоне
     ctx.beginPath();
-    ctx.ellipse(-8, 2, 19, 15, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(14, 0, 11, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    // светящиеся глаза
-    ctx.fillStyle = "#7dfbff";
-    for (const [ex, ey] of [[17, -4], [21, 1]]) {
-      ctx.beginPath();
-      ctx.arc(ex, ey, 2.6, 0, Math.PI * 2);
-      ctx.fill();
+    for (const s of segs) {
+      ctx.moveTo(s.x + s.r * 0.82 + 3, s.y);
+      ctx.ellipse(s.x, s.y, s.r * 0.82 + 3, s.r + 3, 0, 0, Math.PI * 2);
     }
+    ctx.moveTo(head.x + head.r + 3, head.y);
+    ctx.arc(head.x, head.y, head.r + 3, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+
+    // сегменты от хвоста к голове: передний перекрывает задний
+    for (const s of segs) {
+      const r = s.r;
+      ctx.beginPath();
+      ctx.ellipse(s.x, s.y, r * 0.82, r, 0, 0, Math.PI * 2);
+      ctx.fillStyle = CAT.body;
+      ctx.fill();
+      stroke(2.5, CAT.line);
+      ctx.fillStyle = CAT.patch;
+      ctx.beginPath();
+      ctx.ellipse(s.x - r * 0.05, s.y - r * 0.38, r * 0.5, r * 0.42, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(s.x + r * 0.28, s.y + r * 0.38, r * 0.11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CAT.spot;
+      ctx.beginPath();
+      ctx.ellipse(s.x + r * 0.05, s.y - r * 0.45, r * 0.17, r * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r * 0.62, Math.PI * 1.08, Math.PI * 1.42);
+      stroke(2, CAT.light);
+    }
+
+    // усики-завитки
+    for (let i = 0; i < 2; i++) {
+      const sway = Math.sin(time * 7 + i * 1.3) * 2.5;
+      const bx = head.x + 3 + i * 5, by = head.y - head.r + 2;
+      const tx = bx + 7 + sway, ty = by - 10 + Math.abs(sway) * 0.4;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.quadraticCurveTo(bx - 2, ty, tx, ty);
+      ctx.arc(tx, ty + 2.5, 2.5, -Math.PI / 2, Math.PI * 1.2);
+      stroke(5, "#fff");
+      stroke(2, CAT.line);
+    }
+
+    // голова смотрит вперёд, на летящие стрелки
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, head.r, 0, Math.PI * 2);
+    ctx.fillStyle = CAT.body;
+    ctx.fill();
+    stroke(2.5, CAT.line);
+    ctx.fillStyle = CAT.patch;
+    ctx.beginPath();
+    ctx.ellipse(head.x - 4, head.y - 5, 7.5, 5, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = CAT.spot;
+    ctx.beginPath();
+    ctx.ellipse(head.x - 4, head.y - 6, 2.8, 1.9, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    // глаза моргают раз в три секунды
+    const blink = time % 3.2 < 0.12 ? 0.15 : 1;
+    for (const [ex, ey] of [[head.x + 5, head.y + 3], [head.x + 10, head.y + 1]]) {
+      ctx.fillStyle = CAT.line;
+      ctx.beginPath();
+      ctx.ellipse(ex, ey, 1.9, 2.5 * blink, 0, 0, Math.PI * 2);
+      ctx.fill();
+      if (blink === 1) {
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(ex + 0.6, ey - 0.9, 0.7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.beginPath();
+    ctx.arc(head.x + 8, head.y + 5.5, 3.4, 0.35, Math.PI - 0.5);
+    stroke(1.6, CAT.line);
     ctx.restore();
   }
 
@@ -1237,7 +1307,7 @@ const course = (() => {
     ctx.fillRect(-48, -48, 96, 96);
     ctx.globalCompositeOperation = "source-over";
 
-    // наконечник смотрит влево, на паука
+    // наконечник смотрит влево, на гусеницу
     ctx.lineJoin = "round";
     ctx.beginPath();
     ctx.moveTo(-32, 0);
@@ -1256,7 +1326,7 @@ const course = (() => {
     ctx.restore();
   }
 
-  /** Паук перескочил: столб света между линиями и след. */
+  /** Гусеница перескочила: столб света между линиями и след. */
   function drawZaps(dt) {
     ctx.globalCompositeOperation = "lighter";
     for (let i = zaps.length - 1; i >= 0; i--) {
@@ -1846,7 +1916,7 @@ const course = (() => {
     bolts = [];
     zones = { over: 0, storm: 0, flip: 0, rast: 0, rainbow: 0, cloud: 0 };
     puff = null;
-    spiderY = lastLane = 1;
+    crawlY = lastLane = 1;
     zaps = [];
     morphed = 0;
     rain = null;
@@ -1965,10 +2035,10 @@ const course = (() => {
     if (kind === "storm") strikeAt = time; // шторм начинается с молнии
     if (kind === "rainbow") rain = { start: time, from: i, fired: new Set() };
     if (kind === "cloud") {
-      // клуб дыма, из которого выходит паук; прежняя дорога разлетается
+      // клуб дыма, из которого выходит гусеница; прежняя дорога разлетается
       puff = { start: time, from: i };
       morphed = 1;
-      spiderY = lastLane = 1;
+      crawlY = lastLane = 1;
       ring(p[0], p[1], 340, "#fff");
       pixels(p[0], p[1], 40, "#d9f3ff", 1.5);
       for (let k = i + 1; opts.level[k]?.zone === "cloud"; k++) {
@@ -1978,7 +2048,7 @@ const course = (() => {
     }
   }
 
-  /** Стрелка пролетела мимо паука: свист и искры на её линии. */
+  /** Стрелка пролетела мимо гусеницы: свист и искры на её линии. */
   function dodged(i) {
     const pts = map.segs[i], p = pts[pts.length - 1];
     const y = p[1] + (opts.level[i].lane === 0 ? -1 : 1) * CLOUD_LANE;
@@ -2063,7 +2133,7 @@ const course = (() => {
   }
 
   /**
-   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, lane — линия паука в «Кловде», hole — дыра «Раста»: 0 — у игрока, 1 — у левого края, больше — за ним, hp — жизни у стены «Радуги» или null, mates: [{ slot, pos, air, name, color }],
+   * Кадр. o: { pos — номер ползунка + доля, wrong, holding, air — сколько секунд длится прыжок с НЛО, lane — линия гусеницы в «Кловде», hole — дыра «Раста»: 0 — у игрока, 1 — у левого края, больше — за ним, hp — жизни у стены «Радуги» или null, mates: [{ slot, pos, air, name, color }],
    * energy — сила удара в музыке 0..1, part — часть трека ("drop", "build" ...) или null, final — близко к финишу }.
    */
   function frame(now, o) {
@@ -2174,9 +2244,9 @@ const course = (() => {
     const pathY = me.y, drop = dropAt(s);
     me.y += drop - jumpLift(o.air);
 
-    // паук мгновенно перескакивает между потолком и полом; в прыжке — столб света, тряска и поворот камеры
-    const spider = cloudShown(Math.floor(s));
-    if (spider) {
+    // гусеница мгновенно перескакивает между потолком и полом; в прыжке — столб света, тряска и поворот камеры
+    const crawling = cloudShown(Math.floor(s));
+    if (crawling) {
       const lane = o.lane ?? 1;
       if (lane !== lastLane) {
         lastLane = lane;
@@ -2190,8 +2260,8 @@ const course = (() => {
         kick(0.035);
       }
       const want = lane === 0 ? -1 : 1;
-      spiderY += (want - spiderY) * (1 - Math.exp(-dt * 60));
-      me.y = pathY + spiderY * CLOUD_LANE;
+      crawlY += (want - crawlY) * (1 - Math.exp(-dt * 60));
+      me.y = pathY + crawlY * CLOUD_LANE;
     }
 
     // толчок при прыжке и удар при приземлении качают и персонажа, и НЛО
@@ -2222,9 +2292,9 @@ const course = (() => {
     if (!reduce && s < n && (o.holding || Math.random() < 0.3)) {
       pixel(me.x - 20, me.y + (Math.random() - 0.5) * 16, -80 - Math.random() * 120, (Math.random() - 0.5) * 70, 0.4 + Math.random() * 0.5, 4 + Math.random() * 7, Math.random() < 0.5 ? "#fff" : color);
     }
-    // паук сыплет искрами с лап
-    if (!reduce && spider) {
-      pixel(me.x - 24, me.y + spiderY * 22, -220 - Math.random() * 160, -spiderY * Math.random() * 90, 0.35, 3 + Math.random() * 5, Math.random() < 0.5 ? "#fff" : "#9fe8ff");
+    // гусеница сыплет искрами с ножек
+    if (!reduce && crawling) {
+      pixel(me.x - 24, me.y + crawlY * 22, -220 - Math.random() * 160, -crawlY * Math.random() * 90, 0.35, 3 + Math.random() * 5, Math.random() < 0.5 ? "#fff" : "#9fe8ff");
     }
     // в воздухе плавает пыль, мир не стоит на месте
     if (!reduce && Math.random() < 0.5) {
@@ -2312,7 +2382,7 @@ const course = (() => {
     const gone = clamp(n + 1 - s, 0, 1) * (1 - eaten);
     if (gone > 0.02) {
       const jitter = o.wrong && !reduce ? (Math.random() - 0.5) * 7 : 0;
-      if (spider) {
+      if (crawling) {
         // клуб дыма превращения
         if (morphed > 0.05) {
           ctx.fillStyle = rgba([235, 250, 255], morphed);
@@ -2320,14 +2390,14 @@ const course = (() => {
           ctx.arc(me.x, me.y, 30 + (1 - morphed) * 70, 0, Math.PI * 2);
           ctx.fill();
         }
-        drawSpider(me.x, me.y + spiderY * 2, spiderY >= 0 ? 1 : -1, gone * (1 + beat * 0.1));
+        drawCaterpillar(me.x, me.y + crawlY * 2, crawlY >= 0 ? 1 : -1, gone * (1 + beat * 0.1));
       }
       // на НЛО: покачивается стоя и крутит сальто в прыжке, сжимается при толчке и приземлении
       const squash = landed * 0.34 - recoil * 0.22;
       const pose = drop > 1 || air
         ? { spin: air ? Math.min(1, o.air / opts.jump) * Math.PI * 2 : Math.sin(time * 7) * 0.12, sx: 1 + squash, sy: 1 - squash }
         : undefined;
-      if (!spider) drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
+      if (!crawling) drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
     }
     ctx.restore();
 

@@ -358,7 +358,7 @@ const music = (() => {
       if (second || s.heat >= 0.5) arp(t, arpNote + 12, true);
       if (s.final && inBar % 2 === 1) hat(t, true);
     } else if (part.name === "cloud") {
-      // кловд: цепкий ломаный бит и арпеджио, бегущее вверх-вниз, как паук
+      // кловд: цепкий ломаный бит и арпеджио, бегущее вверх-вниз, как гусеница по облакам
       if ([0, 3, 6, 10].includes(inBar)) kick(t);
       if (inBar === 4 || inBar === 12) snare(t, 0.9);
       hat(t, inBar % 2 === 1);
