@@ -125,9 +125,10 @@
       </div>
       <h2>Выбери режим</h2>
 
-      <div id="mode-tabs" class="tabs three mode-tabs" role="tablist" aria-label="Что делать" data-active="0">
+      <div id="mode-tabs" class="tabs four mode-tabs" role="tablist" aria-label="Что делать" data-active="0">
         <button type="button" class="tab active" data-tab="match" role="tab">Матч</button>
         <button type="button" class="tab" data-tab="lobby" role="tab">Лобби</button>
+        <button type="button" class="tab" data-tab="levels" role="tab">Уровни</button>
         <button type="button" class="tab" data-tab="track" role="tab">Свой трек</button>
       </div>
 
@@ -194,6 +195,16 @@
         </div>
       </div>
 
+      <div id="mode-panel-levels" class="mode-panel" hidden>
+        <p class="diff-desc">Уровни игроков: играй в чужие или собери свой в редакторе, пройди его и выложи для всех.</p>
+        <div class="mode-actions">
+          <button id="btn-levels" class="btn primary big">
+            <span>Открыть уровни</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#flag"/></svg>
+          </button>
+        </div>
+      </div>
+
       <div id="mode-panel-track" class="mode-panel" hidden>
         <p class="diff-desc">Выбери свой аудиофайл: браузер найдёт в нём удары и построит ритм-уровень. Файл никуда не загружается.</p>
         <div class="mode-actions">
@@ -205,6 +216,83 @@
       </div>
 
       <div class="conn" data-conn></div>
+    </section>
+
+    <!-- УРОВНИ ИГРОКОВ (levels.js) -->
+    <section id="screen-levels" class="screen">
+      <div class="topbar start">
+        <button id="btn-levels-back" class="btn ghost small">← Назад</button>
+      </div>
+      <h2>Уровни игроков</h2>
+      <div id="levels-tabs" class="tabs levels-tabs" role="tablist" data-active="0">
+        <button type="button" class="tab active" data-view="online" role="tab">Онлайн</button>
+        <button type="button" class="tab" data-view="mine" role="tab">Мои уровни</button>
+      </div>
+      <div class="levels-bars">
+        <div id="levels-online-bar" class="levels-bar">
+          <input id="levels-search" class="ed-input" maxlength="32" autocomplete="off" spellcheck="false" placeholder="Название или автор">
+          <div id="levels-sort" class="ed-chips"></div>
+        </div>
+        <div id="levels-mine-bar" class="levels-bar" hidden>
+          <button id="btn-level-new" class="btn primary">+ Новый уровень</button>
+        </div>
+      </div>
+      <div id="levels-error" class="conn bad" role="alert"></div>
+      <ul id="levels-list" class="levels-list"></ul>
+      <p id="levels-empty" class="muted" hidden></p>
+    </section>
+
+    <!-- РЕДАКТОР УРОВНЕЙ (levels.js) -->
+    <section id="screen-editor" class="screen">
+      <div class="topbar start ed-top">
+        <button id="btn-editor-back" class="btn ghost small">← К уровням</button>
+        <span id="ed-status" class="ed-status"></span>
+      </div>
+      <div class="ed-panel glass">
+        <div class="ed-head">
+          <input id="ed-name" class="ed-input ed-name" autocomplete="off" spellcheck="false" placeholder="Название уровня">
+          <input id="ed-about" class="ed-input" autocomplete="off" placeholder="Описание (необязательно)">
+        </div>
+        <div class="ed-settings">
+          <div class="ed-group"><span>Темп</span><div id="ed-pace" class="ed-chips"></div></div>
+          <div class="ed-group"><span>Сложность</span><div id="ed-diff" class="ed-chips"></div></div>
+          <div class="ed-group"><span>Дизайн</span><div id="ed-theme" class="ed-chips"></div></div>
+        </div>
+      </div>
+
+      <div class="ed-strip-wrap glass">
+        <div class="ed-strip-head"><b>Ячейки</b><span id="ed-count" class="muted"></span></div>
+        <div id="ed-strip" class="ed-strip"></div>
+      </div>
+
+      <div class="ed-panel glass ed-inspector">
+        <div class="ed-group"><span id="ed-sel">Ячейка</span><div id="ed-arrows" class="ed-arrows"></div></div>
+        <div id="ed-fill-row" class="ed-group">
+          <span>Заполнение</span>
+          <div class="ed-fill"><input id="ed-fill" type="range" step="0.05"><b id="ed-fill-val"></b></div>
+        </div>
+        <div class="ed-group"><span>Особая ячейка</span><div id="ed-specials" class="ed-chips"></div></div>
+        <p id="ed-hint" class="ed-hint"></p>
+        <div class="ed-tools">
+          <button id="ed-add" class="btn ghost small" type="button">+ После</button>
+          <button id="ed-dup" class="btn ghost small" type="button">Копия</button>
+          <button id="ed-del" class="btn ghost small" type="button">Удалить</button>
+          <button id="ed-left" class="btn ghost small" type="button" aria-label="Сдвинуть влево">◀</button>
+          <button id="ed-right" class="btn ghost small" type="button" aria-label="Сдвинуть вправо">▶</button>
+          <button id="ed-random" class="btn ghost small" type="button">+10 случайных</button>
+        </div>
+      </div>
+      <p class="muted small keys-hint">Стрелки или WASD — поставить стрелку и перейти дальше · Shift + ← → — выбрать ячейку · Delete — удалить · Ctrl+S — сохранить</p>
+
+      <div id="ed-error" class="conn bad" role="alert"></div>
+      <div class="ed-actions">
+        <button id="ed-save" class="btn ghost" type="button">Сохранить</button>
+        <button id="ed-test" class="btn ghost" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#play"/></svg>Тест
+        </button>
+        <button id="ed-publish" class="btn primary" type="button">Опубликовать</button>
+        <button id="ed-copy" class="btn primary" type="button" hidden>Сделать копию</button>
+      </div>
     </section>
 
     <!-- СТАТИСТИКА -->
@@ -654,6 +742,7 @@
   <script src="social.js?v=2"></script>
   <script src="rewards.js?v=2"></script>
   <script src="lobby.js?v=2"></script>
+  <script src="levels.js?v=2"></script>
   <script src="app.js?v=2"></script>
   <script src="fullscreen.js?v=2"></script>
 </body>

@@ -102,6 +102,19 @@ public static class GameRules
     // Режим «Откат»
     /// <summary>На сколько ячеек отбрасывает ошибка.</summary>
     public const int SetbackCells = 3;
+
+    // Редактор уровней (см. LevelEndpoints)
+    public const int EditorMinCells = 5;
+    public const int EditorMaxCells = 400;
+    /// <summary>Сколько секунд заполняется ячейка в обычном темпе: границы для автора.</summary>
+    public const double EditorMinFill = 0.3;
+    public const double EditorMaxFill = 3;
+    public const int LevelNameMax = 32;
+    public const int LevelAboutMax = 140;
+    /// <summary>Сколько уровней (черновиков и опубликованных) может быть у одного игрока.</summary>
+    public const int LevelsPerUser = 50;
+    /// <summary>Лимит времени матча на своём уровне: столько раз дольше, чем нужно на сами ячейки, и не меньше обычного.</summary>
+    public const double CustomTimeFactor = 3;
 }
 
 /// <summary>Сложность уровня. В базе хранится числом, клиенту передаётся строкой.</summary>

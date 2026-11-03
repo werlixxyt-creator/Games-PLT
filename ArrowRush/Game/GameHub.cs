@@ -28,6 +28,19 @@ public sealed class GameHub(MatchManager manager, AppDb db, UserManager<AppUser>
             Skins.Equipped(Skins.Slider, me.SliderSkin), Skins.Equipped(Skins.Hero, me.HeroSkin), GameModes.Parse(mode), fast, Difficulties.Parse(difficulty), practice);
     }
 
+    /// <summary>Сыграть уровень из редактора: опубликованный — любой, черновик — только автор (так он его проходит перед публикацией).</summary>
+    /// <param name="withBot">С ботом-соперником, иначе одному.</param>
+    public async Task PlayLevel(int id, bool withBot)
+    {
+        var userId = Context.UserIdentifier!;
+        var level = await db.CustomLevels.FirstOrDefaultAsync(l => l.Id == id && (l.Published || l.AuthorId == userId))
+                    ?? throw new HubException("Уровень не найден");
+        var me = await db.Users.Where(u => u.Id == userId).Select(u => new { u.UserName, u.SliderSkin, u.HeroSkin }).FirstAsync();
+
+        await manager.PlayLevelAsync(Context.ConnectionId, userId, me.UserName!,
+            Skins.Equipped(Skins.Slider, me.SliderSkin), Skins.Equipped(Skins.Hero, me.HeroSkin), LevelEndpoints.Playable(level), withBot);
+    }
+
     public Task CancelSearch() => manager.CancelSearchAsync(Context.ConnectionId);
 
     /// <summary>Какие стрелки сейчас зажаты (битовая маска, см. Arrow).</summary>

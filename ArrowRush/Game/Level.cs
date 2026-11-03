@@ -94,6 +94,15 @@ public static class GameModes
 /// </summary>
 public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false, string? Event = null, string? Zone = null, bool Wall = false, int? Lane = null);
 
+/// <summary>
+/// Уровень из редактора, готовый к матчу. Revision — номер правки: прохождение автора засчитывается,
+/// только если уровень с тех пор не менялся.
+/// </summary>
+public sealed record PlayableLevel(int Id, string Name, string AuthorId, int Revision, bool Fast, Difficulty Difficulty, string Theme, bool Published, Slider[] Sliders);
+
+/// <summary>Ячейка редактора уровней: стрелка 0..3, секунды заполнения в обычном темпе, особая ячейка (см. <see cref="LevelGenerator.EditorSpecials"/>) или null.</summary>
+public sealed record EditorCell(int A, double F, string? S = null);
+
 public static class LevelGenerator
 {
     /// <summary>
@@ -181,6 +190,48 @@ public static class LevelGenerator
         return sliders;
     }
 
+    /// <summary>
+    /// Особые ячейки, которые автор ставит в редакторе, и сколько ячеек за каждой меняется:
+    /// столько обычных ячеек должно идти следом, и другая особая не может стоять среди них.
+    /// «Раст» и «Кловд» добавляют свои ячейки сами, поэтому им места не нужно.
+    /// </summary>
+    public static readonly Dictionary<string, int> EditorSpecials = new()
+    {
+        ["chart"] = GameRules.ChartCells,
+        ["swam"] = GameRules.SwamCells,
+        [Events[0]] = GameRules.EventCells,
+        [Events[1]] = GameRules.EventCells,
+        [Events[2]] = GameRules.EventCells,
+        [Rainbow] = GameRules.RainbowCells,
+        [Rast] = 0,
+        [Cloud] = 0,
+    };
+
+    /// <summary>
+    /// Уровень из редактора: ячейки автора и его особые ячейки, с той же механикой, что у случайных уровней.
+    /// Чарт делает следующие ячейки такими же, как он сам. rnd — для того, что в «Расте» и «Кловде» выбирает игра;
+    /// с одним и тем же seed уровень всегда одинаковый. Ячейки уже проверены (см. LevelEndpoints.Validate).
+    /// </summary>
+    public static Slider[] FromEditor(IReadOnlyList<EditorCell> cells, bool fast, Random rnd)
+    {
+        var sliders = cells.Select(c => new Slider((Arrow)c.A, fast ? 0 : Math.Round(c.F, 2))).ToArray();
+        var added = new List<(int At, string Name)>();
+        for (var i = 0; i < cells.Count; i++)
+        {
+            switch (cells[i].S)
+            {
+                case "chart": AddChart(sliders, i, rnd, sliders[i].Arrow); break;
+                case "swam": AddSwam(sliders, i); break;
+                case Rainbow: AddRainbow(sliders, i); break;
+                case Rast or Cloud: MarkAdded(sliders, i, cells[i].S!, added); break;
+                case { } name when Events.Contains(name): AddEvent(sliders, i, name); break;
+            }
+        }
+        foreach (var (spot, name) in Enumerable.Reverse(added))
+            sliders = name == Rast ? AddRast(sliders, spot, rnd) : AddCloud(sliders, spot, rnd);
+        return sliders;
+    }
+
     /// <summary>«Радуга»: каждая вторая ячейка за особой становится стеной, между ними обычные ячейки.</summary>
     private static int AddRainbow(Slider[] sliders, int at)
     {
@@ -247,11 +298,11 @@ public static class LevelGenerator
         return GameRules.EventCells;
     }
 
-    /// <summary>Чарт: за ним идут одинаковые ячейки, прежняя стрелка остаётся в Was.</summary>
-    private static int AddChart(Slider[] sliders, int at, Random rnd)
+    /// <summary>Чарт: за ним идут одинаковые ячейки, прежняя стрелка остаётся в Was. same — какой стрелкой, иначе случайной.</summary>
+    private static int AddChart(Slider[] sliders, int at, Random rnd, Arrow? chosen = null)
     {
         sliders[at] = sliders[at] with { Chart = true };
-        var same = (Arrow)rnd.Next(4);
+        var same = chosen ?? (Arrow)rnd.Next(4);
         for (var i = at + 1; i <= at + GameRules.ChartCells; i++)
         {
             sliders[i] = sliders[i] with { Arrow = same, Was = sliders[i].Arrow };

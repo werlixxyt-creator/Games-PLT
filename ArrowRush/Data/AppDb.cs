@@ -45,6 +45,44 @@ public sealed class RewardClaim
     public DateTime ClaimedAt { get; set; }
 }
 
+/// <summary>
+/// Уровень из редактора. Cells — ячейки автора в JSON (см. <see cref="EditorCell"/>).
+/// Черновик автор может менять; каждая правка увеличивает Revision и снимает Verified.
+/// Опубликовать можно только пройденный (Verified) уровень, и после этого он не меняется.
+/// Plays и Clears — сколько раз в опубликованный играли и проходили другие игроки.
+/// </summary>
+public sealed class CustomLevel
+{
+    public int Id { get; set; }
+    public required string AuthorId { get; set; }
+    public AppUser Author { get; set; } = null!;
+    public required string Name { get; set; }
+    public string? About { get; set; }
+    public bool Fast { get; set; }
+    public Difficulty Difficulty { get; set; } = Difficulty.Normal;
+    public required string Theme { get; set; }
+    public required string Cells { get; set; }
+    public int CellCount { get; set; }
+    public int Revision { get; set; }
+    public bool Verified { get; set; }
+    public bool Published { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime? PublishedAt { get; set; }
+    public int Plays { get; set; }
+    public int Clears { get; set; }
+    public int Likes { get; set; }
+}
+
+/// <summary>Лайк уровня: один от игрока. Число лайков хранится и в самом уровне, чтобы по нему сортировать.</summary>
+public sealed class LevelLike
+{
+    public required string UserId { get; set; }
+    public AppUser User { get; set; } = null!;
+    public int LevelId { get; set; }
+    public CustomLevel Level { get; set; } = null!;
+}
+
 /// <summary>Сыгранный матч.</summary>
 public sealed class MatchRecord
 {
@@ -90,6 +128,8 @@ public sealed class AppDb(DbContextOptions<AppDb> options)
     public DbSet<MatchParticipant> MatchParticipants => Set<MatchParticipant>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<RewardClaim> RewardClaims => Set<RewardClaim>();
+    public DbSet<CustomLevel> CustomLevels => Set<CustomLevel>();
+    public DbSet<LevelLike> LevelLikes => Set<LevelLike>();
 
     /// <summary>Ключи шифрования cookie — в базе, чтобы после перезапуска сервера не разлогинивало.</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -123,6 +163,21 @@ public sealed class AppDb(DbContextOptions<AppDb> options)
         {
             e.HasKey(c => new { c.UserId, c.TaskId, c.Period });
             e.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<CustomLevel>(e =>
+        {
+            e.HasIndex(l => l.AuthorId);
+            e.HasIndex(l => l.Published);
+            e.HasOne(l => l.Author).WithMany().HasForeignKey(l => l.AuthorId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<LevelLike>(e =>
+        {
+            e.HasKey(l => new { l.UserId, l.LevelId });
+            e.HasIndex(l => l.LevelId);
+            e.HasOne(l => l.User).WithMany().HasForeignKey(l => l.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(l => l.Level).WithMany().HasForeignKey(l => l.LevelId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

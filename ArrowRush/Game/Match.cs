@@ -91,8 +91,9 @@ public sealed class Match
     /// <param name="rules">Правила лобби вместо обычных правил режима.</param>
     /// <param name="lobbyIds">Из каких лобби матч: в общих их две команды.</param>
     /// <param name="theme">Дизайн уровня, выбранный в лобби; "auto" — случайный.</param>
+    /// <param name="custom">Уровень из редактора вместо случайного.</param>
     public Match(string id, GameMode mode, bool fast, Difficulty difficulty, Random rnd, bool practice = false,
-        ModeRules? rules = null, IReadOnlyList<string>? lobbyIds = null, string theme = "auto")
+        ModeRules? rules = null, IReadOnlyList<string>? lobbyIds = null, string theme = "auto", PlayableLevel? custom = null)
     {
         Id = id;
         Mode = mode;
@@ -104,8 +105,17 @@ public sealed class Match
         LobbyIds = lobbyIds ?? [];
         Theme = theme;
         _diff = difficulty.Rules();
-        Level = LevelGenerator.Generate(fast, _diff, rnd, _rules.LevelScale);
+        Custom = custom;
+        Level = custom?.Sliders ?? LevelGenerator.Generate(fast, _diff, rnd, _rules.LevelScale);
+        // свой уровень может быть сколь угодно длинным: время — по его ячейкам
+        TimeLimit = custom is null
+            ? GameRules.MatchTimeLimitSeconds * _rules.LevelScale
+            : Math.Max(GameRules.MatchTimeLimitSeconds, (Level.Sum(s => s.FillSeconds) + Level.Length * 0.5) * GameRules.CustomTimeFactor);
     }
+
+    /// <summary>Уровень из редактора, на котором идёт матч; null — случайный.</summary>
+    public PlayableLevel? Custom { get; }
+    public double TimeLimit { get; }
 
     public string Id { get; }
     public GameMode Mode { get; }
@@ -556,7 +566,7 @@ public sealed class Match
         else if (Teams && _firstFinishAt.HasValue) Finish("team_finished");
         else if (everyoneDone) Finish("all_finished");
         else if (_firstFinishAt is { } first && GameTime - first >= GameRules.AfterFirstFinishSeconds) Finish("time_after_winner");
-        else if (GameTime >= GameRules.MatchTimeLimitSeconds * _rules.LevelScale) Finish("time_limit");
+        else if (GameTime >= TimeLimit) Finish("time_limit");
     }
 
     private void Finish(string reason)
@@ -592,6 +602,7 @@ public sealed class Match
         practice = Practice,
         lobby = LobbyIds.Count > 0,
         theme = Theme,
+        custom = Custom is null ? null : new { id = Custom.Id, name = Custom.Name },
         mirror = _rules.Mirror,
         sight = _rules.Sight,
         lives = _rules.Lives,
@@ -653,6 +664,7 @@ public sealed class Match
         fast = Fast,
         practice = Practice,
         lobby = LobbyIds.Count > 0,
+        custom = Custom is null ? null : new { id = Custom.Id, name = Custom.Name },
         teams = Teams,
         reason = EndReason,
         results = Standings()

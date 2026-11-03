@@ -39,7 +39,7 @@ const SKIN_SLOTS = ["slider", "hero", "win", "streak", "music"];
 // кайма следа персонажа по скину ячеек; цвета стрелок от скина не зависят
 const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixel: "#7df9ff", gold: "#f2ad16", ocean: "#3fb6ff", lava: "#ff6a2b", mint: "#6fffc4" };
 // экраны, где играет спокойная музыка меню; в матче её сменяет боевой трек
-const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby"]);
+const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "levels", "editor"]);
 // советы под витриной в меню
 const TIPS = [
   "В «Зеркале» держи стрелку, противоположную нарисованной.",
@@ -105,6 +105,7 @@ function modeLabel(mode, fast, diff = "normal") {
 let pred = newPrediction();
 let combo = 0;           // режимы с нажатиями: ползунков подряд без ошибки
 let lastPractice = false; // «Ещё матч» повторяет тот же вид игры
+let lastLevel = null;     // последний сыгранный уровень игрока: { id, bot, back } — «Ещё раз» запускает его снова
 let skinSlot = "slider"; // открытая вкладка на экране скинов
 
 function newPrediction() {
@@ -119,7 +120,7 @@ function targetOf(arrow) {
 // ---------- Экраны ----------
 
 function show(name) {
-  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "game", "rhythm", "results"]) {
+  for (const s of ["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "levels", "editor", "game", "rhythm", "results"]) {
     $("screen-" + s).classList.toggle("active", s === name);
   }
   // ушли из «Своего трека» или из матча — музыку останавливаем (итоги сами гасят её плавно)
@@ -445,7 +446,7 @@ function setModeTab(tab) {
   const tabs = [...document.querySelectorAll("#mode-tabs .tab")];
   tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
   $("mode-tabs").dataset.active = tabs.findIndex((t) => t.dataset.tab === tab);
-  for (const name of ["match", "lobby", "track"]) $(`mode-panel-${name}`).hidden = name !== tab;
+  for (const name of ["match", "lobby", "levels", "track"]) $(`mode-panel-${name}`).hidden = name !== tab;
   if (tab === "match") setGameMode(gameMode); // карусель меряется только видимой
   if (tab === "lobby") lobby.loadPublic();
 }
@@ -672,6 +673,9 @@ $("btn-stats-back").addEventListener("click", () => show("menu"));
 
 social.init({ api, historyItem, me: () => profile, refresh: refreshProfile });
 lobby.init({ conn, show, screen: () => screen, onChange: () => social.loadFriends() });
+levels.init({ conn, show, screen: () => screen, onPlay: (l) => { lastLevel = l; } });
+$("btn-levels").addEventListener("click", () => levels.open());
+$("btn-levels-back").addEventListener("click", () => show("modes"));
 rewards.init({
   api,
   show,
@@ -1066,6 +1070,9 @@ conn.on("matchStart", startMatch);
 
 conn.on("friends", () => social.changed());
 
+// автор прошёл свой уровень: его можно публиковать
+conn.on("levels", () => levels.changed());
+
 // матч записан в базу: прогресс наград и статистика изменились
 conn.on("stats", refreshProfile);
 
@@ -1086,8 +1093,8 @@ conn.on("matchEnd", (r) => {
 
 $("btn-find").addEventListener("click", () => findMatch(false));
 $("btn-practice").addEventListener("click", () => findMatch(true));
-$("btn-again").addEventListener("click", () => findMatch(lastPractice));
-$("btn-menu").addEventListener("click", () => show(lobby.active() ? "lobby" : "menu"));
+$("btn-again").addEventListener("click", () => (lastLevel ? levels.play(lastLevel.id, lastLevel.bot, lastLevel.back) : findMatch(lastPractice)));
+$("btn-menu").addEventListener("click", () => (lobby.active() ? show("lobby") : lastLevel ? levels.returnTo(lastLevel.back) : show("menu")));
 
 $("btn-cancel").addEventListener("click", () => {
   conn.invoke("CancelSearch").catch(() => {});
@@ -1126,6 +1133,7 @@ $("btn-leave").addEventListener("click", () => {
 async function findMatch(practice) {
   if (conn.state !== signalR.HubConnectionState.Connected) return;
   lastPractice = practice;
+  lastLevel = null;
   music.unlock(); // звук браузер разрешает только после нажатия игрока — а это оно
 
   if (!practice) {
@@ -1232,7 +1240,7 @@ function startMatch(d) {
   $("watch").hidden = true;
 
   $("hud-lives-box").hidden = !d.lives;
-  $("hud-tag").textContent = modeLabel(d.mode, d.fast, d.difficulty) + (d.lobby ? " · лобби" : d.practice ? " · тренировка" : "");
+  $("hud-tag").textContent = d.custom ? `Уровень «${d.custom.name}»` : modeLabel(d.mode, d.fast, d.difficulty) + (d.lobby ? " · лобби" : d.practice ? " · тренировка" : "");
   $("hud-tag").style.setProperty("--c", MODES[d.mode].color);
 
   // моя дорожка — сцена с траекторией; траектория от id матча, у всех одна
@@ -1326,7 +1334,8 @@ function showResults(r) {
   const win = !!(me && me.won);
 
   const title = $("res-title");
-  title.textContent = win ? "Победа!" : r.teams && me ? "Поражение" : me ? `${me.place} место` : "Матч окончен";
+  title.textContent = r.custom ? (me && me.done ? "Уровень пройден!" : "Уровень не пройден")
+    : win ? "Победа!" : r.teams && me ? "Поражение" : me ? `${me.place} место` : "Матч окончен";
   title.classList.toggle("win", win);
   $("screen-results").classList.toggle("win", win);
 
@@ -1336,11 +1345,12 @@ function showResults(r) {
     : me && me.done
     ? `Твоё время: ${me.time.toFixed(2)} с`
     : me && me.out ? `Выбыл на ${me.sliders + 1}-м ползунке из ${r.total}`
-    : me ? `Заполнено ${me.sliders} из ${r.total} ползунков` : "") + (r.lobby ? " · лобби" : r.practice ? " · тренировка" : "");
+    : me ? `Заполнено ${me.sliders} из ${r.total} ползунков` : "") + (r.custom ? ` · «${r.custom.name}»` : r.lobby ? " · лобби" : r.practice ? " · тренировка" : "");
 
   // из лобби возвращаемся в него: новый матч запускает лидер
   $("btn-again").hidden = r.lobby;
-  $("btn-menu").textContent = lobby.active() ? "В лобби" : "В меню";
+  $("btn-menu").textContent = lobby.active() ? "В лобби" : r.custom && lastLevel ? (lastLevel.back === "editor" ? "В редактор" : "К уровням") : "В меню";
+  $("btn-again").textContent = r.custom ? "Ещё раз" : "Ещё матч";
 
   // серия побед: тренировка не считается; профиль обновим сразу, не дожидаясь сервера
   let streak = 0;

@@ -58,6 +58,23 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
         return SendAsync(outbox);
     }
 
+    /// <summary>Сыграть уровень из редактора: сразу, без очереди и статистики; withBot — с ботом, иначе одному.</summary>
+    public Task PlayLevelAsync(string connectionId, string userId, string name, string skin, string hero, PlayableLevel level, bool withBot)
+    {
+        List<Outgoing> outbox = [];
+        lock (_lock)
+        {
+            if (_matchByConnection.ContainsKey(connectionId) || _queue.Any(q => q.UserId == userId)
+                || _matches.Any(m => m.Players.Any(p => p.UserId == userId && !p.Left)))
+                throw new HubException("Ты уже ищешь матч или играешь в другой вкладке");
+            if (_lobbyByConnection.ContainsKey(connectionId)) throw new HubException("Сначала выйди из лобби");
+
+            var me = new QueuedPlayer(connectionId, userId, name, skin, hero, GameMode.Classic, level.Fast, level.Difficulty, Now);
+            StartMatch(GameMode.Classic, level.Fast, level.Difficulty, [me], outbox, practice: true, custom: level, seats: withBot ? 2 : 1);
+        }
+        return SendAsync(outbox);
+    }
+
     public Task CancelSearchAsync(string connectionId)
     {
         List<Outgoing> outbox;
@@ -114,17 +131,20 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
 
             List<Outgoing> outbox;
             List<MatchRecord> finished;
+            List<Match> custom;
             lock (_lock)
             {
                 outbox = [];
                 finished = [];
+                custom = [];
                 RunMatchmaking(outbox);
                 RunLobbySearch(outbox);
-                TickMatches(dt, outbox, finished);
+                TickMatches(dt, outbox, finished, custom);
             }
 
             // базу не ждём, чтобы не тормозить тики
             if (finished.Count > 0) _ = SaveAsync(finished);
+            if (custom.Count > 0) _ = SaveLevelPlaysAsync(custom);
 
             try
             {
@@ -181,9 +201,13 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
         if (changed) outbox.AddRange(QueueUpdates());
     }
 
-    private void StartMatch(GameMode mode, bool fast, Difficulty difficulty, List<QueuedPlayer> group, List<Outgoing> outbox, bool practice = false)
+    /// <param name="custom">Уровень из редактора; его дизайн тоже выбрал автор.</param>
+    /// <param name="seats">Сколько мест заполнить ботами; null — как в обычном матче.</param>
+    private void StartMatch(GameMode mode, bool fast, Difficulty difficulty, List<QueuedPlayer> group, List<Outgoing> outbox, bool practice = false,
+        PlayableLevel? custom = null, int? seats = null)
     {
-        var match = new Match(Guid.NewGuid().ToString("N")[..8], mode, fast, difficulty, new Random(_rnd.Next()), practice);
+        var match = new Match(Guid.NewGuid().ToString("N")[..8], mode, fast, difficulty, new Random(_rnd.Next()), practice,
+            theme: custom?.Theme ?? "auto", custom: custom);
 
         // чётные места — одна команда, нечётные — другая: двое людей окажутся друг против друга
         int TeamOf(int seat) => match.Teams ? seat % GameRules.TeamCount : -1;
@@ -197,9 +221,9 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
         }
 
         // одиночке — бот, чтобы не ждать вечно; в командах боты занимают все пустые места
-        var seats = match.Teams ? mode.Rules().Seats : GameRules.MinPlayers;
+        var botSeats = seats ?? (match.Teams ? mode.Rules().Seats : GameRules.MinPlayers);
         var botNames = BotNames.OrderBy(_ => _rnd.Next()).ToList();
-        for (var bot = 0; match.Players.Count < seats; bot++)
+        for (var bot = 0; match.Players.Count < botSeats; bot++)
         {
             match.Players.Add(new Player
             {
@@ -221,7 +245,8 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
         }
     }
 
-    private void TickMatches(double dt, List<Outgoing> outbox, List<MatchRecord> finished)
+    /// <param name="custom">Кончившиеся матчи на уровнях из редактора: их игры и прохождения пишутся в уровень.</param>
+    private void TickMatches(double dt, List<Outgoing> outbox, List<MatchRecord> finished, List<Match> custom)
     {
         for (var i = _matches.Count - 1; i >= 0; i--)
         {
@@ -240,6 +265,7 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
                 foreach (var c in to) _matchByConnection.Remove(c);
                 _matches.RemoveAt(i);
                 if (!match.Practice) finished.Add(match.ToRecord());
+                if (match.Custom is not null) custom.Add(match);
                 LobbyMatchEnded(match, outbox);
                 continue;
             }
@@ -272,6 +298,44 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
         catch (Exception e)
         {
             log.LogError(e, "Не удалось сохранить матчи {Ids}", string.Join(", ", records.Select(r => r.Code)));
+        }
+    }
+
+    /// <summary>
+    /// Матчи на уровнях из редактора: у опубликованного считаем игры и прохождения других игроков,
+    /// а черновик, который автор прошёл и с тех пор не менял, становится пройденным — его можно публиковать.
+    /// </summary>
+    private async Task SaveLevelPlaysAsync(List<Match> matches)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDb>();
+            var verified = new List<string>();
+            foreach (var match in matches)
+            {
+                var level = await db.CustomLevels.FindAsync(match.Custom!.Id);
+                if (level is null) continue;
+                var humans = match.Players.Where(p => !p.IsBot && p.UserId is not null).ToList();
+                if (level.Published)
+                {
+                    var others = humans.Where(p => p.UserId != level.AuthorId).ToList();
+                    level.Plays += others.Count;
+                    level.Clears += others.Count(p => p.Done);
+                }
+                else if (!level.Verified && level.Revision == match.Custom.Revision
+                         && humans.Any(p => p.UserId == level.AuthorId && p.Done))
+                {
+                    level.Verified = true;
+                    verified.Add(level.AuthorId);
+                }
+            }
+            await db.SaveChangesAsync();
+            if (verified.Count > 0) await hub.Clients.Users(verified).SendAsync("levels");
+        }
+        catch (Exception e)
+        {
+            log.LogError(e, "Не удалось записать игры на уровнях {Ids}", string.Join(", ", matches.Select(m => m.Custom!.Id)));
         }
     }
 
