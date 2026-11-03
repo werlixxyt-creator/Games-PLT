@@ -274,7 +274,8 @@ const course = (() => {
 
     const endX = x + TO_PORTAL, endY = y;
     const walls = buildWalls(segs, endX, endY, rand);
-    return { segs, sections, scene, colors, endX, endY, walls, deco: buildDeco(walls, endX, rand) };
+    const styleId = [...THEME_IDS, ...scenes.names][style];
+    return { segs, sections, scene, styleId, colors, endX, endY, walls, deco: buildDeco(walls, endX, rand) };
   }
 
   /** Стены коридора: середина идёт за сглаженным путём, зазор немного дышит. */
@@ -2814,5 +2815,8 @@ const course = (() => {
     }
   }
 
-  return { start, follow, frame, hit, devour, laser, brick, filled, chart, swam, event, pulse, point, paintHero, eventInfo: EVENTS };
+  return {
+    start, follow, frame, hit, devour, laser, brick, filled, chart, swam, event, pulse, point, paintHero, eventInfo: EVENTS,
+    style: () => (map ? map.styleId : null), // стиль уровня текущего матча: "violet", "lighthouse"…
+  };
 })();

@@ -829,8 +829,9 @@ async function equipSkin(skin, btn, preview) {
 const MUSIC_TILE = { relax: ["♪", "var(--a1)"], night: ["☾", "var(--a0)"], space: ["✦", "var(--a3)"], custom: ["#note", "var(--a2)"], off: ["#mute", "var(--muted)"], beat: ["#arrow", "var(--a1)"] };
 
 /**
- * Две группы карточек: музыка меню (встроенные треки, свой файл, «без музыки») и музыка в матче
- * (встроенный бит или свой файл). Включённый трек меню играет прямо сейчас.
+ * Группы карточек: музыка меню (встроенные треки, свой файл, «без музыки»), музыка в матче
+ * (встроенный бит или свой файл) и свои треки на ивенты, моменты и уровни.
+ * Включённый трек меню играет прямо сейчас.
  */
 function renderMusicTab() {
   const grid = $("skin-grid");
@@ -849,6 +850,79 @@ function renderMusicTab() {
     { id: "beat", name: "Встроенный бит", desc: "Электронный бит, у каждого матча своя мелодия" },
     { id: "custom", name: "Свой трек", desc: matchFile ? `Файл: ${matchFile}` : "Твой файл играет в каждом матче — слышишь его только ты" },
   ], music.matchTrack(), music.setMatchTrack);
+
+  // свои треки поверх музыки матча: играет самый важный из тех, на которые выбран файл
+  const ev = (kind) => course.eventInfo[kind].color;
+  slotGroup("На ивенты", [
+    { slot: "event:swam", name: "Свам", icon: "◒", color: "#39e6ff", desc: "Пока НЛО несёт над пилами" },
+    { slot: "event:over", name: "Овердрайв", icon: "»", color: ev("over"), desc: "Пока идёт овердрайв" },
+    { slot: "event:storm", name: "Шторм", icon: "ϟ", color: ev("storm"), desc: "Пока идёт шторм" },
+    { slot: "event:flip", name: "Переворот", icon: "⇅", color: ev("flip"), desc: "Пока мир вверх ногами" },
+    { slot: "event:rast", name: "Раст", icon: "●", color: ev("rast"), desc: "Пока догоняет чёрная дыра" },
+    { slot: "event:rainbow", name: "Радуга", icon: "◠", color: ev("rainbow"), desc: "Пока стреляют глаза над радугой" },
+    { slot: "event:cloud", name: "Кловд", icon: "∿", color: ev("cloud"), desc: "Пока ты гусеница на полках" },
+  ]);
+  slotGroup("На моменты", [
+    { slot: "moment:countdown", name: "Отсчёт", icon: "3", color: "var(--a1)", desc: "Перед стартом, пока идёт отсчёт" },
+    { slot: "moment:final", name: "Финиш", icon: "⚑", color: "var(--a3)", desc: "Последние 15% уровня" },
+    { slot: "moment:victory", name: "Победа", icon: "★", color: "#f2ad16", desc: "Один раз вместо фанфар победы" },
+    { slot: "moment:defeat", name: "Поражение", icon: "✕", color: "var(--muted)", desc: "Один раз на итогах проигранного матча" },
+  ]);
+  slotGroup("На уровни", lobby.themes.filter(([id]) => id !== "auto").map(([id, name, color]) => (
+    { slot: "level:" + id, name, icon: "♪", color, desc: "Весь матч на этом дизайне, кроме ивентов и моментов со своим треком" }
+  )));
+}
+
+let slotPick = null; // на какой ивент, момент или уровень выбирают файл
+
+/** Карточки своих треков: у каждой кнопка выбрать файл и, если он есть, убрать. */
+function slotGroup(title, items) {
+  const grid = $("skin-grid");
+  const h = document.createElement("h3");
+  h.className = "skin-group";
+  h.textContent = title;
+  grid.appendChild(h);
+
+  for (const it of items) {
+    const file = music.slotName(it.slot);
+    const card = document.createElement("div");
+    card.className = "skin-card glass" + (file ? " equipped" : "");
+    card.style.setProperty("--i", grid.children.length);
+
+    const preview = document.createElement("div");
+    preview.className = "skin-preview";
+    preview.appendChild(fxPreview({ id: it.slot }, { [it.slot]: [it.icon, it.color] }));
+    const name = document.createElement("div");
+    name.className = "skin-name";
+    name.textContent = it.name;
+    const req = document.createElement("div");
+    req.className = "skin-req";
+    req.textContent = file ? `Файл: ${file}` : it.desc;
+
+    const buttons = document.createElement("div");
+    buttons.className = "skin-buttons";
+    const pick = document.createElement("button");
+    pick.className = file ? "btn ghost small" : "btn primary small";
+    pick.textContent = file ? "Другой файл" : "Выбрать файл";
+    pick.addEventListener("click", () => {
+      slotPick = it.slot;
+      $("slot-file").click();
+    });
+    buttons.appendChild(pick);
+    if (file) {
+      const clear = document.createElement("button");
+      clear.className = "btn ghost small";
+      clear.textContent = "Убрать";
+      clear.addEventListener("click", async () => {
+        await music.clearSlot(it.slot);
+        renderMusicTab();
+      });
+      buttons.appendChild(clear);
+    }
+
+    card.append(preview, name, req, buttons);
+    grid.appendChild(card);
+  }
 }
 
 /** Заголовок и карточки одной группы. kind — "menu" или "match": чей свой файл, set — что включает кнопка. */
@@ -906,14 +980,14 @@ function musicGroup(title, kind, items, current, set) {
   });
 }
 
-for (const kind of ["menu", "match"]) {
+for (const kind of ["menu", "match", "slot"]) {
   $(kind + "-file").addEventListener("change", async (e) => {
     const file = e.target.files[0];
     e.target.value = "";
-    if (!file) return;
+    if (!file || (kind === "slot" && !slotPick)) return;
     if (file.size > 80 * 1024 * 1024) { $("skin-error").textContent = "Файл больше 80 МБ — выбери поменьше"; return; }
     try {
-      const saved = await music.setCustomFile(file, kind);
+      const saved = kind === "slot" ? await music.setSlotFile(slotPick, file) : await music.setCustomFile(file, kind);
       renderMusicTab();
       if (!saved) $("skin-error").textContent = "Браузер не дал сохранить файл — он будет играть только до перезагрузки страницы";
     } catch {
@@ -1125,6 +1199,7 @@ function startMatch(d) {
     laser: () => music.sting("laser"),
     trailOf: trailOf(me.skin),
   });
+  music.level(course.style()); // на этот дизайн уровня может стоять свой трек
   match.tracks.set(d.you, {
     mine: true,
     skin: me.skin,
@@ -1273,7 +1348,7 @@ function showResults(r) {
 
   show("results");
 
-  if (!win) music.jingle(false); // у победы была своя фанфара
+  if (!win && !music.playMoment("defeat")) music.jingle(false); // у победы была своя фанфара
   if (streak >= 2) setTimeout(() => playStreakFx(profile.equipped.streak, banner, streak / 3), 450);
 }
 
@@ -1340,8 +1415,7 @@ const EVENT_TEXT = {
 /** Пройдена ячейка ивента: он начинается. */
 function eventPassed(i) {
   const kind = match.level[i].event;
-  // у «Кловда» вывеска лежит на белых облаках: светлый цвет там не читается
-  showBanner(EVENT_TEXT[kind], kind === "cloud" ? "#0d5ea8" : course.eventInfo[kind].color);
+  showBanner(EVENT_TEXT[kind], course.eventInfo[kind].color);
   course.event(kind, i);
   music.sting(kind);
 }

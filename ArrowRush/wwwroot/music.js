@@ -433,6 +433,11 @@ const music = (() => {
   function start({ seed = 0, fast = false, introSeconds = 3 } = {}) {
     unlock();
     stop(0);
+    stopOnce(0.4);
+    levelNow = null;
+    finalNow = false;
+    slotOffsets.clear(); // в новом матче свои треки начинаются сначала
+    dropAt = ctx.currentTime + 0.06 + introSeconds;
 
     bus = ctx.createGain();
     bus.connect(tone);
@@ -549,17 +554,21 @@ const music = (() => {
 
   /** Какой ивент сейчас на уровне (null — никакого). Встроенный трек меняет раздел, свой файл игрока — скорость и фильтр. */
   function mood(name) {
-    if (!ctx || !bus || name === moodNow) return;
-    moodNow = name;
-    const m = name ? MOODS[name] : null;
-    toneOpen = m ? m.tone : 20000;
-    tone.frequency.setTargetAtTime(toneOpen, ctx.currentTime, 0.12);
-    if (song) song.nextMood = name;
-    if (matchSource) matchSource.playbackRate.setTargetAtTime(m ? m.rate : 1, ctx.currentTime, 0.15);
+    if (!ctx || !bus) return;
+    if (name !== moodNow) {
+      moodNow = name;
+      const m = name ? MOODS[name] : null;
+      toneOpen = m ? m.tone : 20000;
+      tone.frequency.setTargetAtTime(toneOpen, ctx.currentTime, 0.12);
+      if (song) song.nextMood = name;
+      if (matchSource) matchSource.playbackRate.setTargetAtTime(m ? m.rate : 1, ctx.currentTime, 0.15);
+    }
+    updateLayer(); // свой трек на ивент, финиш или уровень
   }
 
   /** Какая доля уровня пройдена, 0..1: от неё зависит плотность трека. Вызывать раз в кадр. */
   function progress(k) {
+    finalNow = k >= FINAL_AT;
     if (!song) return;
     song.heat = k;
     if (k >= FINAL_AT && !song.final) {
@@ -689,6 +698,8 @@ const music = (() => {
     timer = 0;
     song = null;
     if (!bus) return;
+    fadeLayer(fade);
+    layerWant = null;
     const b = bus, src = matchSource;
     bus = null;
     matchSource = null;
@@ -722,7 +733,7 @@ const music = (() => {
 
   /** Сцена победы: нарастание, через impact секунд — удар баса с тарелкой и мажорный аккорд, за ним взлёт нот. */
   function fanfare(impact) {
-    if (!ctx) return;
+    if (!ctx || playMoment("victory")) return;
     const out = ctx.createGain();
     out.connect(master);
     const t = ctx.currentTime + impact;
@@ -969,6 +980,7 @@ const music = (() => {
   function menu(on) {
     menuWanted = on;
     if (!ctx) return; // заиграет по первому нажатию — см. unlock()
+    if (on) stopOnce(); // трек победы или поражения уступает меню
     if (on) startMenu();
     else stopMenu();
   }
@@ -1041,6 +1053,160 @@ const music = (() => {
     try { localStorage.setItem("arrowrush.matchTrack", id); } catch { /* ничего */ }
   }
 
+  // ---------- Свои треки на ивенты, моменты и уровни ----------
+  // Слот — "event:storm", "moment:final", "level:ocean" и т. п. Файл слота лежит в IndexedDB под ключом "slot:" + слот,
+  // подпись — в localStorage. В матче играет самый важный слот, для которого есть файл:
+  // отсчёт → ивент → финиш → уровень; нет ни одного — обычная музыка матча. Смена — плавным переходом.
+  // Победа и поражение играют свой файл один раз, вместо фанфар и джингла.
+  const slotNames = {};
+  try { Object.assign(slotNames, JSON.parse(localStorage.getItem("arrowrush.slotTracks")) || {}); } catch { /* ничего */ }
+  const slotBuffers = new Map(); // слот → раскодированный звук (null — файл не прочитался)
+  const slotOffsets = new Map(); // слот → где он остановился: вернувшись к нему, трек идёт дальше
+  const SLOT_FADE = 0.6;
+  let layer = null;      // свой трек поверх музыки матча: { slot, source, gain, startedAt, offset }
+  let layerWant = null;  // какой слот должен играть сейчас (файл может ещё грузиться)
+  let levelNow = null;   // стиль уровня текущего матча
+  let finalNow = false;  // идёт финал уровня
+  let dropAt = 0;        // когда «СТАРТ!»: до него идёт отсчёт
+  let once = null;       // победа или поражение: { source, gain }
+
+  function saveSlotNames() {
+    try { localStorage.setItem("arrowrush.slotTracks", JSON.stringify(slotNames)); } catch { /* ничего */ }
+  }
+
+  /** Звук слота: из памяти, а если его там нет — из IndexedDB. null — файла нет. */
+  async function loadSlot(slot) {
+    if (!slotNames[slot]) return null;
+    if (!slotBuffers.has(slot)) {
+      try {
+        const rec = await idbRequest("readonly", (s) => s.get("slot:" + slot));
+        slotBuffers.set(slot, rec ? await ctx.decodeAudioData(await rec.blob.arrayBuffer()) : null);
+      } catch {
+        slotBuffers.set(slot, null);
+      }
+    }
+    return slotBuffers.get(slot);
+  }
+
+  /** Самый важный слот, для которого есть файл; null — играет обычная музыка матча. */
+  function wantedSlot() {
+    const has = (slot) => (slotNames[slot] ? slot : null);
+    if (ctx.currentTime < dropAt && has("moment:countdown")) return "moment:countdown";
+    return (moodNow && has("event:" + moodNow)) || (finalNow && has("moment:final")) || (levelNow && has("level:" + levelNow)) || null;
+  }
+
+  /** Переключает свой трек, если важнейший слот сменился. Зовётся каждый кадр из mood(). */
+  function updateLayer() {
+    const want = wantedSlot();
+    if (want === layerWant) return;
+    layerWant = want;
+    fadeLayer();
+    // обычная музыка матча затихает под своим треком и возвращается, когда его нет
+    const out = bus;
+    out.gain.cancelScheduledValues(ctx.currentTime);
+    out.gain.setTargetAtTime(want ? 0 : 1, ctx.currentTime, SLOT_FADE / 3);
+    if (!want) return;
+    loadSlot(want).then((buf) => {
+      if (bus !== out || layerWant !== want) return; // пока грузили, всё сменилось
+      if (!buf) {
+        out.gain.setTargetAtTime(1, ctx.currentTime, SLOT_FADE / 3);
+        return;
+      }
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(CUSTOM_LEVEL, ctx.currentTime + SLOT_FADE);
+      gain.connect(master);
+      gain.connect(meter); // сцена качается и под свой трек
+      const source = ctx.createBufferSource();
+      source.buffer = buf;
+      source.loop = true;
+      source.connect(gain);
+      const offset = (slotOffsets.get(want) || 0) % buf.duration;
+      source.start(ctx.currentTime, offset);
+      layer = { slot: want, source, gain, startedAt: ctx.currentTime, offset };
+    });
+  }
+
+  /** Плавно гасит свой трек и запоминает, где он остановился. */
+  function fadeLayer(fade = SLOT_FADE) {
+    if (!layer) return;
+    const { slot, source, gain, startedAt, offset } = layer;
+    layer = null;
+    slotOffsets.set(slot, offset + ctx.currentTime - startedAt);
+    gain.gain.cancelScheduledValues(ctx.currentTime);
+    gain.gain.setTargetAtTime(0, ctx.currentTime, Math.max(0.01, fade / 3));
+    setTimeout(() => {
+      try { source.stop(); } catch { /* уже */ }
+      gain.disconnect();
+    }, (fade + 0.3) * 1000);
+  }
+
+  /** Стиль уровня текущего матча ("violet", "lighthouse"…): от него зависит трек уровня. */
+  function level(id) {
+    levelNow = id;
+  }
+
+  /** Победа или поражение (name — "victory" или "defeat"): свой файл играет один раз. false — файла нет. */
+  function playMoment(name) {
+    const slot = "moment:" + name;
+    if (!ctx || !slotNames[slot]) return false;
+    stop(0.6); // матч кончился: его музыка уступает
+    stopOnce(0.3);
+    const gain = ctx.createGain();
+    gain.gain.value = CUSTOM_LEVEL;
+    gain.connect(master);
+    const mine = { gain, source: null };
+    once = mine;
+    loadSlot(slot).then((buf) => {
+      if (once !== mine || !buf) return;
+      const s = ctx.createBufferSource();
+      s.buffer = buf;
+      s.connect(gain);
+      s.onended = () => {
+        if (once === mine) once = null;
+        gain.disconnect();
+      };
+      s.start();
+      mine.source = s;
+    });
+    return true;
+  }
+
+  function stopOnce(fade = 1) {
+    if (!once) return;
+    const { gain, source } = once;
+    once = null;
+    gain.gain.setTargetAtTime(0, ctx.currentTime, fade / 4);
+    setTimeout(() => {
+      try { if (source) source.stop(); } catch { /* уже */ }
+      gain.disconnect();
+    }, (fade + 0.3) * 1000);
+  }
+
+  /** Свой файл для слота: проверяем, что он читается, и сохраняем в браузере. false — сохранить не дали. */
+  async function setSlotFile(slot, file) {
+    unlock();
+    const buf = await ctx.decodeAudioData(await file.arrayBuffer()); // бросит ошибку, если файл не аудио
+    slotBuffers.set(slot, buf);
+    slotOffsets.delete(slot);
+    slotNames[slot] = file.name.replace(/\.[^.]+$/, "") || "Свой трек";
+    saveSlotNames();
+    try {
+      await idbRequest("readwrite", (s) => s.put({ name: slotNames[slot], blob: file }, "slot:" + slot));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function clearSlot(slot) {
+    delete slotNames[slot];
+    saveSlotNames();
+    slotBuffers.delete(slot);
+    slotOffsets.delete(slot);
+    try { await idbRequest("readwrite", (s) => s.delete("slot:" + slot)); } catch { /* и так нет */ }
+  }
+
   /** Подключить анализатор к общему выходу — для проверки громкости. */
   function tap() {
     unlock();
@@ -1054,6 +1220,7 @@ const music = (() => {
     unlock, start, stop, jingle, fanfare, setMuted, tap, energy, ding, miss, mood, progress, sting,
     isMuted: () => muted, isPlaying: () => !!song, part: () => (song ? song.part : null),
     menu, setMenuTrack, setMatchTrack, setCustomFile,
+    level, playMoment, setSlotFile, clearSlot, slotName: (slot) => slotNames[slot] || null,
     menuTracks: MENU_TRACKS, menuTrack: () => menuId, matchTrack: () => matchId,
     customName: (kind = "menu") => files[kind].name, isMenuPlaying: () => !!menuBus,
   };

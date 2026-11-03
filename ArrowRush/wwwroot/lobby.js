@@ -345,6 +345,7 @@ const lobby = (() => {
     init, reset, sync, accept, decline, loadPublic,
     refresh: () => { if (cur) render(); }, // экран лобби снова виден
     active: () => !!cur,
+    themes: THEMES, // дизайны уровня: [id, название, цвет]; первый — «Случайный»
     canInvite: () => !!cur && cur.leader,
     invite: (name, el) => call(el, "InviteToLobby", name),
   };
