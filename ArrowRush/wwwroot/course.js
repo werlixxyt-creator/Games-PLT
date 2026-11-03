@@ -42,10 +42,15 @@ const course = (() => {
     rainbow: { label: "РАДУГА", color: "#ffd84d", rgb: [255, 216, 77] },
     cloud: { label: "КЛОВД", color: "#9fe8ff", rgb: [150, 230, 255] },
   };
-  const CLOUD_PALETTE = { sky: [30, 70, 140], sky2: [90, 170, 230], neb: [190, 240, 255], neb2: [120, 180, 255], wall: [40, 70, 130], wall2: [190, 235, 255], glow: [235, 250, 255] };
+  // «Кловд» идёт в старой кладовке: мир уходит в цвета дерева и тёплой лампы
+  const CLOUD_PALETTE = { sky: [40, 26, 18], sky2: [70, 45, 28], neb: [255, 200, 120], neb2: [150, 100, 60], wall: [60, 38, 24], wall2: [170, 120, 70], glow: [255, 225, 170] };
   const CLOUD_LANE = 112;    // «Кловд»: насколько потолок и пол от пути
   const CLOUD_SPEED = 355;   // единиц в секунду: столько стрелка пролетает к гусенице
-  const PUFF_STEP = 62;      // шаг облачков вдоль потолка и пола
+  const SHELF_TOP = CLOUD_LANE + 26; // от пути до доски, по которой ползёт гусеница: на ней стоят её ножки
+  const SHELF_THICK = 20;    // толщина доски
+  const SHELF_ITEM = 34;     // шаг книг и банок на полках
+  const BOOKS = ["#8e2f2f", "#2f5d8e", "#3f7a3a", "#b88a2e", "#6a3f8e", "#9a5a2a", "#2e7b7b", "#c4b49a"];
+  const DUST = [214, 200, 176];
   const RAINBOW = ["#ff3b5c", "#ff8a2b", "#ffd84d", "#5dffb0", "#39d8ff", "#5f6dff", "#c06bff"];
   const EYES = 4;            // сколько крылатых глаз летит над радугой
   const WALL_STEP = 60;      // длина ячейки со стеной: персонаж упирается в неё почти сразу
@@ -184,6 +189,13 @@ const course = (() => {
 
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const rgba = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+  /** Псевдослучайное 0..1 по числу: книги на полках и капли дождя не прыгают от кадра к кадру. */
+  const noise = (k) => {
+    const x = Math.sin(k * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
+  /** Остаток от деления, всегда положительный: для того, что крутится по экрану по кругу. */
+  const loop = (v, span) => ((v % span) + span) % span;
   const mixRgb = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
 
   // ---------- Построение уровня ----------
@@ -1260,22 +1272,194 @@ const course = (() => {
     ctx.restore();
   }
 
-  /** Потолок и пол из облаков: кучерявые полосы вдоль пути, мягко дышат. */
-  function drawClouds(left, right, pathY) {
-    if (zones.cloud < 0.02) return;
-    const from = Math.floor(left / PUFF_STEP), to = Math.ceil(right / PUFF_STEP);
-    ctx.save();
-    ctx.globalAlpha = zones.cloud;
-    for (const [side, color, grow] of [[-1, "#d9f3ff", 1.15], [1, "#d9f3ff", 1.15], [-1, "#fff", 0.9], [1, "#fff", 0.9]]) {
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      for (let k = from; k <= to; k++) {
-        const r = (24 + ((k * 37 + 41) % 17)) * grow * (1 + Math.sin(time * 2 + k) * 0.06);
-        const x = k * PUFF_STEP, y = pathY + side * (CLOUD_LANE + 28 + r * 0.45);
-        ctx.moveTo(x + r, y);
-        ctx.arc(x, y, r, 0, Math.PI * 2);
+  /** Деревянная доска полки: y — её верх, на нём лежит пыль. dark — насколько затемнить дальнюю полку. */
+  function drawPlank(left, right, y, dark) {
+    const g = ctx.createLinearGradient(0, y, 0, y + SHELF_THICK);
+    g.addColorStop(0, "#b07a45");
+    g.addColorStop(0.25, "#8a5a32");
+    g.addColorStop(1, "#4e2f18");
+    ctx.fillStyle = g;
+    ctx.fillRect(left, y, right - left, SHELF_THICK);
+    // волокна дерева
+    ctx.strokeStyle = "rgba(60,32,14,.45)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let j = 0; j < 3; j++) {
+      const gy = y + 6 + j * 5;
+      ctx.moveTo(left, gy);
+      for (let x = Math.floor(left / 80) * 80; x <= right + 80; x += 80) ctx.lineTo(x, gy + Math.sin(x * 0.013 + j * 2) * 1.6);
+    }
+    ctx.stroke();
+    // светлая кромка и комья пыли сверху
+    ctx.fillStyle = "#d9a66a";
+    ctx.fillRect(left, y, right - left, 2.5);
+    ctx.fillStyle = rgba(DUST, 0.75);
+    ctx.beginPath();
+    for (let x = Math.floor(left / 18) * 18; x <= right; x += 18) {
+      const r = 3 + noise(x) * 6;
+      ctx.moveTo(x + r, y);
+      ctx.ellipse(x, y, r, r * 0.45, 0, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    if (dark > 0) {
+      ctx.fillStyle = `rgba(20,10,4,${dark})`;
+      ctx.fillRect(left, y - 4, right - left, SHELF_THICK + 4);
+    }
+  }
+
+  /** Книги, банки и коробки, стоящие на полке: base — верх доски. Набор зависит только от места, seed отличает полки. */
+  function drawShelfItems(left, right, base, seed, dark) {
+    for (let j = Math.floor(left / SHELF_ITEM) - 1; j <= right / SHELF_ITEM; j++) {
+      const r = noise(j + seed), x = j * SHELF_ITEM;
+      const w = 16 + noise(j + seed + 0.5) * 14, h = 44 + noise(j + seed + 0.25) * 40;
+      ctx.lineWidth = 2;
+      if (r < 0.62) {
+        // книга: корешок с золотыми полосками, некоторые завалились набок
+        ctx.save();
+        ctx.translate(x, base);
+        if (r < 0.08) ctx.rotate(0.22);
+        ctx.fillStyle = BOOKS[Math.floor(noise(j + seed + 0.75) * BOOKS.length)];
+        ctx.fillRect(0, -h, w, h);
+        ctx.fillStyle = "rgba(255,225,150,.55)";
+        ctx.fillRect(0, -h + 8, w, 3);
+        ctx.fillRect(0, -14, w, 3);
+        ctx.strokeStyle = "rgba(20,10,4,.6)";
+        ctx.strokeRect(0, -h, w, h);
+        ctx.fillStyle = rgba(DUST, 0.85);
+        ctx.fillRect(0, -h - 2, w, 3);
+        ctx.restore();
+      } else if (r < 0.8) {
+        // стеклянная банка с крышкой и бликом
+        const jh = h * 0.6, jw = w + 6;
+        ctx.fillStyle = "rgba(170,210,200,.35)";
+        ctx.strokeStyle = "rgba(230,245,240,.6)";
+        ctx.fillRect(x, base - jh, jw, jh);
+        ctx.strokeRect(x, base - jh, jw, jh);
+        ctx.fillStyle = "#7a4a2a";
+        ctx.fillRect(x + 2, base - jh - 6, jw - 4, 7);
+        ctx.fillStyle = rgba(DUST, 0.85);
+        ctx.fillRect(x + 2, base - jh - 8, jw - 4, 2);
+        ctx.fillStyle = "rgba(255,255,255,.4)";
+        ctx.fillRect(x + 4, base - jh + 6, 3, jh - 12);
+      } else if (r < 0.9) {
+        // картонная коробка, заклеенная скотчем
+        const bh = h * 0.5, bw = w + 10;
+        ctx.fillStyle = "#a8865a";
+        ctx.fillRect(x, base - bh, bw, bh);
+        ctx.strokeStyle = "rgba(40,24,10,.6)";
+        ctx.strokeRect(x, base - bh, bw, bh);
+        ctx.fillStyle = "rgba(240,220,170,.6)";
+        ctx.fillRect(x + bw / 2 - 3, base - bh, 6, bh);
       }
+      // остальное — пустое место на полке
+    }
+    if (dark > 0) {
+      ctx.fillStyle = `rgba(20,10,4,${dark})`;
+      ctx.fillRect(left, base - 90, right - left, 90);
+    }
+  }
+
+  /**
+   * «Кловд»: потолок и пол — пыльные полки. Гусеница ползёт по нижней доске и вверх ногами под верхней,
+   * на верхней стоят книги и банки, под нижней видна ещё одна полка. В начале ивента полки въезжают сверху и снизу.
+   */
+  function drawShelves(left, right, pathY) {
+    const k = zones.cloud;
+    if (k < 0.02) return;
+    ctx.save();
+    ctx.globalAlpha = k;
+    const slide = (1 - k) * 220;
+    const top = pathY - SHELF_TOP - slide, bottom = pathY + SHELF_TOP + slide;
+
+    drawShelfItems(left, right, top - SHELF_THICK, 0, 0);
+    drawPlank(left, right, top - SHELF_THICK, 0);
+    drawPlank(left, right, bottom + 170, 0.45);
+    drawShelfItems(left, right, bottom + 170, 500, 0.45);
+
+    // кованые кронштейны держат нижнюю полку
+    ctx.fillStyle = "#3a2a22";
+    for (let x = Math.floor(left / 240) * 240; x <= right; x += 240) {
+      ctx.beginPath();
+      ctx.moveTo(x - 6, bottom + SHELF_THICK);
+      ctx.lineTo(x + 46, bottom + SHELF_THICK);
+      ctx.lineTo(x + 2, bottom + SHELF_THICK + 56);
+      ctx.lineTo(x - 6, bottom + SHELF_THICK + 56);
       ctx.fill();
+    }
+    drawPlank(left, right, bottom, 0);
+
+    // из-под верхней полки свисают пыльные нити и качаются
+    ctx.strokeStyle = rgba(DUST, 0.55);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let x = Math.floor(left / 130) * 130; x <= right; x += 130) {
+      if (noise(x + 7) < 0.5) continue;
+      const len = 14 + noise(x + 3) * 26, sway = Math.sin(time * 2 + x) * 6;
+      ctx.moveTo(x, top);
+      ctx.quadraticCurveTo(x + sway * 0.5, top + len * 0.6, x + sway, top + len);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** «Кловд»: вместо космоса вдали стоят стеллажи с книгами, они едут медленнее мира; в луче света кружит пыль. */
+  function drawBookcase(w, h) {
+    const k = zones.cloud;
+    if (k < 0.02) return;
+    ctx.save();
+    ctx.globalAlpha = k;
+    const back = ctx.createLinearGradient(0, 0, 0, h);
+    back.addColorStop(0, "#24160d");
+    back.addColorStop(0.5, "#3b2516");
+    back.addColorStop(1, "#1a0f08");
+    ctx.fillStyle = back;
+    ctx.fillRect(0, 0, w, h);
+
+    const row = h / 3, unit = 22 * scale, off = camX * 0.3 * scale;
+    const from = Math.floor(off / unit) - 1, to = Math.ceil((off + w) / unit) + 1;
+    const post = (j) => loop(j, 15) === 0; // через каждые 15 книг — стойка стеллажа
+    for (let r = 0; r < 4; r++) {
+      const y = row * (r + 0.6);
+      for (let j = from; j <= to; j++) {
+        if (post(j) || noise(j * 3.1 + r * 101) > 0.9) continue;
+        const x = j * unit - off;
+        const bh = row * (0.45 + noise(j + r * 57) * 0.35), bw = unit * (0.6 + noise(j * 1.7 + r) * 0.35);
+        ctx.fillStyle = BOOKS[Math.floor(noise(j * 0.7 + r * 13) * BOOKS.length)];
+        ctx.fillRect(x, y - bh, bw, bh);
+        ctx.fillStyle = "rgba(255,230,180,.25)";
+        ctx.fillRect(x, y - bh * 0.8, bw, 2 * scale);
+      }
+      ctx.fillStyle = "#5a3820";
+      ctx.fillRect(0, y, w, row * 0.07);
+      ctx.fillStyle = "#8a5a32";
+      ctx.fillRect(0, y, w, 2 * scale);
+    }
+    ctx.fillStyle = "#2a1a0e";
+    for (let j = from; j <= to; j++) if (post(j)) ctx.fillRect(j * unit - off, 0, unit * 0.9, h);
+
+    // стеллажи далеко: темнее и в дымке
+    ctx.fillStyle = "rgba(14,8,4,.45)";
+    ctx.fillRect(0, 0, w, h);
+
+    // из окна падает луч, в нём пыль
+    ctx.globalCompositeOperation = "lighter";
+    const beam = ctx.createLinearGradient(w * 0.85, 0, w * 0.4, h);
+    beam.addColorStop(0, rgba([255, 225, 160], 0.18 + beat * 0.08));
+    beam.addColorStop(1, "rgba(255,225,160,0)");
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.72, 0);
+    ctx.lineTo(w * 0.95, 0);
+    ctx.lineTo(w * 0.6, h);
+    ctx.lineTo(w * 0.28, h);
+    ctx.fill();
+    ctx.fillStyle = "#ffe9c0";
+    for (let i = 0; i < 60; i++) {
+      const x = loop(noise(i + 0.3) * w * 1.2 - (time * (8 + noise(i) * 20) + camX * 0.1) * scale, w * 1.2) - w * 0.1;
+      const y = loop(noise(i + 0.6) * h + Math.sin(time * 0.7 + i) * 20 * scale + time * 6 * scale, h);
+      const size = (1 + noise(i + 0.9) * 2.5) * scale;
+      ctx.globalAlpha = k * (0.3 + 0.5 * Math.abs(Math.sin(time * 1.7 + i)));
+      ctx.fillRect(x, y, size, size);
     }
     ctx.restore();
   }
@@ -1335,9 +1519,9 @@ const course = (() => {
       if (z.life <= 0) { zaps.splice(i, 1); continue; }
       const w = 26 * z.life;
       const g = ctx.createLinearGradient(z.x - w, 0, z.x + w, 0);
-      g.addColorStop(0, "rgba(120,235,255,0)");
-      g.addColorStop(0.5, `rgba(235,252,255,${z.life})`);
-      g.addColorStop(1, "rgba(120,235,255,0)");
+      g.addColorStop(0, "rgba(255,215,150,0)");
+      g.addColorStop(0.5, `rgba(255,245,225,${z.life})`);
+      g.addColorStop(1, "rgba(255,215,150,0)");
       ctx.fillStyle = g;
       ctx.fillRect(z.x - w, Math.min(z.y0, z.y1), w * 2, Math.abs(z.y1 - z.y0));
     }
@@ -1794,6 +1978,176 @@ const course = (() => {
     ctx.globalCompositeOperation = "source-over";
   }
 
+  /**
+   * Экранные эффекты ивентов, каждый плавно появляется и гаснет вместе со своим ивентом:
+   * овердрайв — пламя и угли, шторм — дождь и туман, переворот — сбои картинки и искры вверх,
+   * «Раст» — кольца, которые затягивает в дыру, и помехи, «Радуга» — блёстки, «Кловд» — пыль у самой камеры.
+   */
+  function drawEventFx(w, h, pathY) {
+    if (reduce) return;
+    ctx.save();
+    ctx.lineCap = "round";
+
+    const over = zones.over;
+    if (over > 0.02) {
+      ctx.globalCompositeOperation = "lighter";
+      // языки пламени снизу и поменьше сверху, пляшут сильнее на ударах
+      for (const [side, size] of [[1, 1], [-1, 0.55]]) {
+        const edge = side > 0 ? h : 0;
+        const g = ctx.createLinearGradient(0, edge, 0, edge - side * 150 * scale * size);
+        g.addColorStop(0, `rgba(255,190,70,${0.75 * over})`);
+        g.addColorStop(0.5, `rgba(255,80,30,${0.4 * over})`);
+        g.addColorStop(1, "rgba(255,40,20,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(0, edge);
+        const step = 26 * scale;
+        for (let x = 0, j = 0; x <= w + step; x += step, j++) {
+          const flame = (60 + 50 * Math.abs(Math.sin(time * 7 + j * 1.7)) + 30 * Math.sin(time * 13 + j * 0.6) + beat * 60) * scale * size * over;
+          ctx.lineTo(x - step / 2, edge - side * flame);
+          ctx.lineTo(x, edge - side * flame * 0.35);
+        }
+        ctx.lineTo(w, edge);
+        ctx.fill();
+      }
+      // угли летят вверх и назад
+      for (let i = 0; i < 50; i++) {
+        const x = loop(noise(i + 0.4) * w - time * (90 + noise(i + 0.8) * 200) * scale, w) + Math.sin(time * 3 + i) * 10 * scale;
+        const y = h - loop(time * (120 + noise(i) * 260) * scale + noise(i + 0.2) * h, h * 1.1);
+        const size = (2 + noise(i + 0.6) * 4) * scale * (0.7 + 0.3 * Math.sin(time * 20 + i));
+        ctx.fillStyle = i % 3 ? `rgba(255,150,50,${over})` : `rgba(255,235,150,${over})`;
+        ctx.fillRect(x, y, size, size);
+      }
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    const storm = zones.storm;
+    if (storm > 0.02) {
+      // косой ливень: при молнии капли вспыхивают
+      ctx.strokeStyle = `rgba(190,200,255,${(0.28 + strike * 0.5) * storm})`;
+      ctx.lineWidth = 1.6 * scale;
+      ctx.beginPath();
+      for (let i = 0; i < 110; i++) {
+        const len = (26 + noise(i + 0.5) * 30) * scale;
+        const y = loop(time * (1300 + noise(i) * 700) * scale + noise(i + 0.3) * h * 3, h + len * 2) - len;
+        const x = loop(noise(i + 0.7) * w * 1.3 - y * 0.35 - camX * 0.6 * scale, w * 1.3) - w * 0.15;
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - len * 0.35, y + len);
+      }
+      ctx.stroke();
+      // туман стелется понизу
+      const fog = ctx.createLinearGradient(0, h * 0.65, 0, h);
+      fog.addColorStop(0, "rgba(120,110,180,0)");
+      fog.addColorStop(1, `rgba(120,110,180,${0.3 * storm})`);
+      ctx.fillStyle = fog;
+      ctx.fillRect(0, h * 0.65, w, h * 0.35);
+    }
+
+    const flip = zones.flip, turning = Math.sin(Math.PI * flip); // turning — пик на середине переворота
+    if (flip > 0.02) {
+      // сбои: полосы картинки дёргаются вбок, чаще всего пока мир переворачивается
+      const tick = Math.floor(time * 14);
+      for (let b = 0; b < 4; b++) {
+        if (noise(tick * 4 + b) > 0.25 * flip + 0.5 * turning) continue;
+        const sh = (6 + noise(tick + b * 9) * 26) * scale, sy = noise(tick * 4 + b + 0.5) * (h - sh);
+        const dx = (noise(tick * 7 + b) - 0.5) * 60 * scale;
+        ctx.drawImage(canvas, 0, sy * dpr, canvas.width, sh * dpr, dx, sy, w, sh);
+        ctx.fillStyle = `rgba(93,255,176,${0.3 * flip})`;
+        ctx.fillRect(0, sy, w, 2);
+      }
+      ctx.globalCompositeOperation = "lighter";
+      // линия зеркала по середине экрана
+      if (turning > 0.05) {
+        const band = 60 * scale * turning;
+        const g = ctx.createLinearGradient(0, h / 2 - band, 0, h / 2 + band);
+        g.addColorStop(0, "rgba(93,255,176,0)");
+        g.addColorStop(0.5, `rgba(210,255,235,${0.7 * turning})`);
+        g.addColorStop(1, "rgba(93,255,176,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, h / 2 - band, w, band * 2);
+      }
+      // искры падают вверх: гравитация перевернулась
+      ctx.fillStyle = `rgba(93,255,176,${0.8 * flip})`;
+      for (let i = 0; i < 36; i++) {
+        const x = loop(noise(i + 0.1) * w + Math.sin(time * 2 + i) * 18 * scale, w);
+        const y = h - loop(time * (160 + noise(i + 0.4) * 220) * scale + noise(i + 0.7) * h, h);
+        const size = (2 + noise(i + 0.9) * 3) * scale;
+        ctx.fillRect(x, y, size, size * 3);
+      }
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    const rast = zones.rast;
+    if (rast > 0.02) {
+      // кольца сжимаются и уходят в дыру
+      const hole = holePoint(holeShown, pathY);
+      ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < 5; i++) {
+        const t = 1 - loop(time * 0.7 + i / 5, 1);
+        ctx.strokeStyle = `rgba(255,60,90,${(1 - t) * 0.45 * rast})`;
+        ctx.lineWidth = (2 + (1 - t) * 4) * scale;
+        ctx.beginPath();
+        ctx.arc(hole.x, hole.y, hole.r * (1 + t * 2.2), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = "source-over";
+      // помехи, как на сломанном экране, и редкие красные разрывы
+      for (let i = 0; i < 90; i++) {
+        ctx.fillStyle = Math.random() < 0.5 ? `rgba(255,255,255,${0.12 * rast})` : `rgba(255,50,80,${0.15 * rast})`;
+        ctx.fillRect(Math.random() * w, Math.random() * h, (2 + Math.random() * 10) * scale, 2 * scale);
+      }
+      if (Math.random() < 0.12 * rast) {
+        ctx.fillStyle = "rgba(255,40,70,.5)";
+        ctx.fillRect(0, Math.random() * h, w, (1 + Math.random() * 3) * scale);
+      }
+    }
+
+    const bow = zones.rainbow;
+    if (bow > 0.02) {
+      ctx.globalCompositeOperation = "lighter";
+      // полосы спектра наискось через весь экран
+      const prism = ctx.createLinearGradient(0, 0, w, h);
+      RAINBOW.forEach((c, j) => prism.addColorStop(j / (RAINBOW.length - 1), c));
+      ctx.globalAlpha = 0.07 * bow;
+      ctx.fillStyle = prism;
+      ctx.fillRect(0, 0, w, h);
+      // блёстки сыплются с радуги и мерцают
+      ctx.lineWidth = 1.6 * scale;
+      for (let i = 0; i < 46; i++) {
+        const x = loop(noise(i) * w + time * 30 * scale * (noise(i + 0.3) - 0.5), w);
+        const span = h * 0.75, fall = loop(time * (40 + noise(i + 0.5) * 70) * scale + noise(i + 0.8) * span, span);
+        const y = rainbowY(x, w, h) + fall;
+        const r = (2 + Math.abs(Math.sin(time * 4 + i * 1.3)) * 5) * scale;
+        ctx.globalAlpha = bow * (1 - fall / span);
+        ctx.strokeStyle = RAINBOW[i % RAINBOW.length];
+        ctx.beginPath();
+        ctx.moveTo(x - r, y);
+        ctx.lineTo(x + r, y);
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x, y + r);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    const cloud = zones.cloud;
+    if (cloud > 0.02) {
+      // крупные размытые пылинки пролетают у самой камеры, быстрее мира
+      for (let i = 0; i < 18; i++) {
+        const x = loop(noise(i + 0.1) * w * 1.3 - (time * 25 + camX * 1.3) * scale, w * 1.3) - w * 0.15;
+        const y = loop(noise(i + 0.5) * h + Math.sin(time * 0.8 + i) * 30 * scale, h);
+        const r = (4 + noise(i + 0.8) * 10) * scale;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, rgba(DUST, 0.35 * cloud));
+        g.addColorStop(1, rgba(DUST, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+    }
+    ctx.restore();
+  }
+
   function sectionAt(pos) {
     const i = Math.min(Math.floor(pos), map.segs.length - 1);
     return map.sections.find((c) => i < c.to) || map.sections[map.sections.length - 1];
@@ -2032,15 +2386,35 @@ const course = (() => {
     ring(p[0], p[1], 520, e.color);
     ring(p[0], p[1], 280, "#fff");
     pixels(p[0], p[1], 44, e.color, 1.6);
-    if (kind === "storm") strikeAt = time; // шторм начинается с молнии
-    if (kind === "rainbow") rain = { start: time, from: i, fired: new Set() };
+    if (kind === "over") {
+      // взрыв огня
+      pixels(p[0], p[1], 40, "#ffe08a", 2.2);
+      ring(p[0], p[1], 760, "#ff5a2b");
+    }
+    if (kind === "storm") {
+      strikeAt = time; // шторм начинается с молнии
+      pixels(p[0], p[1], 30, "#8fa8ff", 1.8);
+    }
+    if (kind === "flip") {
+      ring(p[0], p[1], 700, "#d6fff0");
+      pixels(p[0], p[1], 30, "#d6fff0", 2);
+    }
+    if (kind === "rast") {
+      // мир схлопывается в черноту
+      pixels(p[0], p[1], 50, "#ff3b5c", 2);
+      ring(p[0], p[1], 900, "#b78cff");
+    }
+    if (kind === "rainbow") {
+      rain = { start: time, from: i, fired: new Set() };
+      RAINBOW.forEach((c, j) => ring(p[0], p[1], 180 + j * 70, c));
+    }
     if (kind === "cloud") {
-      // клуб дыма, из которого выходит гусеница; прежняя дорога разлетается
+      // облако пыли, из которого выходит гусеница; прежняя дорога разлетается
       puff = { start: time, from: i };
       morphed = 1;
       crawlY = lastLane = 1;
       ring(p[0], p[1], 340, "#fff");
-      pixels(p[0], p[1], 40, "#d9f3ff", 1.5);
+      pixels(p[0], p[1], 50, rgba(DUST), 1.8);
       for (let k = i + 1; opts.level[k]?.zone === "cloud"; k++) {
         const c = at(k + 0.5);
         pixels(c.x, c.y, 10, COLORS[opts.level[k].was], 1.2);
@@ -2251,12 +2625,14 @@ const course = (() => {
       if (lane !== lastLane) {
         lastLane = lane;
         zaps.push({ x: me.x, y0: pathY - CLOUD_LANE, y1: pathY + CLOUD_LANE, life: 1 });
-        const landY = pathY + (lane === 0 ? -1 : 1) * CLOUD_LANE;
-        pixels(me.x, landY, 16, "#9fe8ff", 1.1);
-        ring(me.x, landY, 100, "#9fe8ff");
+        // с полки, откуда прыгнула, и с той, куда приземлилась, летит пыль
+        const side = lane === 0 ? -1 : 1;
+        pixels(me.x, pathY + side * SHELF_TOP, 20, rgba(DUST), 1.1);
+        pixels(me.x, pathY - side * SHELF_TOP, 10, rgba(DUST), 0.7);
+        ring(me.x, pathY + side * SHELF_TOP, 100, "#e8d6b0");
         shake = Math.max(shake, 0.4);
         punch = Math.max(punch, 0.3);
-        flashOf(0.16, [150, 230, 255]);
+        flashOf(0.16, [255, 225, 170]);
         kick(0.035);
       }
       const want = lane === 0 ? -1 : 1;
@@ -2292,9 +2668,19 @@ const course = (() => {
     if (!reduce && s < n && (o.holding || Math.random() < 0.3)) {
       pixel(me.x - 20, me.y + (Math.random() - 0.5) * 16, -80 - Math.random() * 120, (Math.random() - 0.5) * 70, 0.4 + Math.random() * 0.5, 4 + Math.random() * 7, Math.random() < 0.5 ? "#fff" : color);
     }
-    // гусеница сыплет искрами с ножек
+    // из-под ножек гусеницы летит пыль, с верхней полки она сыплется хлопьями
     if (!reduce && crawling) {
-      pixel(me.x - 24, me.y + crawlY * 22, -220 - Math.random() * 160, -crawlY * Math.random() * 90, 0.35, 3 + Math.random() * 5, Math.random() < 0.5 ? "#fff" : "#9fe8ff");
+      const side = crawlY >= 0 ? 1 : -1;
+      pixel(me.x - 30 + Math.random() * 50, pathY + side * SHELF_TOP, -120 - Math.random() * 140, -side * Math.random() * 60, 0.5, 3 + Math.random() * 5, rgba(DUST, 0.8));
+      if (Math.random() < 0.4) pixel(me.x + Math.random() * viewW * 0.8, pathY - SHELF_TOP, -20, 40 + Math.random() * 40, 2, 2 + Math.random() * 3, rgba(DUST, 0.7));
+    }
+    // за персонажем тянется след ивента
+    const trailFx = { over: ["#ffb040", "#ff5a2b", "#ffe08a"], flip: ["#5dffb0", "#d6fff0"], rainbow: RAINBOW, storm: ["#c9b8ff", "#8fa8ff"] }[zoneNow];
+    if (!reduce && trailFx && !crawling) {
+      for (let i = 0; i < 2; i++) {
+        const vy = (zoneNow === "over" ? -60 : 0) + (Math.random() - 0.5) * 80;
+        pixel(me.x - 18, me.y + (Math.random() - 0.5) * 20, -160 - Math.random() * 160, vy, 0.5, 3 + Math.random() * 6, trailFx[Math.floor(Math.random() * trailFx.length)]);
+      }
     }
     // в воздухе плавает пыль, мир не стоит на месте
     if (!reduce && Math.random() < 0.5) {
@@ -2315,14 +2701,18 @@ const course = (() => {
       drawSky(cssW, cssH);
       drawFar(cssW, cssH);
     }
+    drawBookcase(cssW, cssH);
 
     ctx.save();
     applyCamera();
     const left = camX - viewW * heroAt() - 120;
     const right = camX + viewW * (1 - heroAt()) + 120;
     if (!scene) {
+      // в «Кловде» стены коридора растворяются, чтобы были видны стеллажи
+      ctx.globalAlpha = 1 - zones.cloud * 0.85;
       drawWalls(left, right);
       drawDeco(left, right);
+      ctx.globalAlpha = 1;
     }
     drawPortals(left, right);
     if (zones.rast > 0.01) {
@@ -2334,7 +2724,7 @@ const course = (() => {
       drawHole(pathY); // ячейки рисуются поверх дыры: стрелки видны, даже когда она вплотную
       ctx.restore();
     }
-    drawClouds(left, right, pathY);
+    drawShelves(left, right, pathY);
     drawZaps(dt);
     drawTrail();
     if (s < n) {
@@ -2383,9 +2773,9 @@ const course = (() => {
     if (gone > 0.02) {
       const jitter = o.wrong && !reduce ? (Math.random() - 0.5) * 7 : 0;
       if (crawling) {
-        // клуб дыма превращения
+        // облако пыли превращения
         if (morphed > 0.05) {
-          ctx.fillStyle = rgba([235, 250, 255], morphed);
+          ctx.fillStyle = rgba(DUST, morphed);
           ctx.beginPath();
           ctx.arc(me.x, me.y, 30 + (1 - morphed) * 70, 0, Math.PI * 2);
           ctx.fill();
@@ -2401,17 +2791,18 @@ const course = (() => {
     }
     ctx.restore();
 
-    if (scene && zones.rast < 0.5) scenes.front(scene, ctx, view);
+    if (scene && zones.rast < 0.5 && zones.cloud < 0.5) scenes.front(scene, ctx, view);
     const heroPos = toScreen(me.x, me.y);
     drawRainbow(cssW, cssH, heroPos.x, heroPos.y);
     drawLasers(dt);
     if (o.hp !== null && o.hp !== undefined) drawHearts(heroPos.x, heroPos.y - 44 * scale, o.hp);
     drawStorm(dt, cssW, cssH, cssW * heroAt(), cssH / 2 + (me.y - camY) * scale * flipY());
+    drawEventFx(cssW, cssH, pathY);
     drawStreaks(cssW, cssH);
     drawVignette(cssW, cssH);
     drawEdges(cssW, cssH, EVENTS.over.rgb, zones.over * (0.3 + beat * 0.3));
     drawEdges(cssW, cssH, EVENTS.flip.rgb, zones.flip * 0.28);
-    drawEdges(cssW, cssH, EVENTS.cloud.rgb, zones.cloud * (0.22 + beat * 0.3));
+    drawEdges(cssW, cssH, [255, 200, 130], zones.cloud * (0.22 + beat * 0.3)); // тёплый свет лампы в кладовке
     drawEdges(cssW, cssH, [255, 40, 70], Math.max(danger * (0.16 + beat * 0.34), close * 0.7));
     if (!reduce && flash > 0.02) {
       ctx.fillStyle = rgba(flashRgb, flash * 0.6);
