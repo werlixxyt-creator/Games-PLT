@@ -297,7 +297,7 @@ const edview = (() => {
       ctx.beginPath();
       ctx.arc(0, 0, r + 9, 0, Math.PI * 2);
       ctx.stroke();
-      outlinedText(sp.name.toUpperCase() + (sp.tag ? " " + sp.tag : ""), 0, r + 38, sp.color, "900 16px Unbounded, sans-serif");
+      outlinedText(sp.name.toUpperCase() + " " + s.tagOf(c), 0, r + 38, sp.color, "900 16px Unbounded, sans-serif");
     }
 
     const caption = s.fast ? `${i + 1}` : `${i + 1} · ${c.f.toFixed(2)} с`;
@@ -533,6 +533,8 @@ const edview = (() => {
       if (tv.effect.k < 1) bgart.effect(ctx, tv.effect.prev, bgView, p, 1 - tv.effect.k);
       bgart.effect(ctx, tv.effect.id, bgView, p, tv.effect.k);
       bgart.darken(ctx, w, h, tv.dark);
+      bgart.invert(ctx, w, h, tv.invert);
+      bgart.letterbox(ctx, w, h, tv.letterbox);
       if (tv.message) bgart.message(ctx, w, h, tv.message.text, tv.message.alpha);
       if (run.flash.k > 0.02 && !reduce) {
         ctx.fillStyle = `rgba(${run.flash.rgb.join(",")},${run.flash.k * 0.6})`;
@@ -1043,5 +1045,8 @@ const edview = (() => {
     canvas.addEventListener("wheel", onWheel, { passive: false });
   }
 
-  return { init, show, reset, focus, play, stop, press, release, releaseAll, playing: () => !!run };
+  /** Где стрелка ячейки c на превью (для перепривязки объектов), null — такой нет. */
+  const keyPoint = (c) => (geo && c >= 0 && c < geo.xs.length - 1 ? keyAt(c) : null);
+
+  return { init, show, reset, focus, play, stop, press, release, releaseAll, keyPoint, playing: () => !!run };
 })();

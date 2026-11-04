@@ -3,7 +3,7 @@
 // Как работают триггеры уровня — одно место и для матча (course.js), и для быстрого теста в редакторе (edview.js).
 // Триггер срабатывает, когда игрок проходит его ячейку. Поля триггера (см. LevelObject на сервере):
 //   v — цвет, текст или выбор из списка; p, q — числа (сдвиг, угол, сила…); d — длительность в секундах;
-//   e — плавность (0 ровно, 1 плавно, 2 с замедлением, 3 с отскоком); gr — группа объектов (0 — все объекты).
+//   e — плавность (номер кривой из easecurve.js), b — своя кривая; gr — группа объектов (0 — все объекты).
 // Цвета, камера, затемнение и фон держатся до следующего триггера того же вида и плавно перетекают за d секунд.
 // Вспышка, тряска, надпись и пульс — разовые. Анимации двигают, крутят и красят объекты своей группы.
 const trigrun = (() => {
@@ -11,18 +11,7 @@ const trigrun = (() => {
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const num = (v, def) => (v === null || v === undefined || v === "" || !Number.isFinite(+v) ? def : +v);
 
-  const EASES = [
-    (t) => t,
-    (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2),
-    (t) => 1 - (1 - t) ** 3,
-    (t) => {
-      const n = 7.5625, d = 2.75;
-      if (t < 1 / d) return n * t * t;
-      if (t < 2 / d) return n * (t -= 1.5 / d) * t + 0.75;
-      if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + 0.9375;
-      return n * (t -= 2.625 / d) * t + 0.984375;
-    },
-  ];
+  const TAU = Math.PI * 2;
 
   /** Ключи палитры, которые меняет каждый цветовой триггер. */
   const PAL_KEYS = {
@@ -37,6 +26,16 @@ const trigrun = (() => {
   };
   const hexOf = (c) => "#" + c.map((v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0")).join("");
   const mixRgb = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
+  /** Поворот оттенка цвета на deg градусов (матрица поворота вокруг серой оси). */
+  function hueRotate([r, g, b], deg) {
+    const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+    const m = [
+      0.213 + c * 0.787 - s * 0.213, 0.715 - c * 0.715 - s * 0.715, 0.072 - c * 0.072 + s * 0.928,
+      0.213 - c * 0.213 + s * 0.143, 0.715 + c * 0.285 + s * 0.14, 0.072 - c * 0.072 - s * 0.283,
+      0.213 - c * 0.213 - s * 0.787, 0.715 - c * 0.715 + s * 0.715, 0.072 + c * 0.928 + s * 0.072,
+    ];
+    return [m[0] * r + m[1] * g + m[2] * b, m[3] * r + m[4] * g + m[5] * b, m[6] * r + m[7] * g + m[8] * b].map((v) => clamp(v, 0, 255));
+  }
   const pick = (pal, keys) => (keys ? Object.fromEntries(keys.map((k) => [k, pal[k]])) : { ...pal });
   const mixPal = (a, b, k) => Object.fromEntries(Object.keys(b).map((key) => [key, mixRgb(a[key] || b[key], b[key], k)]));
 
@@ -60,11 +59,11 @@ const trigrun = (() => {
     let events = [];
     const groups = new Map();
 
-    const progress = (tw) => {
-      if (!tw.dur) return 1;
-      return EASES[tw.ease] ? EASES[tw.ease](clamp((now - tw.start) / tw.dur, 0, 1)) : clamp((now - tw.start) / tw.dur, 0, 1);
-    };
-    const tween = (from, to, t, def) => ({ from, to, start: now, dur: instant ? 0 : durOf(t, def), ease: clamp(num(t.e, 1), 0, 3) | 0 });
+    const progress = (tw) => (tw.dur ? tw.ease(clamp((now - tw.start) / tw.dur, 0, 1)) : 1);
+    const LINEAR = (x) => x;
+    const tween = (from, to, t, def) => ({ from, to, start: now, dur: instant ? 0 : durOf(t, def), ease: easecurve.fn(num(t.e, 1), t.b) });
+    // постоянные движения: камера крутится, мир переливается радугой
+    let camSpin = 0, camAngle = 0, hueSpeed = 0, hueAngle = 0;
     const scalar = (name, def) => {
       const tw = scalars[name];
       return tw ? tw.from + (tw.to - tw.from) * progress(tw) : def;
@@ -91,7 +90,7 @@ const trigrun = (() => {
     }
 
     function group(gr) {
-      if (!groups.has(gr)) groups.set(gr, { tw: {}, target: {}, spin: 0, spinRot: 0, tints: [], pulse: null });
+      if (!groups.has(gr)) groups.set(gr, { tw: {}, target: {}, spin: 0, spinRot: 0, tints: [], pulse: null, osc: null, orbit: null });
       return groups.get(gr);
     }
     const LOOK_DEF = { dx: 0, dy: 0, rot: 0, scale: 1, alpha: 1, vis: 1 };
@@ -165,11 +164,35 @@ const trigrun = (() => {
           for (const key of Object.keys(LOOK_DEF)) {
             const v = gval(g, key);
             g.target[key] = v;
-            g.tw[key] = { from: v, to: v, start: now, dur: 0, ease: 0 };
+            g.tw[key] = { from: v, to: v, start: now, dur: 0, ease: LINEAR };
           }
           g.spin = 0;
+          g.osc = null;
+          g.orbit = null;
           break;
         }
+        case "t-oscill": {
+          // качание туда-обратно с размахом p, q за период d; нулевой размах — остановить
+          const ax = num(t.p, 0), ay = num(t.q, 0);
+          group(gr).osc = ax || ay ? { ax, ay, period: Math.max(0.1, durOf(t, 2) || 2), start: now } : null;
+          break;
+        }
+        case "t-orbit": {
+          // круги радиусом p со скоростью q °/с; радиус 0 — остановить
+          const r = num(t.p, 0);
+          group(gr).orbit = r ? { r, speed: num(t.q, 90), start: now } : null;
+          break;
+        }
+        case "t-camspin": camSpin = clamp(num(t.p, 0), -360, 360); break;
+        case "t-hue": hueSpeed = clamp(num(t.p, 0), -720, 720); if (!hueSpeed) hueAngle = 0; break;
+        case "t-letterbox": setScalar("letterbox", 0, clamp(num(t.p, 0.12), 0, 0.35), t); break;
+        case "t-invert": setScalar("invert", 0, t.v === "on" ? 1 : 0, t); break;
+        case "t-camreset":
+          for (const name of ["zoom", "tilt", "ox", "oy"]) setScalar(name, name === "zoom" ? 1 : 0, name === "zoom" ? 1 : 0, t);
+          camSpin = 0;
+          scalars.camAngle = tween(camAngle % 360, 0, t, 0.6);
+          camAngle = 0;
+          break;
       }
     }
 
@@ -180,6 +203,8 @@ const trigrun = (() => {
     function update(reached, dt) {
       now += dt;
       for (const g of groups.values()) g.spinRot += g.spin * dt;
+      camAngle += camSpin * dt;
+      hueAngle += hueSpeed * dt;
       while (next < list.length && list[next].c < reached) fire(list[next++]);
       const out = events;
       events = [];
@@ -203,6 +228,7 @@ const trigrun = (() => {
       const bgPal = palNow("bg", pal), ground = palNow("ground", pal);
       if (bgPal) pal = { ...pal, ...bgPal };
       if (ground) pal = { ...pal, ...ground };
+      if (hueAngle % 360) pal = Object.fromEntries(Object.entries(pal).map(([k, c]) => [k, hueRotate(c, hueAngle)]));
       return pal;
     }
 
@@ -218,7 +244,9 @@ const trigrun = (() => {
       }
       return {
         zoom: scalar("zoom", 1),
-        tilt: (scalar("tilt", 0) * Math.PI) / 180,
+        tilt: ((scalar("tilt", 0) + camAngle + scalar("camAngle", 0)) * Math.PI) / 180,
+        letterbox: scalar("letterbox", 0),
+        invert: scalar("invert", 0),
         ox: scalar("ox", 0),
         oy: scalar("oy", 0),
         dark: scalar("dark", 0),
@@ -239,6 +267,16 @@ const trigrun = (() => {
       for (const g of gs) {
         dx += gval(g, "dx");
         dy += gval(g, "dy");
+        if (g.osc) {
+          const s = Math.sin(((now - g.osc.start) / g.osc.period) * TAU);
+          dx += g.osc.ax * s;
+          dy += g.osc.ay * s;
+        }
+        if (g.orbit) {
+          const a = ((now - g.orbit.start) * g.orbit.speed * Math.PI) / 180;
+          dx += Math.cos(a) * g.orbit.r - g.orbit.r;
+          dy += Math.sin(a) * g.orbit.r;
+        }
         rot += gval(g, "rot") + g.spinRot;
         scale *= gval(g, "scale");
         alpha *= gval(g, "alpha") * gval(g, "vis");

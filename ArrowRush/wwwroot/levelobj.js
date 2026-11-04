@@ -45,6 +45,14 @@ const levelobj = (() => {
     "b-frame": B("Рамка", "#ffffff"),
     "b-checker": B("Шашки", "#ff4f9a"),
     "b-studs": B("Кнопки", "#ff3b5c"),
+    "b-ice": B("Лёд", "#9fe8ff"),
+    "b-lava": B("Лава", "#ff6a1f"),
+    "b-wood": B("Доски", "#c98a4b"),
+    "b-gold": B("Золото", "#ffc93d"),
+    "b-dots": B("Точки", "#8b5cff"),
+    "b-stripes": B("Полосы", "#2fd39a"),
+    "b-diamond": B("Ромбы", "#22c7f0"),
+    "b-neon": B("Неон", "#ff4f9a"),
 
     half: { cat: "shapes", name: "Полублок", color: "#22c7f0", r: 34 },
     small: { cat: "shapes", name: "Кубик", color: "#22c7f0", r: 20 },
@@ -53,6 +61,12 @@ const levelobj = (() => {
     plank: { cat: "shapes", name: "Балка", color: "#c98a4b", r: 62 },
     step: { cat: "shapes", name: "Ступени", color: "#7ee03a", r: 34 },
     cross: { cat: "shapes", name: "Крест", color: "#ffb31f", r: 34 },
+    "s-circle": { cat: "shapes", name: "Круг", color: "#22c7f0", r: 34 },
+    "s-semi": { cat: "shapes", name: "Полукруг", color: "#7ee03a", r: 34 },
+    "s-hex": { cat: "shapes", name: "Шестиугольник", color: "#8b5cff", r: 34 },
+    "s-octa": { cat: "shapes", name: "Восьмиугольник", color: "#ff8a3d", r: 34 },
+    "s-ring": { cat: "shapes", name: "Бублик", color: "#ff4f9a", r: 34 },
+    "s-arch": { cat: "shapes", name: "Арка", color: "#9a93b0", r: 34 },
 
     ramp: { cat: "slopes", name: "Рампа", color: "#22c7f0", r: 34 },
     ramp2: { cat: "slopes", name: "Пологая", color: "#22c7f0", r: 62 },
@@ -67,6 +81,9 @@ const levelobj = (() => {
     "g-tile": { cat: "glass", name: "Окно", color: "#ffd36b", r: 34 },
     "g-crack": { cat: "glass", name: "Трещины", color: "#9fe8ff", r: 34 },
     "g-shards": { cat: "glass", name: "Осколки", color: "#9fe8ff", r: 40 },
+    "g-orb": { cat: "glass", name: "Шар", color: "#9fe8ff", r: 34 },
+    "g-gem": { cat: "glass", name: "Алмаз", color: "#c86bff", r: 34 },
+    "g-tube": { cat: "glass", name: "Колба", color: "#2fd39a", r: 46 },
 
     "fx-boom": { cat: "fx", name: "Взрыв", color: "#ff6a1f", r: 42 },
     "fx-bang": { cat: "fx", name: "Бах!", color: "#ffb31f", r: 46, v: "БАХ!" },
@@ -77,6 +94,10 @@ const levelobj = (() => {
     "fx-debris": { cat: "fx", name: "Обломки", color: "#9a93b0", r: 46 },
     "fx-confetti": { cat: "fx", name: "Конфетти", color: "#ff4f9a", r: 42 },
     "fx-beam": { cat: "fx", name: "Луч", color: "#22c7f0", r: 62 },
+    "fx-ring": { cat: "fx", name: "Волна", color: "#22c7f0", r: 46 },
+    "fx-portal": { cat: "fx", name: "Воронка", color: "#8b5cff", r: 42 },
+    "fx-glitch": { cat: "fx", name: "Глитч", color: "#2fd39a", r: 40 },
+    "fx-laser": { cat: "fx", name: "Лазер", color: "#ff3b5c", r: 62 },
 
     text: { cat: "deco", name: "Текст", color: "#ffffff", r: 40, v: "Текст" },
     star: { cat: "deco", name: "Звезда", color: "#ffb31f", r: 32 },
@@ -91,6 +112,16 @@ const levelobj = (() => {
     "d-grass": { cat: "deco", name: "Трава", color: "#7ee03a", r: 34 },
     "d-heart": { cat: "deco", name: "Сердце", color: "#ff3b5c", r: 30 },
     "d-moon": { cat: "deco", name: "Месяц", color: "#ffe14a", r: 32 },
+    "d-tree": { cat: "deco", name: "Ёлка", color: "#2fd39a", r: 46 },
+    "d-cactus": { cat: "deco", name: "Кактус", color: "#7ee03a", r: 46 },
+    "d-skull": { cat: "deco", name: "Череп", color: "#f3eefe", r: 32 },
+    "d-eye": { cat: "deco", name: "Глаз", color: "#22c7f0", r: 32 },
+    "d-coin": { cat: "deco", name: "Монета", color: "#ffc93d", r: 30 },
+    "d-key": { cat: "deco", name: "Ключ", color: "#ffc93d", r: 34 },
+    "d-torch": { cat: "deco", name: "Факел", color: "#ff8a3d", r: 46 },
+    "d-bush": { cat: "deco", name: "Куст", color: "#7ee03a", r: 36 },
+    "d-mushroom": { cat: "deco", name: "Гриб", color: "#ff3b5c", r: 32 },
+    "d-planet": { cat: "deco", name: "Планета", color: "#ff8a3d", r: 40 },
     cloud: { cat: "deco", name: "Облако", color: "#ffffff", r: 44, old: true },
     ring: { cat: "deco", name: "Кольцо", color: "#7ee03a", r: 40, old: true },
 
@@ -109,8 +140,15 @@ const levelobj = (() => {
     "t-tilt": T("triggers", "Наклон", "#7ee03a", "камера наклоняется до следующего наклона", { p: ["Наклон", -45, 45, 1, 8, "°"], d: 0.6, e: true }),
     "t-offset": T("triggers", "Сдвиг камеры", "#22c7f0", "камера смещается до следующего сдвига", { p: ["По X", -600, 600, 10, 0, ""], q: ["По Y", -400, 400, 10, 0, ""], d: 0.6, e: true }),
     "t-msg": T("triggers", "Надпись", "#ffe14a", "крупная надпись вверху экрана", { text: 40, d: 2 }, "Вперёд!"),
+    "t-camspin": T("triggers", "Вращение камеры", "#ff8a3d", "камера крутится без остановки; 0 — перестать", { p: ["Скорость", -360, 360, 5, 30, "°/с"] }),
+    "t-camreset": T("triggers", "Сброс камеры", "#c9c3dc", "зум, наклон, сдвиг и вращение камеры возвращаются как были", { d: 0.6, e: true }),
+    "t-hue": T("triggers", "Радуга мира", "#c86bff", "цвета мира переливаются по кругу; 0 — перестать", { p: ["Скорость", -720, 720, 5, 60, "°/с"] }),
+    "t-letterbox": T("triggers", "Кинорамка", "#1d1340", "сверху и снизу появляются чёрные полосы; 0 — убрать", { p: ["Высота", 0, 0.35, 0.01, 0.12, "%"], d: 0.6, e: true }),
+    "t-invert": T("triggers", "Инверсия", "#ffffff", "цвета всей сцены выворачиваются наизнанку", { opts: "toggle2", d: 0.3, e: true }, "on"),
 
-    "t-move": T("anim", "Движение", "#7ee03a", "объекты группы сдвигаются", { gr: true, p: ["По X", -2000, 2000, 10, 120, ""], q: ["По Y", -1000, 1000, 10, 0, ""], d: 0.5, e: true }),
+    "t-move": T("anim", "Движение", "#7ee03a", "объекты группы сдвигаются", { gr: true, p: ["По X", -6000, 6000, 5, 120, ""], q: ["По Y", -3000, 3000, 5, 0, ""], d: 0.5, e: true }),
+    "t-oscill": T("anim", "Качание", "#2fd39a", "объекты группы ходят туда-обратно, время — один полный ход; размах 0 — перестать", { gr: true, p: ["Размах X", -2000, 2000, 5, 0, ""], q: ["Размах Y", -2000, 2000, 5, 80, ""], d: 2 }),
+    "t-orbit": T("anim", "Орбита", "#3d7bff", "объекты группы летают по кругу; радиус 0 — перестать", { gr: true, p: ["Радиус", 0, 2000, 5, 80, ""], q: ["Скорость", -720, 720, 5, 90, "°/с"] }),
     "t-rotate": T("anim", "Вращение", "#ff8a3d", "объекты группы поворачиваются, каждый вокруг себя", { gr: true, p: ["Угол", -1440, 1440, 5, 90, "°"], d: 0.5, e: true }),
     "t-spin": T("anim", "Кружение", "#ffb31f", "объекты группы крутятся без остановки; 0 — перестать", { gr: true, p: ["Скорость", -720, 720, 5, 90, "°/с"] }),
     "t-scale": T("anim", "Масштаб", "#22c7f0", "объекты группы растут или сжимаются", { gr: true, p: ["Масштаб", 0.1, 5, 0.05, 1.5, "×"], d: 0.5, e: true }),
@@ -125,6 +163,7 @@ const levelobj = (() => {
   const LISTS = {
     shake: [["0.3", "Слабо"], ["0.6", "Средне"], ["1", "Сильно"]],
     toggle: [["on", "Показать"], ["off", "Спрятать"]],
+    toggle2: [["on", "Включить"], ["off", "Выключить"]],
     bg: bgart.BGS,
     effect: bgart.EFFECTS,
   };
@@ -783,6 +822,340 @@ const levelobj = (() => {
     },
   };
 
+  // ---------- Новые блоки, формы, стекло, эффекты и декор ----------
+  const regular = (c, n, r, turn = 0) => {
+    c.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a = turn + (i * TAU) / n;
+      c.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    c.closePath();
+  };
+
+  Object.assign(DRAW, {
+    "b-ice": (c, col) => tile(c, grad(c, col, 60, 0.5, -0.15), () => {
+      c.fillStyle = "rgba(255,255,255,.55)";
+      poly(c, [[-30, -30], [-6, -30], [-30, -6]]);
+      c.fill();
+      strokeLines(c, [[-18, 12, 4, -10], [4, -10, 22, 4], [4, -10, 8, -28]], "rgba(255,255,255,.7)", 1.5);
+      bevel(c, -30, -30, 60, 60, 4, "rgba(255,255,255,.5)", "rgba(0,60,120,.25)");
+    }),
+    "b-lava": (c, col, t) => tile(c, shade(col, -0.55), () => {
+      // светящиеся трещины переливаются
+      const k = reduce ? 1 : 0.7 + Math.sin(t * 3) * 0.3;
+      c.lineJoin = "round";
+      c.beginPath();
+      c.moveTo(-30, -8); c.lineTo(-10, -2); c.lineTo(0, -18); c.lineTo(18, -10); c.lineTo(30, -16);
+      c.moveTo(-10, -2); c.lineTo(-4, 16); c.lineTo(14, 22); c.lineTo(30, 14);
+      c.moveTo(-4, 16); c.lineTo(-22, 30);
+      c.strokeStyle = shade(col, 0.4);
+      c.lineWidth = 6 * k;
+      c.shadowColor = col;
+      c.shadowBlur = 10;
+      c.stroke();
+      c.strokeStyle = "#ffe9a8";
+      c.lineWidth = 2;
+      c.stroke();
+    }),
+    "b-wood": (c, col) => tile(c, col, () => {
+      for (let i = 0; i < 4; i++) {
+        c.fillStyle = shade(col, i % 2 ? -0.12 : 0.08);
+        c.fillRect(-30, -30 + i * 15, 60, 15);
+      }
+      strokeLines(c, [[-30, -15, 30, -15], [-30, 0, 30, 0], [-30, 15, 30, 15]], shade(col, -0.55), 2);
+      c.fillStyle = shade(col, -0.6);
+      for (const [x, y] of [[-24, -23], [24, -23], [-24, 22], [24, 22], [-24, -8], [24, 7]]) c.fillRect(x - 1.5, y - 1.5, 3, 3);
+    }),
+    "b-gold": (c, col, t) => tile(c, grad(c, col, 60, 0.45, -0.35), () => {
+      bevel(c, -30, -30, 60, 60, 7, "rgba(255,255,220,.6)", "rgba(120,70,0,.4)");
+      // блик пробегает по блоку
+      const x = reduce ? 0 : ((t * 40) % 140) - 70;
+      c.fillStyle = "rgba(255,255,255,.45)";
+      poly(c, [[x - 10, 30], [x, 30], [x + 30, -30], [x + 20, -30]]);
+      c.fill();
+    }),
+    "b-dots": (c, col) => tile(c, grad(c, col, 60), () => {
+      c.fillStyle = shade(col, -0.45);
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+        c.beginPath();
+        c.arc(-22.5 + i * 15, -22.5 + j * 15, 4, 0, TAU);
+        c.fill();
+      }
+    }),
+    "b-stripes": (c, col) => tile(c, shade(col, 0.1), () => {
+      c.fillStyle = shade(col, -0.35);
+      for (let i = 0; i < 4; i++) c.fillRect(-30 + i * 15, -30, 7, 60);
+      bevel(c, -30, -30, 60, 60, 4);
+    }),
+    "b-diamond": (c, col) => tile(c, shade(col, -0.3), () => {
+      for (const [x, y] of [[0, 0], [-30, -30], [30, -30], [-30, 30], [30, 30]]) {
+        poly(c, [[x, y - 15], [x + 15, y], [x, y + 15], [x - 15, y]]);
+        c.fillStyle = shade(col, 0.2);
+        c.fill();
+      }
+      strokeLines(c, [[-30, 0, 0, -30], [0, -30, 30, 0], [30, 0, 0, 30], [0, 30, -30, 0]], "rgba(0,0,0,.3)", 2);
+    }),
+    "b-neon": (c, col, t) => tile(c, "#0f0a24", () => {
+      const k = reduce ? 1 : 0.6 + Math.abs(Math.sin(t * 2.5)) * 0.4;
+      c.shadowColor = col;
+      c.shadowBlur = 14 * k;
+      c.strokeStyle = col;
+      c.lineWidth = 4;
+      c.strokeRect(-22, -22, 44, 44);
+      c.strokeRect(-10, -10, 20, 20);
+      c.shadowBlur = 0;
+    }),
+
+    "s-circle": (c, col) => { c.beginPath(); c.arc(0, 0, 30, 0, TAU); outlined(c, grad(c, col, 60)); },
+    "s-semi": (c, col) => { c.beginPath(); c.arc(0, 15, 30, Math.PI, 0); c.closePath(); outlined(c, grad(c, col, 30)); },
+    "s-hex": (c, col) => { regular(c, 6, 31); outlined(c, grad(c, col, 60)); },
+    "s-octa": (c, col) => { regular(c, 8, 32, Math.PI / 8); outlined(c, grad(c, col, 60)); },
+    "s-ring": (c, col) => {
+      c.beginPath();
+      c.arc(0, 0, 30, 0, TAU);
+      c.arc(0, 0, 14, 0, TAU, true);
+      outlined(c, grad(c, col, 60));
+    },
+    "s-arch": (c, col) => {
+      c.beginPath();
+      c.moveTo(-30, 30);
+      c.lineTo(-30, -2);
+      c.arc(0, -2, 30, Math.PI, 0);
+      c.lineTo(30, 30);
+      c.lineTo(14, 30);
+      c.lineTo(14, -2);
+      c.arc(0, -2, 14, 0, Math.PI, true);
+      c.lineTo(-14, 30);
+      c.closePath();
+      outlined(c, grad(c, col, 60));
+    },
+
+    "g-orb": (c, col) => glass(c, col, () => { c.beginPath(); c.arc(0, 0, 30, 0, TAU); }),
+    "g-gem": (c, col) => glass(c, col, () => poly(c, [[-30, -8], [-16, -26], [16, -26], [30, -8], [0, 30]]), () => {
+      strokeLines(c, [[-30, -8, 30, -8], [-16, -26, -8, -8], [16, -26, 8, -8], [-8, -8, 0, 30], [8, -8, 0, 30]], "rgba(255,255,255,.5)", 1.5);
+    }),
+    "g-tube": (c, col, t) => glass(c, col, () => {
+      c.beginPath();
+      c.roundRect(-14, -44, 28, 88, 14);
+    }, () => {
+      // жидкость с пузырьками
+      c.fillStyle = alpha(col, 0.55);
+      c.fillRect(-14, 0, 28, 44);
+      c.fillStyle = "rgba(255,255,255,.6)";
+      for (let i = 0; i < 4; i++) {
+        const p = reduce ? i / 4 : (t * 0.6 + i / 4) % 1;
+        c.beginPath();
+        c.arc(-5 + (i % 2) * 9, 40 - p * 40, 2.5, 0, TAU);
+        c.fill();
+      }
+    }),
+
+    "fx-ring": (c, col, t) => {
+      for (let i = 0; i < 3; i++) {
+        const p = reduce ? (i + 1) / 4 : (t * 0.8 + i / 3) % 1;
+        c.globalAlpha = 1 - p;
+        c.beginPath();
+        c.arc(0, 0, 8 + p * 38, 0, TAU);
+        c.lineWidth = 6 * (1 - p) + 1;
+        c.strokeStyle = col;
+        c.stroke();
+      }
+      c.globalAlpha = 1;
+    },
+    "fx-portal": (c, col, t) => {
+      c.rotate(reduce ? 0 : -t * 2);
+      for (let i = 0; i < 4; i++) {
+        c.beginPath();
+        for (let k = 0; k <= 30; k++) {
+          const a = (k / 30) * Math.PI * 1.6 + (i * TAU) / 4, r = 4 + (k / 30) * 36;
+          c.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        }
+        c.lineWidth = 5;
+        c.strokeStyle = i % 2 ? shade(col, 0.4) : col;
+        c.stroke();
+      }
+      c.beginPath();
+      c.arc(0, 0, 8, 0, TAU);
+      c.fillStyle = "#0f0a24";
+      c.fill();
+    },
+    "fx-glitch": (c, col, t) => {
+      const step = reduce ? 0 : Math.floor(t * 10);
+      for (let i = 0; i < 7; i++) {
+        const r = (k) => (((Math.sin((i + step * 3.1) * 12.9 + k * 78.2) * 43758.5) % 1) + 1) % 1;
+        c.fillStyle = [col, "#ff3b5c", "#22c7f0", "#ffffff"][i % 4];
+        c.globalAlpha = 0.5 + r(3) * 0.5;
+        c.fillRect(-36 + r(1) * 50, -30 + r(2) * 56, 10 + r(4) * 30, 3 + r(5) * 8);
+      }
+      c.globalAlpha = 1;
+    },
+    "fx-laser": (c, col, t) => {
+      const k = reduce ? 1 : 0.7 + Math.sin(t * 20) * 0.3;
+      c.fillStyle = alpha(col, 0.35 * k);
+      c.fillRect(-60, -9 * k, 120, 18 * k);
+      c.fillStyle = col;
+      c.fillRect(-60, -4, 120, 8);
+      c.fillStyle = "#fff";
+      c.fillRect(-60, -1.5, 120, 3);
+      for (const x of [-60, 60]) {
+        c.beginPath();
+        c.arc(x, 0, 9, 0, TAU);
+        outlined(c, shade(col, -0.3), 3);
+      }
+    },
+
+    "d-tree": (c, col) => {
+      c.fillStyle = "#6b4a2b";
+      c.fillRect(-5, 26, 10, 18);
+      for (const [y, w2] of [[-44, 16], [-24, 24], [-2, 32]]) {
+        poly(c, [[0, y], [w2, y + 30], [-w2, y + 30]]);
+        outlined(c, grad(c, col, 60, 0.2, -0.3), 3);
+      }
+    },
+    "d-cactus": (c, col) => {
+      c.beginPath();
+      c.roundRect(-9, -40, 18, 84, 9);
+      c.roundRect(-28, -12, 12, 30, 6);
+      c.roundRect(16, -24, 12, 26, 6);
+      c.rect(-20, 10, 12, 8);
+      c.rect(8, -6, 12, 8);
+      outlined(c, grad(c, col, 80, 0.2, -0.3), 3);
+    },
+    "d-skull": (c, col) => {
+      c.beginPath();
+      c.arc(0, -6, 26, Math.PI * 0.85, Math.PI * 0.15);
+      c.lineTo(14, 26);
+      c.lineTo(-14, 26);
+      c.closePath();
+      outlined(c, col, 3);
+      c.fillStyle = OUTLINE;
+      for (const x of [-10, 10]) {
+        c.beginPath();
+        c.ellipse(x, -4, 7, 8, 0, 0, TAU);
+        c.fill();
+      }
+      poly(c, [[0, 6], [-4, 13], [4, 13]]);
+      c.fill();
+      strokeLines(c, [[-6, 20, -6, 26], [0, 20, 0, 26], [6, 20, 6, 26]], OUTLINE, 2);
+    },
+    "d-eye": (c, col, t) => {
+      const blink = reduce ? 1 : Math.min(1, Math.abs(Math.cos(t * 0.8)) * 8);
+      const look = reduce ? 0 : Math.sin(t * 1.3) * 8;
+      c.save();
+      c.scale(1, Math.max(0.08, blink));
+      c.beginPath();
+      c.ellipse(0, 0, 30, 20, 0, 0, TAU);
+      outlined(c, "#ffffff", 3);
+      c.beginPath();
+      c.arc(look, 0, 12, 0, TAU);
+      c.fillStyle = col;
+      c.fill();
+      c.beginPath();
+      c.arc(look, 0, 5, 0, TAU);
+      c.fillStyle = OUTLINE;
+      c.fill();
+      c.restore();
+    },
+    "d-coin": (c, col, t) => {
+      c.scale(reduce ? 1 : Math.max(0.12, Math.abs(Math.cos(t * 2.5))), 1);
+      c.beginPath();
+      c.arc(0, 0, 26, 0, TAU);
+      outlined(c, grad(c, col, 52, 0.4, -0.3), 3);
+      c.beginPath();
+      c.arc(0, 0, 17, 0, TAU);
+      c.strokeStyle = shade(col, -0.35);
+      c.lineWidth = 3;
+      c.stroke();
+      c.font = "900 20px Unbounded, sans-serif";
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillStyle = shade(col, -0.45);
+      c.fillText("★", 0, 1);
+    },
+    "d-key": (c, col) => {
+      c.beginPath();
+      c.arc(-16, 0, 14, 0, TAU);
+      c.arc(-16, 0, 6, 0, TAU, true);
+      c.rect(-4, -4, 36, 8);
+      c.rect(20, 4, 5, 10);
+      c.rect(28, 4, 4, 7);
+      outlined(c, grad(c, col, 30, 0.4, -0.3), 3);
+    },
+    "d-torch": (c, col, t) => {
+      c.beginPath();
+      c.moveTo(-7, -6);
+      c.lineTo(7, -6);
+      c.lineTo(4, 44);
+      c.lineTo(-4, 44);
+      c.closePath();
+      outlined(c, "#8b5a2b", 3);
+      const g = c.createRadialGradient(0, -22, 0, 0, -22, 48);
+      g.addColorStop(0, alpha(col, 0.45));
+      g.addColorStop(1, alpha(col, 0));
+      c.fillStyle = g;
+      c.beginPath();
+      c.arc(0, -22, 48, 0, TAU);
+      c.fill();
+      for (const [k, fill] of [[1, col], [0.55, "#ffe14a"]]) {
+        const w = reduce ? 0 : Math.sin(t * 13 + k * 3) * 3;
+        c.beginPath();
+        c.moveTo(-10 * k, -6);
+        c.quadraticCurveTo(-14 * k, -24 * k - 6, w, -40 * k - 6);
+        c.quadraticCurveTo(14 * k, -24 * k - 6, 10 * k, -6);
+        c.closePath();
+        c.fillStyle = fill;
+        c.fill();
+      }
+    },
+    "d-bush": (c, col) => {
+      c.beginPath();
+      for (const [x, y, r] of [[-20, 8, 15], [0, -4, 20], [20, 8, 15], [-8, 12, 14], [10, 12, 14]]) {
+        c.moveTo(x + r, y);
+        c.arc(x, y, r, 0, TAU);
+      }
+      c.lineWidth = 7;
+      c.strokeStyle = OUTLINE;
+      c.stroke();
+      c.fillStyle = col;
+      c.fill();
+      c.fillStyle = "rgba(255,255,255,.25)";
+      c.beginPath();
+      c.arc(-4, -10, 7, 0, TAU);
+      c.fill();
+    },
+    "d-mushroom": (c, col) => {
+      c.beginPath();
+      c.roundRect(-8, 0, 16, 28, 6);
+      outlined(c, "#f3eefe", 3);
+      c.beginPath();
+      c.arc(0, 2, 28, Math.PI, 0);
+      c.closePath();
+      outlined(c, col, 3);
+      c.fillStyle = "#fff";
+      for (const [x, y, r] of [[-14, -8, 5], [6, -16, 6], [16, -4, 4]]) {
+        c.beginPath();
+        c.arc(x, y, r, 0, TAU);
+        c.fill();
+      }
+    },
+    "d-planet": (c, col, t) => {
+      c.beginPath();
+      c.arc(0, 0, 24, 0, TAU);
+      const g = c.createRadialGradient(-8, -8, 2, 0, 0, 24);
+      g.addColorStop(0, shade(col, 0.4));
+      g.addColorStop(1, shade(col, -0.45));
+      outlined(c, g, 3);
+      c.save();
+      c.rotate(-0.4 + (reduce ? 0 : Math.sin(t * 0.7) * 0.05));
+      c.beginPath();
+      c.ellipse(0, 0, 40, 10, 0, 0.1 * Math.PI, 0.9 * Math.PI, true);
+      c.lineWidth = 5;
+      c.strokeStyle = shade(col, 0.5);
+      c.stroke();
+      c.restore();
+    },
+  });
+
   /** Внешний вид настраивается у всего, кроме триггеров: у них только значение. */
   const rotatable = (k) => !isTrigger(k);
 
@@ -812,6 +1185,7 @@ const levelobj = (() => {
     "t-bg": "▣", "t-ground": "▤", "t-bgimg": "▲", "t-effect": "❄", "t-dark": "◑", "t-offset": "✥", "t-msg": "T",
     "t-move": "⇄", "t-rotate": "↻", "t-spin": "✣", "t-scale": "⤢", "t-alpha": "◌", "t-toggle": "⏻",
     "t-gcolor": "◆", "t-pulse": "✺", "t-stop": "■",
+    "t-oscill": "↕", "t-orbit": "◎", "t-camspin": "⟲", "t-camreset": "⌂", "t-hue": "◈", "t-letterbox": "▭", "t-invert": "◐",
   };
 
   /** Подпись триггера в редакторе: название и главное значение, у анимаций — группа. */

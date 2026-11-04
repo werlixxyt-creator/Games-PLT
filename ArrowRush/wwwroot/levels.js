@@ -15,18 +15,44 @@ const levels = (() => {
   const DIFFS = [["easy", "Лёгкая"], ["normal", "Нормальная"], ["hard", "Сложная"]];
   const SORTS = [["new", "Новые"], ["popular", "Популярные"], ["liked", "По лайкам"]];
 
-  // особые ячейки: span — сколько ячеек за ней меняется (как LevelGenerator.EditorSpecials)
+  // особые ячейки, как LevelGenerator.EditorSpecials на сервере: n — длина [по умолчанию, мин, макс];
+  // adds — добавляет свои ячейки к уровню, места за ней не нужно; p — сила [по умолчанию, мин, макс, шаг, подпись, единица];
+  // about(n) — что делает при длине n; hint — то же для длины по умолчанию (подсказка инструмента)
   const ev = (kind) => course.eventInfo[kind].color;
   const SPECIALS = {
-    chart: { name: "Чарт", color: "#f2ad16", span: 10, hint: "Следующие 10 ячеек становятся такой же стрелкой, как сам чарт" },
-    swam: { name: "Свам", color: "#39e6ff", span: 6, hint: "Прилетает НЛО: следующие 6 ячеек — пилы, через них прыгают любой стрелкой" },
-    over: { name: "Овердрайв", color: ev("over"), span: 6, hint: "Следующие 6 ячеек заполняются быстрее, космос в огне" },
-    storm: { name: "Шторм", color: ev("storm"), span: 6, hint: "Следующие 6 ячеек в темноте: дальние видно только при молнии" },
-    flip: { name: "Переворот", color: ev("flip"), span: 6, hint: "Следующие 6 ячеек мир вверх ногами, стрелки те же" },
-    rainbow: { name: "Радуга", color: ev("rainbow"), span: 6, hint: "Каждая вторая из следующих 6 ячеек — каменная стена: 10 нажатий любой стрелкой" },
-    rast: { name: "Раст", color: ev("rast"), span: 0, tag: "+40", hint: "Добавляет 40 ячеек из двух стрелок, сзади догоняет чёрная дыра" },
-    cloud: { name: "Кловд", color: ev("cloud"), span: 0, tag: "+8", hint: "Добавляет 8 летящих стрелок: гусеница уклоняется, ↑ — потолок, ↓ — пол" },
+    chart: { name: "Чарт", color: "#f2ad16", n: [10, 3, 20], about: (n) => `Следующие ${n} ячеек становятся такой же стрелкой, как сам чарт` },
+    swam: {
+      name: "Свам", color: "#39e6ff", n: [6, 2, 12], p: [0.9, 0.8, 1.6, 0.05, "Время на пилу", "с"],
+      about: (n) => `Прилетает НЛО: следующие ${n} ячеек — пилы, через них прыгают любой стрелкой`,
+    },
+    over: {
+      name: "Овердрайв", color: ev("over"), n: [6, 2, 20], p: [0.6, 0.3, 0.9, 0.05, "Время заполнения", "×"],
+      about: (n) => `Следующие ${n} ячеек заполняются быстрее, космос в огне`,
+    },
+    storm: { name: "Шторм", color: ev("storm"), n: [6, 2, 20], about: (n) => `Следующие ${n} ячеек в темноте: дальние видно только при молнии` },
+    flip: { name: "Переворот", color: ev("flip"), n: [6, 2, 20], about: (n) => `Следующие ${n} ячеек мир вверх ногами, стрелки те же` },
+    rainbow: { name: "Радуга", color: ev("rainbow"), n: [6, 2, 16], about: (n) => `Каждая вторая из следующих ${n} ячеек — каменная стена: 10 нажатий любой стрелкой` },
+    rast: { name: "Раст", color: ev("rast"), n: [40, 10, 80], adds: true, about: (n) => `Добавляет ${n} ячеек из двух стрелок, сзади догоняет чёрная дыра` },
+    cloud: {
+      name: "Кловд", color: ev("cloud"), n: [8, 4, 16], adds: true, p: [0.7, 0.45, 1.2, 0.05, "Между стрелками", "с"],
+      about: (n) => `Добавляет ${n} летящих стрелок: гусеница уклоняется, ↑ — потолок, ↓ — пол`,
+    },
   };
+  for (const sp of Object.values(SPECIALS)) sp.hint = sp.about(sp.n[0]) + ". Длину и силу можно настроить: выбери ячейку в «Правке»";
+  /** Длина особой ячейки c с учётом настройки автора (0 — по умолчанию). */
+  const lenOf = (c) => {
+    const sp = SPECIALS[c.s];
+    return c.n ? Math.max(sp.n[1], Math.min(sp.n[2], c.n)) : sp.n[0];
+  };
+  /** Сколько ячеек уровня занимает её участок. */
+  const spanOf = (c) => (SPECIALS[c.s].adds ? 0 : lenOf(c));
+  /** Сила с учётом настройки автора. */
+  const powOf = (c) => {
+    const sp = SPECIALS[c.s];
+    return sp.p ? (c.p ? Math.max(sp.p[1], Math.min(sp.p[2], c.p)) : sp.p[0]) : 0;
+  };
+  /** Подпись длины на превью: «×6» — меняет 6 ячеек, «+40» — добавляет 40. */
+  const tagOf = (c) => (SPECIALS[c.s].adds ? `+${lenOf(c)}` : `×${lenOf(c)}`);
 
   // значки инструментов (24×24): стрелки берутся из #arrow, остальное здесь
   const ICONS = {
@@ -294,7 +320,7 @@ const levels = (() => {
     if (id) {
       try {
         const d = await call("GET", `/${id}`);
-        ed = { ...d, cells: d.cells.map((c) => ({ a: c.a, f: c.f, s: c.s || null, o: c.o || null })), objects: (d.objects || []).map(cleanObj), dirty: false };
+        ed = { ...d, cells: d.cells.map((c) => ({ a: c.a, f: c.f, s: c.s || null, o: c.o || null, n: c.n || 0, p: c.p || 0 })), objects: (d.objects || []).map(cleanObj), dirty: false };
       } catch (e) {
         $("levels-error").textContent = e.message;
         return;
@@ -318,7 +344,7 @@ const levels = (() => {
     const z = new Map();
     ed.cells.forEach((c, i) => {
       if (!c.s) return;
-      for (let k = 1; k <= SPECIALS[c.s].span && i + k < ed.cells.length; k++) z.set(i + k, { kind: c.s, from: i });
+      for (let k = 1; k <= spanOf(c) && i + k < ed.cells.length; k++) z.set(i + k, { kind: c.s, from: i });
     });
     return z;
   }
@@ -333,9 +359,10 @@ const levels = (() => {
       const { s, o } = ed.cells[i];
       if (o && i <= busyUntil) return `Ячейка ${i + 1}: препятствие внутри участка особой ячейки`;
       if (!s) continue;
-      if (i <= busyUntil) return `Ячейка ${i + 1}: внутри участка прошлой особой ячейки`;
-      if (i + SPECIALS[s].span >= ed.cells.length) return `Ячейка ${i + 1}: за ней нужно ещё ${SPECIALS[s].span} ячеек`;
-      busyUntil = i + SPECIALS[s].span;
+      if (i <= busyUntil) return `Ячейка ${i + 1}: внутри участка прошлой особой ячейки — сдвинь её дальше или укороти прошлую`;
+      const span = spanOf(ed.cells[i]);
+      if (i + span >= ed.cells.length) return `Ячейка ${i + 1}: за ней нужно ещё ${span} ячеек (сейчас ${ed.cells.length - i - 1}) — добавь ячейки или укороти «${SPECIALS[s].name}»`;
+      busyUntil = i + span;
     }
     if (ed.objects.length > MAX_OBJECTS) return `Не больше ${MAX_OBJECTS} объектов`;
     return null;
@@ -350,7 +377,7 @@ const levels = (() => {
     k: o.k, c: o.c, x: o.x, y: o.y, v: o.v ?? null,
     s: o.s ?? 1, r: o.r || 0, w: o.w ?? 1, h: o.h ?? 1, fx: !!o.fx, fy: !!o.fy, a: o.a ?? 1, z: o.z ? 1 : 0, g: o.g || 0,
     // группа объекта и настройки триггера (trigrun.js)
-    gr: o.gr || 0, p: o.p ?? 0, q: o.q ?? 0, d: o.d ?? 0, e: o.e ?? 1,
+    gr: o.gr || 0, p: o.p ?? 0, q: o.q ?? 0, d: o.d ?? 0, e: o.e ?? 1, b: o.b || null,
   });
   const clampReach = (v) => Math.round(Math.max(-OBJECT_REACH, Math.min(OBJECT_REACH, v)));
 
@@ -382,6 +409,7 @@ const levels = (() => {
   function pickObj(ob) {
     if (selObj === ob) return;
     selObj = ob;
+    if (ob) cellPanel = false;
     renderObj();
     renderTools(); // «Поворот» и «Копия» работают с выбранным объектом
   }
@@ -429,10 +457,77 @@ const levels = (() => {
     ["g", "Свечение", 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`],
   ];
   const LOOK_KEYS = ["s", "w", "h", "r", "a", "g", "fx", "fy", "z"];
-  const EASES = [[0, "Ровно"], [1, "Плавно"], [2, "Замедление"], [3, "Отскок"]];
+
   const MAX_GROUP = 99; // как GameRules.EditorMaxGroup
   let styleClip = null; // «Копировать стиль»: вид и цвет, которые вставит «Вставить стиль»
   let objShown = null;  // какой объект сейчас в панели: панель не пересобирается, пока его правят
+
+  let cellPanel = false; // показывать настройки выбранной особой ячейки
+
+  /** Настройки особой ячейки: длина участка (или сколько ячеек она добавит) и сила, если она у неё есть. */
+  function renderCellPanel(box, c) {
+    const sp = SPECIALS[c.s];
+    const el = (tag, cls, text) => {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    };
+    const head = el("div", "ed-obj-head");
+    const close = el("button", "ed-code-x", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "Закрыть");
+    close.addEventListener("click", () => { cellPanel = false; renderObj(true); });
+    const title = el("b", null, sp.name);
+    title.style.color = sp.color;
+    head.append(title, el("span", null, `особая ячейка ${sel + 1}`), close);
+    const about = el("p", "ed-obj-hint", sp.about(lenOf(c)) + ".");
+    const rows = [head, about, el("div", "ed-obj-sec", "Настройки")];
+
+    // сколько ячеек можно взять, не залезая в следующую особую и не выходя за конец уровня
+    let room = Infinity;
+    if (!sp.adds) {
+      room = ed.cells.length - sel - 1;
+      for (let k = sel + 1; k < ed.cells.length; k++) if (ed.cells[k].s || ed.cells[k].o) { room = k - sel - 1; break; }
+    }
+    const slider = (name, min, max, step, value, show, set) => {
+      const row = el("label", "ed-obj-slider");
+      const range = el("input");
+      Object.assign(range, { type: "range", min, max, step, value, disabled: locked() });
+      const out = el("b", null, show(+value));
+      range.addEventListener("input", () => {
+        change(() => set(+range.value));
+        out.textContent = show(+range.value);
+        about.textContent = sp.about(lenOf(c)) + ".";
+        warn();
+      });
+      row.append(el("span", null, name), range, out);
+      return row;
+    };
+    rows.push(slider(sp.adds ? "Добавит ячеек" : "Длина участка", sp.n[1], sp.n[2], 1, lenOf(c), (v) => `${v}`, (v) => { c.n = v === sp.n[0] ? 0 : v; }));
+    if (sp.p) {
+      const [def, min, max, step, name, unit] = sp.p;
+      rows.push(slider(name, min, max, step, powOf(c), (v) => (unit === "×" ? `×${v.toFixed(2)}` : `${v.toFixed(2)} ${unit}`), (v) => { c.p = v === def ? 0 : v; }));
+    }
+    const note = el("p", "ed-obj-hint");
+    const warn = () => {
+      note.textContent = !sp.adds && lenOf(c) > room
+        ? `Не помещается: за ней свободно ${room} яч. до ${sel + room + 1 < ed.cells.length ? "следующей особой или препятствия" : "конца уровня"}. Добавь ячейки или укороти участок.`
+        : sp.adds ? "Эти ячейки добавятся к уровню после неё, место за ней не нужно." : `Участок — ячейки ${sel + 2}–${sel + 1 + lenOf(c)}. На них нельзя ставить другие особые ячейки и препятствия.`;
+      note.classList.toggle("bad", !sp.adds && lenOf(c) > room);
+    };
+    warn();
+    rows.push(note);
+    const reset = el("button", "ed-chip", "По умолчанию");
+    reset.type = "button";
+    reset.disabled = locked();
+    reset.addEventListener("click", () => {
+      change(() => { c.n = 0; c.p = 0; });
+      renderObj(true);
+    });
+    rows.push(reset);
+    box.replaceChildren(...rows);
+  }
 
   /** Поворот в пределах −180…180. */
   const wrapAngle = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
@@ -470,9 +565,17 @@ const levels = (() => {
   function renderObj(force = false) {
     const box = $("ed-obj");
     if (selObj && !ed.objects.includes(selObj)) selObj = null;
-    box.hidden = !selObj;
-    if (!selObj) {
+    const cell = !selObj && cellPanel && ed.cells[sel] && ed.cells[sel].s ? ed.cells[sel] : null;
+    box.hidden = !selObj && !cell;
+    if (!selObj && !cell) {
       objShown = null;
+      return;
+    }
+    if (cell) {
+      const key = `cell:${sel}:${cell.s}`;
+      if (key === objShown && !force) return;
+      objShown = key;
+      renderCellPanel(box, cell);
       return;
     }
     if (selObj === objShown && !force) return;
@@ -604,7 +707,12 @@ const levels = (() => {
         params.append(slider(key, name, min, max, step, showUnit(unit), def));
       }
       if (ui.d !== undefined) params.append(slider("d", ob.k === "t-msg" ? "Показ" : "Время", 0, ob.k === "t-msg" ? 10 : 5, 0.05, (v) => `${v.toFixed(2)} с`, ui.d));
-      if (ui.e) params.append(section("Плавность"), choice("e", EASES, 1));
+      if (ui.e) {
+        // плавность — кривой: готовые и своя, ручки тянутся мышью
+        const curve = easecurve.create({ e: ob.e ?? 1, b: ob.b, onInput: (e, b) => set(() => { ob.e = e; ob.b = b; }) });
+        if (locked()) curve.el.classList.add("off");
+        params.append(section("Плавность"), curve.el);
+      }
     } else {
       // ---- блоки и декор: вид, отражение, слой, группа, положение, стиль
       right.append(section("Вид"));
@@ -729,6 +837,7 @@ const levels = (() => {
 
   function setCat(id) {
     cat = id;
+    if (modeOf() === "edit" && !locked()) tool = buildTool; // вкладка с объектами — значит, строим
     page = 0;
     renderTools();
   }
@@ -747,14 +856,22 @@ const levels = (() => {
       b.classList.toggle("on", b.dataset.mode === mode);
       b.disabled = locked() && b.dataset.mode !== "edit";
     }
-    for (const b of $("ed-cats").children) b.classList.toggle("on", b.dataset.cat === cat);
+    // в «Правке» вкладки не нужны: вместо объектов — кнопки движения выбранного объекта
+    $("ed-cats").classList.toggle("off", mode === "edit");
+    for (const b of $("ed-cats").children) b.classList.toggle("on", mode !== "edit" && b.dataset.cat === cat);
 
-    const cols = columns(), list = catTools(), per = cols * ROWS;
+    const cols = columns(), per = cols * ROWS;
+    const list = mode === "edit" ? EDIT_ACTIONS : catTools();
     $("ed-tools").style.gridTemplateColumns = `repeat(${cols}, 50px)`;
     const pages = Math.max(1, Math.ceil(list.length / per));
-    page = Math.min(page, pages - 1);
-    const shown = list.slice(page * per, page * per + per).map(toolButton);
+    const pg = mode === "edit" ? Math.min(editPage, pages - 1) : (page = Math.min(page, pages - 1));
+    const shown = list.slice(pg * per, pg * per + per).map(mode === "edit" ? editButton : toolButton);
     for (const b of shown) {
+      if (mode === "edit") {
+        const act = EDIT_ACTION[b.dataset.act];
+        b.disabled = locked() || !selObj || (act.ok && !act.ok(selObj));
+        continue;
+      }
       b.classList.toggle("on", mode === "build" && b.dataset.tool === buildTool);
       b.disabled = locked();
     }
@@ -767,11 +884,11 @@ const levels = (() => {
     const all = [...shown, ...emptySlots.slice(0, per - shown.length)];
     const box = $("ed-tools");
     if (all.length !== box.children.length || all.some((b, i) => box.children[i] !== b)) box.replaceChildren(...all);
-    $("ed-page-prev").disabled = page === 0;
-    $("ed-page-next").disabled = page >= pages - 1;
+    $("ed-page-prev").disabled = pg === 0;
+    $("ed-page-next").disabled = pg >= pages - 1;
     $("ed-dots").replaceChildren(...Array.from({ length: pages }, (_, i) => {
       const d = document.createElement("i");
-      if (i === page) d.className = "on";
+      if (i === pg) d.className = "on";
       return d;
     }));
 
@@ -783,8 +900,77 @@ const levels = (() => {
   }
 
   function flipPage(d) {
-    page += d;
+    if (modeOf() === "edit") editPage = Math.max(0, editPage + d);
+    else page += d;
     renderTools();
+  }
+
+  // ---------- «Правка»: кнопки движения выбранного объекта, как вкладка Edit в GD ----------
+
+  let editPage = 0;
+  const ARROWS = { L: "←", R: "→", U: "↑", D: "↓" };
+  const DIRS = { L: [-1, 0], R: [1, 0], U: [0, -1], D: [0, 1] };
+  /** [id, значок, подпись, что делает, когда можно]. Шаги сдвига: 1, 5, полклетки, клетка, 5 клеток, 20 клеток. */
+  const EDIT_ACTIONS = [
+    ...[[1, "1"], [5, "5"], [GRID / 2, "½"], [GRID, "клетка"], [GRID * 5, "×5"], [GRID * 20, "×20"]].flatMap(([step, label]) =>
+      ["L", "U", "D", "R"].map((d) => ({
+        id: `m${d}${step}`, glyph: ARROWS[d], label, title: `Сдвинуть ${{ L: "влево", R: "вправо", U: "вверх", D: "вниз" }[d]} на ${step}`,
+        run: (ob) => moveObj(ob, DIRS[d][0] * step, DIRS[d][1] * step),
+      }))),
+    { id: "cellL", glyph: "⇤", label: "ячейка", title: "Привязать к прошлой ячейке, не сдвигая", run: (ob) => reanchor(ob, -1), ok: (ob) => ob.c > 0 },
+    { id: "cellR", glyph: "⇥", label: "ячейка", title: "Привязать к следующей ячейке, не сдвигая", run: (ob) => reanchor(ob, 1), ok: (ob) => ob.c < ed.cells.length - 1 },
+    { id: "snap", glyph: "⌗", label: "к сетке", title: "Выровнять по клеткам", run: (ob) => setObj(ob, { x: Math.round(ob.x / GRID) * GRID, y: Math.round(ob.y / GRID) * GRID }) },
+    { id: "center", glyph: "◎", label: "к стрелке", title: "Поставить на стрелку своей ячейки", run: (ob) => setObj(ob, { x: 0, y: 0 }) },
+    ...[[-90, "↺90"], [90, "↻90"], [-45, "↺45"], [45, "↻45"], [-15, "↺15"], [15, "↻15"]].map(([deg, glyph]) => ({
+      id: `r${deg}`, glyph, label: "поворот", title: `Повернуть на ${deg}°`, ok: (ob) => levelobj.rotatable(ob.k),
+      run: (ob) => setObj(ob, { r: wrapAngle((ob.r || 0) + deg) }),
+    })),
+    { id: "fx", glyph: "⇋", label: "отразить", title: "Отразить по горизонтали", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { fx: !ob.fx }) },
+    { id: "fy", glyph: "⇵", label: "отразить", title: "Отразить по вертикали", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { fy: !ob.fy }) },
+    { id: "big", glyph: "＋", label: "больше", title: "Увеличить на 25%", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { s: Math.min(4, Math.round((ob.s || 1) * 1.25 * 100) / 100) }) },
+    { id: "small", glyph: "－", label: "меньше", title: "Уменьшить на 20%", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { s: Math.max(0.25, Math.round((ob.s || 1) * 0.8 * 100) / 100) }) },
+    { id: "front", glyph: "▲", label: "вперёд", title: "Перед дорогой", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { z: 1 }) },
+    { id: "back", glyph: "▼", label: "назад", title: "За дорогой", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { z: 0 }) },
+    { id: "dup", glyph: "⧉", label: "копия", title: "Копия рядом (Ctrl+D)", run: () => cloneObj() },
+    { id: "del", glyph: "✕", label: "удалить", title: "Удалить объект (Delete)", run: (ob) => eraseObj(ob) },
+  ];
+  const EDIT_ACTION = Object.fromEntries(EDIT_ACTIONS.map((a) => [a.id, a]));
+  const editButtons = new Map();
+
+  function editButton(a) {
+    if (editButtons.has(a.id)) return editButtons.get(a.id);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ed-tool ed-act-btn";
+    b.dataset.act = a.id;
+    b.title = a.title;
+    b.setAttribute("aria-label", a.title);
+    b.innerHTML = `<b></b><small></small>`;
+    b.firstChild.textContent = a.glyph;
+    b.lastChild.textContent = a.label;
+    b.addEventListener("click", () => {
+      if (selObj && !locked()) a.run(selObj);
+    });
+    editButtons.set(a.id, b);
+    return b;
+  }
+
+  /** Изменить выбранный объект и обновить панель настроек. */
+  function setObj(ob, patch) {
+    change(() => Object.assign(ob, patch));
+    renderObj(true);
+  }
+
+  function moveObj(ob, dx, dy) {
+    setObj(ob, { x: clampReach(ob.x + dx), y: clampReach(ob.y + dy) });
+  }
+
+  /** Перепривязать объект к соседней ячейке так, чтобы на превью он остался на месте. */
+  function reanchor(ob, d) {
+    const to = ob.c + d;
+    const from = edview.keyPoint(ob.c), next = edview.keyPoint(to);
+    if (!from || !next) return;
+    setObj(ob, { c: to, x: clampReach(ob.x + from.x - next.x), y: clampReach(ob.y + from.y - next.y) });
   }
 
   function renderEditor() {
@@ -830,13 +1016,14 @@ const levels = (() => {
   function renderSel() {
     const c = ed.cells[sel];
     $("ed-sel").textContent = `Ячейка ${sel + 1} из ${ed.cells.length} · ${ARROW_NAMES[c.a].toLowerCase()}`;
+    renderObj(); // настройки особой ячейки идут за выбранной ячейкой
     $("ed-fill-row").hidden = ed.fast;
     $("ed-fill").value = c.f;
     $("ed-fill").disabled = locked();
     $("ed-fill-val").textContent = `${c.f.toFixed(2)} с`;
     const zone = zoneMap.get(sel);
     const about = c.o ? `${OBSTACLES[c.o].name}: ${OBSTACLES[c.o].hint}`
-      : c.s ? SPECIALS[c.s].hint
+      : c.s ? `${SPECIALS[c.s].about(lenOf(c))}. Настройки — в панели справа`
       : zone ? `Эта ячейка в участке «${SPECIALS[zone.kind].name}» с ячейки ${zone.from + 1}` : "Обычная ячейка: держи стрелку, пока ползунок не заполнится";
     $("ed-hint").textContent = tool === "pick" || locked() ? about : `${TOOL[tool].name}: ${TOOL[tool].hint}`;
     for (const id of ["ed-add", "ed-dup", "ed-del", "ed-left", "ed-right", "ed-random"]) $(id).disabled = locked();
@@ -852,14 +1039,19 @@ const levels = (() => {
     if (!c) return;
     if (tool === "pick" || locked()) {
       pickObj(null);
-      return select(i);
+      select(i);
+      // клик по особой ячейке открывает её настройки
+      cellPanel = !!c.s;
+      renderObj(true);
+      return;
     }
     sel = i;
     if (tool === "erase") return removeSel();
     const t = TOOL[tool];
-    // особая ячейка и препятствие на одной ячейке не уживаются: новое заменяет старое
+    if (t.special && c.s !== tool) cellPanel = true; // новая особая ячейка — сразу её настройки
+    // особая ячейка и препятствие на одной ячейке не уживаются: новое заменяет старое; длина и сила — по умолчанию
     const want = t.arrow !== undefined ? { a: t.arrow }
-      : t.special ? (c.s === tool ? { s: null } : { s: tool, o: null })
+      : t.special ? (c.s === tool ? { s: null, n: 0, p: 0 } : { s: tool, o: null, n: 0, p: 0 })
       : t.obstacle !== undefined ? (t.obstacle ? { o: t.obstacle, s: null } : { o: null }) // не переключается: протяжкой красят
       : { s: null };
     if (Object.entries(want).every(([k, v]) => c[k] === v)) return select(i);
@@ -956,12 +1148,12 @@ const levels = (() => {
     }));
     ed.cells.forEach((c, i) => {
       if (!c.s) return;
-      for (let k = 1; k <= SPECIALS[c.s].span && i + k < out.length; k++) {
+      for (let k = 1; k <= spanOf(c) && i + k < out.length; k++) {
         const p = out[i + k];
         p.zone = c.s;
         if (c.s === "chart") p.a = c.a;
-        else if (c.s === "over") p.f = Math.round(p.f * QUICK.overdrive * 100) / 100;
-        else if (c.s === "swam") Object.assign(p, { ufo: true, f: k === 1 ? QUICK.swamIntro : QUICK.swamCell });
+        else if (c.s === "over") p.f = Math.round(p.f * powOf(c) * 100) / 100;
+        else if (c.s === "swam") Object.assign(p, { ufo: true, f: k === 1 ? QUICK.swamIntro : powOf(c) });
         else if (c.s === "rainbow" && k % 2 === 0) p.wall = true;
       }
     });
@@ -1170,6 +1362,13 @@ const levels = (() => {
       return;
     }
     const a = KEYS[e.code];
+    // Alt + стрелки или WASD двигают выбранный объект: на клетку, с Shift — на 1
+    if (a !== undefined && e.altKey && selObj && !locked()) {
+      e.preventDefault();
+      const step = e.shiftKey ? 1 : GRID;
+      moveObj(selObj, [-step, 0, step, 0][a], [0, -step, 0, step][a]);
+      return;
+    }
     if (a !== undefined && e.shiftKey && (a === 0 || a === 2)) {
       e.preventDefault();
       select(sel + (a === 0 ? -1 : 1));
@@ -1235,7 +1434,7 @@ const levels = (() => {
           // протяжка красит ячейки, а не листает: стрелки, «Обычная» и препятствия
           paints: !locked() && (TOOL[tool].arrow !== undefined || tool === "plain" || TOOL[tool].obstacle !== undefined),
           canAppend: !locked() && ed.cells.length < MAX_CELLS,
-          objects: ed.objects, selObj, mode: TOOL[tool].mode, locked: locked(),
+          objects: ed.objects, selObj, mode: TOOL[tool].mode, locked: locked(), tagOf,
           // «Протяжка» ставит объекты подряд (триггеры — по одному), «Сетка» ровняет их по клеткам
           swipe: swipe && !levelobj.isTrigger(TOOL[tool].object || "t-"), grid: snap ? GRID : 0,
           swipeStep: TOOL[tool].object ? swipeStep(TOOL[tool].object) : GRID,
@@ -1298,6 +1497,20 @@ const levels = (() => {
       ed.cells.push(...randomCells(Math.min(10, MAX_CELLS - ed.cells.length), ed.cells));
     }));
     $("ed-save").addEventListener("click", save);
+    // клик по ошибке «Ячейка N: …» выбирает эту ячейку и открывает её настройки
+    $("ed-error").addEventListener("click", () => {
+      const m = /Ячейка (\d+)/.exec($("ed-error").textContent);
+      if (!m || !ed) return;
+      pickObj(null);
+      let at = +m[1] - 1;
+      // «внутри участка прошлой» — открываем ту, чей участок мешает: её и надо укоротить
+      if (/прошлой/.test($("ed-error").textContent)) {
+        for (let k = at - 1; k >= 0; k--) if (ed.cells[k].s && k + spanOf(ed.cells[k]) >= at) { at = k; break; }
+      }
+      select(at);
+      cellPanel = !!ed.cells[sel].s;
+      renderObj(true);
+    });
     $("ed-test").addEventListener("click", test);
     $("ed-publish").addEventListener("click", publish);
     $("ed-copy").addEventListener("click", copy);

@@ -2618,7 +2618,7 @@ button.ed-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
 .ed-info > b { font: 900 15px var(--font-display); }
 .ed-hint { margin: 0; font-size: 13px; }
 .ed-keys { margin: 0; font-size: 11px; opacity: .7; }
-.ed-error { margin-top: 4px; padding: 2px 12px; font-size: 13px; color: #fff; background: var(--bad); border: 2px solid var(--outline); border-radius: 999px; text-shadow: none; }
+.ed-error { margin-top: 4px; padding: 2px 12px; font-size: 13px; color: #fff; background: var(--bad); border: 2px solid var(--outline); border-radius: 999px; text-shadow: none; pointer-events: auto; cursor: pointer; }
 .ed-error:empty { display: none; }
 
 @media (max-width: 640px) {
@@ -2775,3 +2775,19 @@ button.ed-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
 .cp-swatch:hover { border-color: #fff; }
 .cp-swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--a3); }
 .cp-label { font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; opacity: .6; }
+
+/* ---------- «Правка»: кнопки движения, кривая плавности, настройки особой ячейки ---------- */
+
+.ed-cats.off { opacity: .55; }
+.ed-act-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; color: #fff; }
+.ed-act-btn b { font: 900 19px/1 var(--font-body); }
+.ed-act-btn small { max-width: 100%; overflow: hidden; font: 800 9px/1.2 var(--font-body); white-space: nowrap; opacity: .75; }
+.ed-act-btn:disabled { opacity: .3; }
+
+.ec { display: flex; flex-direction: column; gap: 6px; }
+.ec.off { opacity: .5; pointer-events: none; }
+.ec-graph { align-self: flex-start; background: rgba(255, 255, 255, .04); border: 2px solid rgba(255, 255, 255, .2); border-radius: 10px; cursor: crosshair; touch-action: none; }
+.ec-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ec-chips .ed-chip { padding: 3px 8px; font-size: 11px; }
+
+.ed-obj-hint.bad { color: #ffb3c0; font-weight: 800; }

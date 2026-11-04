@@ -24,6 +24,10 @@ const bgart = (() => {
     ["digital", "Цифровой дождь"],
     ["castle", "Замок"],
     ["aurora", "Северное сияние"],
+    ["sunset", "Закат с пальмами"],
+    ["pyramids", "Пирамиды"],
+    ["snowpeaks", "Снежные пики"],
+    ["galaxy", "Галактика"],
   ];
 
   /** Эффекты частиц: [id, название]. */
@@ -37,6 +41,10 @@ const bgart = (() => {
     ["meteors", "Метеоры"],
     ["confetti", "Конфетти"],
     ["fireflies", "Светлячки"],
+    ["petals", "Лепестки"],
+    ["hearts", "Сердечки"],
+    ["sparkles", "Блёстки"],
+    ["dust", "Пыль"],
   ];
 
   const rnd = (i, k) => (((Math.sin(i * 127.1 + k * 311.7) * 43758.5453) % 1) + 1) % 1;
@@ -422,6 +430,120 @@ const bgart = (() => {
     },
   };
 
+  Object.assign(BG, {
+    sunset(c, v, pal, t) {
+      const { w, h } = v;
+      const sun = [255, 140, 80];
+      const sky = c.createLinearGradient(0, 0, 0, h * 0.65);
+      sky.addColorStop(0, rgba(pal.sky2, 0));
+      sky.addColorStop(1, rgba(mix(sun, pal.neb2, 0.3), 0.55));
+      c.fillStyle = sky;
+      c.fillRect(0, 0, w, h * 0.65);
+      glowCircle(c, w * 0.5, h * 0.6, h * 0.45, sun, 0.5);
+      c.beginPath();
+      c.arc(w * 0.5, h * 0.6, h * 0.16, Math.PI, 0);
+      c.fillStyle = rgba(mix(sun, [255, 230, 140], 0.4));
+      c.fill();
+      c.fillStyle = rgba(mix(pal.sky2, BLACK, 0.5));
+      c.fillRect(0, h * 0.6, w, h * 0.4);
+      // пальмы на переднем плане
+      tiled(v, 0.12, 1200, (x0) => {
+        for (const [px, ph, lean] of [[120, 0.42, -0.15], [430, 0.5, 0.12], [900, 0.38, -0.08]]) {
+          const x = x0 + px, base = h * 0.98, top = base - h * ph;
+          c.strokeStyle = rgba(mix(pal.sky2, BLACK, 0.7));
+          c.lineWidth = 9;
+          c.lineCap = "round";
+          c.beginPath();
+          c.moveTo(x, base);
+          c.quadraticCurveTo(x + lean * 200, (base + top) / 2, x + lean * 120, top);
+          c.stroke();
+          const sway = reduce ? 0 : Math.sin(t * 1.2 + px) * 0.06;
+          c.fillStyle = rgba(mix(pal.sky2, BLACK, 0.7));
+          for (let k = 0; k < 7; k++) {
+            const a = -Math.PI / 2 + (k - 3) * 0.45 + sway;
+            c.save();
+            c.translate(x + lean * 120, top);
+            c.rotate(a);
+            c.beginPath();
+            c.ellipse(0, -40, 9, 46, 0.5 * Math.sign(k - 3 || 1), 0, TAU);
+            c.fill();
+            c.restore();
+          }
+        }
+      });
+    },
+
+    pyramids(c, v, pal) {
+      const { w, h } = v;
+      glowCircle(c, w * 0.75, h * 0.3, h * 0.25, pal.glow, 0.35);
+      c.fillStyle = rgba(mix(pal.wall, [200, 150, 90], 0.35));
+      c.fillRect(0, h * 0.82, w, h * 0.18);
+      tiled(v, 0.05, 1400, (x0) => {
+        for (const [px, ps, k] of [[300, 0.42, 0.25], [700, 0.3, 0.4], [1050, 0.22, 0.5]]) {
+          const x = x0 + px, base = h * 0.84, size = h * ps;
+          c.beginPath();
+          c.moveTo(x - size, base);
+          c.lineTo(x, base - size);
+          c.lineTo(x, base);
+          c.fillStyle = rgba(mix(pal.wall, [230, 180, 110], k));
+          c.fill();
+          c.beginPath();
+          c.moveTo(x, base);
+          c.lineTo(x, base - size);
+          c.lineTo(x + size, base);
+          c.fillStyle = rgba(mix(mix(pal.wall, [150, 100, 60], k), BLACK, 0.3));
+          c.fill();
+        }
+      });
+    },
+
+    snowpeaks(c, v, pal) {
+      const { w, h } = v;
+      glowCircle(c, w * 0.25, h * 0.25, h * 0.2, mix(pal.glow, WHITE, 0.5), 0.35);
+      for (const [f, base, amp, seed, col] of [[0.03, 0.66, 0.3, 2, mix(pal.sky2, [200, 220, 255], 0.35)], [0.08, 0.82, 0.24, 6, mix(pal.sky2, BLACK, 0.25)]]) {
+        const off = v.camX * v.scale * f;
+        const peak = (x) => {
+          const u = (x + off) / 220;
+          return h * base - amp * h * Math.abs(Math.sin(u + seed) * 0.8 + Math.sin(u * 2.1 + seed) * 0.2);
+        };
+        c.beginPath();
+        c.moveTo(0, h);
+        for (let x = 0; x <= w + 20; x += 16) c.lineTo(x, peak(x));
+        c.lineTo(w, h);
+        c.fillStyle = rgba(col);
+        c.fill();
+        // снег на вершинах: светлая кайма выше трети высоты
+        c.save();
+        c.clip();
+        c.fillStyle = rgba(WHITE, 0.75);
+        c.beginPath();
+        c.moveTo(0, 0);
+        for (let x = 0; x <= w + 20; x += 16) c.lineTo(x, Math.min(peak(x) + h * 0.05, h * (base - amp * 0.55)));
+        c.lineTo(w, 0);
+        c.fill();
+        c.restore();
+      }
+    },
+
+    galaxy(c, v, pal, t) {
+      const { w, h } = v;
+      const cx = w * 0.62 - ((v.camX * v.scale * 0.01) % (w * 0.4)), cy = h * 0.42;
+      c.save();
+      c.globalCompositeOperation = "lighter";
+      glowCircle(c, cx, cy, h * 0.18, mix(pal.glow, WHITE, 0.4), 0.6);
+      const turn = reduce ? 0 : t * 0.05;
+      for (let i = 0; i < 420; i++) {
+        const arm = i % 3, k = rnd(i, 1);
+        const r = k * h * 0.5, a = arm * (TAU / 3) + k * 5 + turn + (rnd(i, 2) - 0.5) * 0.5;
+        const x = cx + Math.cos(a) * r * 1.4, y = cy + Math.sin(a) * r * 0.55;
+        c.fillStyle = rgba(arm ? pal.neb2 : pal.glow, 0.5 * (1 - k * 0.7));
+        const s = 1 + rnd(i, 3) * 2.2;
+        c.fillRect(x, y, s, s);
+      }
+      c.restore();
+    },
+  });
+
   /** Картинка фона id поверх неба; alpha — для плавной смены одной картинки на другую. */
   function draw(c, id, view, pal, alpha = 1) {
     const fn = BG[id];
@@ -440,7 +562,7 @@ const bgart = (() => {
     const T = reduce ? 0 : t;
     c.save();
     c.globalAlpha *= alpha;
-    const count = { snow: 90, rain: 120, embers: 60, bubbles: 40, leaves: 30, meteors: 6, confetti: 70, fireflies: 35 }[id] || 0;
+    const count = { snow: 90, rain: 120, embers: 60, bubbles: 40, leaves: 30, meteors: 6, confetti: 70, fireflies: 35, petals: 40, hearts: 24, sparkles: 50, dust: 80 }[id] || 0;
     for (let i = 0; i < count; i++) {
       const a = rnd(i, 1), b = rnd(i, 2), sp = rnd(i, 3);
       const wrapX = (x) => ((x % (w + 40)) + w + 40) % (w + 40) - 20;
@@ -518,6 +640,50 @@ const bgart = (() => {
           c.restore();
           break;
         }
+        case "petals": {
+          const x = wrapX(a * w - cam * 0.45 - T * 50 + Math.sin(T * 1.3 + i) * 25), y = wrapY(b * h + T * (30 + sp * 25));
+          c.save();
+          c.translate(x, y);
+          c.rotate(T * (0.8 + sp) + i);
+          c.scale(1, 0.5 + Math.abs(Math.sin(T * 2 + i)) * 0.5);
+          c.fillStyle = rgba(sp > 0.5 ? [255, 183, 213] : [255, 214, 232], 0.9);
+          c.beginPath();
+          c.ellipse(0, 0, 6, 4, 0, 0, TAU);
+          c.fill();
+          c.restore();
+          break;
+        }
+        case "hearts": {
+          const x = wrapX(a * w - cam * 0.4 + Math.sin(T + i) * 18), y = wrapY(b * h - T * (25 + sp * 30));
+          const r = 5 + sp * 6;
+          c.fillStyle = rgba([255, 79 + sp * 60, 140], 0.7);
+          c.beginPath();
+          c.moveTo(x, y + r);
+          c.bezierCurveTo(x - r * 1.6, y - r * 0.2, x - r * 0.8, y - r * 1.4, x, y - r * 0.5);
+          c.bezierCurveTo(x + r * 0.8, y - r * 1.4, x + r * 1.6, y - r * 0.2, x, y + r);
+          c.fill();
+          break;
+        }
+        case "sparkles": {
+          const x = wrapX(a * w - cam * (0.2 + sp * 0.5)), y = b * h;
+          const k = Math.max(0, Math.sin(T * (2 + sp * 3) + i * 7));
+          if (k < 0.05) break;
+          const r = (3 + sp * 6) * k;
+          c.fillStyle = rgba(mix(pal.glow, WHITE, 0.6), k);
+          c.beginPath();
+          for (let j = 0; j < 8; j++) {
+            const ang = (j * Math.PI) / 4, rr = j % 2 ? r * 0.25 : r;
+            c.lineTo(x + Math.cos(ang) * rr, y + Math.sin(ang) * rr);
+          }
+          c.fill();
+          break;
+        }
+        case "dust": {
+          const x = wrapX(a * w - cam * (0.6 + sp * 0.6) - T * 10), y = wrapY(b * h + Math.sin(T * 0.5 + i) * 30);
+          c.fillStyle = rgba(mix(pal.glow, WHITE, 0.3), 0.15 + sp * 0.25);
+          c.fillRect(x, y, 1.5 + sp * 2, 1.5 + sp * 2);
+          break;
+        }
         case "fireflies": {
           const x = wrapX(a * w - cam * 0.35 + Math.sin(T * 0.7 + i * 3) * 40), y = h * (0.3 + b * 0.65) + Math.cos(T * 0.9 + i) * 25;
           const k = 0.4 + Math.sin(T * 3 + i * 2) * 0.4;
@@ -541,6 +707,24 @@ const bgart = (() => {
     c.fillRect(0, 0, w, h);
   }
 
+  /** Кинорамка: чёрные полосы сверху и снизу, k — доля высоты каждой полосы. */
+  function letterbox(c, w, h, k) {
+    if (k <= 0.002) return;
+    c.fillStyle = "#000";
+    c.fillRect(0, 0, w, h * k);
+    c.fillRect(0, h * (1 - k), w, h * k);
+  }
+
+  /** Инверсия цветов всей сцены, k — насколько. */
+  function invert(c, w, h, k) {
+    if (k <= 0.01) return;
+    c.save();
+    c.globalCompositeOperation = "difference";
+    c.fillStyle = `rgba(255,255,255,${Math.min(1, k)})`;
+    c.fillRect(0, 0, w, h);
+    c.restore();
+  }
+
   /** Крупная надпись по центру сверху (триггер «Надпись»). */
   function message(c, w, h, text, alpha) {
     if (!text || alpha <= 0.01) return;
@@ -558,5 +742,5 @@ const bgart = (() => {
     c.restore();
   }
 
-  return { BGS, EFFECTS, draw, effect, darken, message };
+  return { BGS, EFFECTS, draw, effect, darken, message, letterbox, invert };
 })();

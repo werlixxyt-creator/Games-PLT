@@ -108,7 +108,7 @@ public sealed record PlayableLevel(int Id, string Name, string AuthorId, int Rev
 /// Ячейка редактора уровней: стрелка 0..3, секунды заполнения в обычном темпе, особая ячейка (см. <see cref="LevelGenerator.EditorSpecials"/>) или null,
 /// препятствие (см. <see cref="LevelGenerator.EditorObstacles"/>) или null.
 /// </summary>
-public sealed record EditorCell(int A, double F, string? S = null, string? O = null);
+public sealed record EditorCell(int A, double F, string? S = null, string? O = null, int N = 0, double P = 0);
 
 /// <summary>
 /// Блок, декорация или триггер из редактора (виды — <see cref="LevelGenerator.EditorObjects"/>). На игру сервер их не тратит:
@@ -116,11 +116,12 @@ public sealed record EditorCell(int A, double F, string? S = null, string? O = n
 /// S — размер, V — цвет, текст или сила триггера, R — поворот в градусах, W и H — растяжение по ширине и высоте,
 /// Fx и Fy — отражение, A — непрозрачность, Z — слой (0 — за дорогой, 1 — перед ней), G — сила свечения.
 /// Gr — группа: у объекта — в какой он группе, у триггера анимации — какую группу двигает (0 — все объекты).
-/// Настройки триггера (их выполняет клиент, trigrun.js): P и Q — числа (сдвиг, угол, сила…), D — длительность, E — плавность 0–3.
+/// Настройки триггера (их выполняет клиент, trigrun.js): P и Q — числа (сдвиг, угол, сила…), D — длительность,
+/// E — плавность 0–9 (easecurve.js), B — своя кривая плавности "x1,y1,x2,y2".
 /// </summary>
 public sealed record LevelObject(string K, int C, double X, double Y, double S = 1, string? V = null, double R = 0,
     double W = 1, double H = 1, bool Fx = false, bool Fy = false, double A = 1, int Z = 0, double G = 0,
-    int Gr = 0, double P = 0, double Q = 0, double D = 0, int E = 0);
+    int Gr = 0, double P = 0, double Q = 0, double D = 0, int E = 0, string? B = null);
 
 public static class LevelGenerator
 {
@@ -210,20 +211,33 @@ public static class LevelGenerator
     }
 
     /// <summary>
-    /// Особые ячейки, которые автор ставит в редакторе, и сколько ячеек за каждой меняется:
-    /// столько обычных ячеек должно идти следом, и другая особая не может стоять среди них.
-    /// «Раст» и «Кловд» добавляют свои ячейки сами, поэтому им места не нужно.
+    /// Настройки особой ячейки в редакторе: N — длина (сколько ячеек меняет или сколько добавляет), P — сила.
+    /// Adds — «Раст» и «Кловд» добавляют свои ячейки к уровню, поэтому места за ними не нужно.
+    /// HasP — есть ли у явления сила: у «Свама» и «Кловда» это секунды на ячейку, у «Овердрайва» — множитель времени заполнения.
     /// </summary>
-    public static readonly Dictionary<string, int> EditorSpecials = new()
+    public sealed record SpecialSettings(int DefN, int MinN, int MaxN, bool Adds = false, bool HasP = false, double DefP = 0, double MinP = 0, double MaxP = 0)
     {
-        ["chart"] = GameRules.ChartCells,
-        ["swam"] = GameRules.SwamCells,
-        [Events[0]] = GameRules.EventCells,
-        [Events[1]] = GameRules.EventCells,
-        [Events[2]] = GameRules.EventCells,
-        [Rainbow] = GameRules.RainbowCells,
-        [Rast] = 0,
-        [Cloud] = 0,
+        /// <summary>Длина с учётом выбора автора: 0 — по умолчанию.</summary>
+        public int N(EditorCell c) => c.N == 0 ? DefN : Math.Clamp(c.N, MinN, MaxN);
+        public double P(EditorCell c) => !HasP || c.P == 0 ? DefP : Math.Clamp(c.P, MinP, MaxP);
+        /// <summary>Сколько ячеек уровня за особой занимает её участок.</summary>
+        public int Span(EditorCell c) => Adds ? 0 : N(c);
+    }
+
+    /// <summary>
+    /// Особые ячейки, которые автор ставит в редакторе, и их настройки. За особой ячейкой должно идти столько обычных,
+    /// сколько она меняет, и другая особая не может стоять среди них. Те же числа знает редактор (levels.js, SPECIALS).
+    /// </summary>
+    public static readonly Dictionary<string, SpecialSettings> EditorSpecials = new()
+    {
+        ["chart"] = new(GameRules.ChartCells, 3, 20),
+        ["swam"] = new(GameRules.SwamCells, 2, 12, HasP: true, DefP: GameRules.SwamCellSeconds, MinP: 0.8, MaxP: 1.6),
+        [Events[0]] = new(GameRules.EventCells, 2, 20, HasP: true, DefP: GameRules.OverdriveFill, MinP: 0.3, MaxP: 0.9),
+        [Events[1]] = new(GameRules.EventCells, 2, 20),
+        [Events[2]] = new(GameRules.EventCells, 2, 20),
+        [Rainbow] = new(GameRules.RainbowCells, 2, 16),
+        [Rast] = new(GameRules.RastCells, 10, 80, Adds: true),
+        [Cloud] = new(GameRules.CloudCells, 4, 16, Adds: true, HasP: true, DefP: GameRules.CloudCellSeconds, MinP: 0.45, MaxP: 1.2),
     };
 
     /// <summary>
@@ -244,43 +258,55 @@ public static class LevelGenerator
         var added = new List<(int At, string Name)>();
         for (var i = 0; i < cells.Count; i++)
         {
-            switch (cells[i].S)
+            var c = cells[i];
+            if (c.S is null || !EditorSpecials.TryGetValue(c.S, out var set)) continue;
+            var n = set.N(c);
+            switch (c.S)
             {
-                case "chart": AddChart(sliders, i, rnd, sliders[i].Arrow); break;
-                case "swam": AddSwam(sliders, i); break;
-                case Rainbow: AddRainbow(sliders, i); break;
-                case Rast or Cloud: MarkAdded(sliders, i, cells[i].S!, added); break;
-                case { } name when Events.Contains(name): AddEvent(sliders, i, name); break;
+                case "chart": AddChart(sliders, i, rnd, sliders[i].Arrow, n); break;
+                case "swam": AddSwam(sliders, i, n, set.P(c)); break;
+                case Rainbow: AddRainbow(sliders, i, n); break;
+                case Rast or Cloud: MarkAdded(sliders, i, c.S, added); break;
+                case { } name when Events.Contains(name): AddEvent(sliders, i, name, n, name == "over" ? set.P(c) : 1); break;
             }
         }
+        // с конца: так вставка не сдвигает ещё не обработанные места
         foreach (var (spot, name) in Enumerable.Reverse(added))
-            sliders = name == Rast ? AddRast(sliders, spot, rnd) : AddCloud(sliders, spot, rnd);
+        {
+            var c = cells[spot];
+            var set = EditorSpecials[name];
+            sliders = name == Rast ? AddRast(sliders, spot, rnd, set.N(c)) : AddCloud(sliders, spot, rnd, set.N(c), set.P(c));
+        }
         return sliders;
     }
 
     /// <summary>Препятствия, которые автор ставит на ячейку. Особой ячейкой и ячейкой внутри её участка оно быть не может.</summary>
     public static readonly HashSet<string> EditorObstacles = ["wall", "spike", "fake"];
 
-    /// <summary>Виды объектов редактора: блоки, декор и триггеры (t-…). Как они выглядят и что делают — levelobj.js.</summary>
+    /// <summary>Виды объектов редактора: блоки, декор и триггеры (t-…). Как они выглядят и что делают — levelobj.js и trigrun.js.</summary>
     public static readonly HashSet<string> EditorObjects =
     [
         // блоки
         "block", "b-gem", "b-inset", "b-grid", "b-panel", "b-brick", "b-stone", "b-metal", "b-crate",
         "b-hazard", "b-tech", "b-dark", "b-frame", "b-checker", "b-studs",
+        "b-ice", "b-lava", "b-wood", "b-gold", "b-dots", "b-stripes", "b-diamond", "b-neon",
         // формы и склоны
-        "half", "small", "slab", "pillar", "plank", "step", "cross",
+        "half", "small", "slab", "pillar", "plank", "step", "cross", "s-circle", "s-semi", "s-hex", "s-octa", "s-ring", "s-arch",
         "ramp", "ramp2", "ramp-half", "wedge", "curve",
         // стекло
-        "g-block", "g-half", "g-pane", "g-ramp", "g-tile", "g-crack", "g-shards",
+        "g-block", "g-half", "g-pane", "g-ramp", "g-tile", "g-crack", "g-shards", "g-orb", "g-gem", "g-tube",
         // эффекты
         "fx-boom", "fx-bang", "fx-spark", "fx-fire", "fx-smoke", "fx-bolt", "fx-debris", "fx-confetti", "fx-beam",
+        "fx-ring", "fx-portal", "fx-glitch", "fx-laser",
         // декор (cloud и ring остались от прошлых версий: в палитре их нет, но старые уровни их рисуют)
         "text", "star", "crystal", "lamp", "d-gear", "d-arrow", "d-sign", "d-flag", "d-chain", "d-pipe", "d-grass", "d-heart", "d-moon",
+        "d-tree", "d-cactus", "d-skull", "d-eye", "d-coin", "d-key", "d-torch", "d-bush", "d-mushroom", "d-planet",
         "cloud", "ring",
         // триггеры мира и камеры
         "t-color", "t-bg", "t-ground", "t-bgimg", "t-effect", "t-dark", "t-flash", "t-shake", "t-zoom", "t-tilt", "t-offset", "t-msg",
+        "t-camspin", "t-camreset", "t-hue", "t-letterbox", "t-invert",
         // триггеры анимации групп
-        "t-move", "t-rotate", "t-spin", "t-scale", "t-alpha", "t-toggle", "t-gcolor", "t-pulse", "t-stop",
+        "t-move", "t-rotate", "t-spin", "t-scale", "t-alpha", "t-toggle", "t-gcolor", "t-pulse", "t-stop", "t-oscill", "t-orbit",
     ];
 
     /// <summary>Номер ячейки редактора → номер ползунка в матче: «Раст» и «Кловд» вставляют свои ячейки и сдвигают следующие.</summary>
@@ -291,39 +317,38 @@ public static class LevelGenerator
         for (var i = 0; i < cells.Count; i++)
         {
             map[i] = i + shift;
-            shift += cells[i].S switch { Rast => GameRules.RastCells, Cloud => GameRules.CloudCells, _ => 0 };
+            if (cells[i].S is { } s && EditorSpecials.TryGetValue(s, out var set) && set.Adds) shift += set.N(cells[i]);
         }
         return map;
     }
 
-    /// <summary>«Радуга»: каждая вторая ячейка за особой становится стеной, между ними обычные ячейки.</summary>
-    private static int AddRainbow(Slider[] sliders, int at)
+    /// <summary>«Радуга»: каждая вторая ячейка за особой становится стеной, между ними обычные ячейки. n — длина участка.</summary>
+    private static int AddRainbow(Slider[] sliders, int at, int n = GameRules.RainbowCells)
     {
         sliders[at] = sliders[at] with { Event = Rainbow };
-        for (var i = 1; i <= GameRules.RainbowCells; i++)
+        for (var i = 1; i <= n; i++)
         {
             var cell = sliders[at + i] with { Zone = Rainbow };
             sliders[at + i] = i % 2 == 0 ? cell with { Wall = true, Was = cell.Arrow } : cell;
         }
-        return GameRules.RainbowCells;
+        return n;
     }
 
     /// <summary>
     /// Ячейки «Кловда» добавляются к уровню: на каждую одна стрелка по случайной линии, но не больше трёх подряд по одной.
-    /// Пока ивент не начался, они выглядят обычными (Was).
+    /// Пока ивент не начался, они выглядят обычными (Was). n — сколько стрелок, seconds — через сколько прилетает следующая.
     /// </summary>
-    private static Slider[] AddCloud(Slider[] sliders, int at, Random rnd)
+    private static Slider[] AddCloud(Slider[] sliders, int at, Random rnd, int n = GameRules.CloudCells, double seconds = GameRules.CloudCellSeconds)
     {
         var zone = new List<Slider>();
         int last = -1, run = 0;
-        for (var i = 0; i < GameRules.CloudCells; i++)
+        for (var i = 0; i < n; i++)
         {
             var lane = rnd.Next(2);
             if (lane == last && run >= 3) lane = 1 - lane;
             run = lane == last ? run + 1 : 1;
             last = lane;
-            var seconds = i == 0 ? GameRules.CloudIntroSeconds : GameRules.CloudCellSeconds;
-            zone.Add(new Slider(lane == 0 ? Arrow.Up : Arrow.Down, seconds, Was: (Arrow)rnd.Next(4), Zone: Cloud, Lane: lane));
+            zone.Add(new Slider(lane == 0 ? Arrow.Up : Arrow.Down, i == 0 ? GameRules.CloudIntroSeconds : seconds, Was: (Arrow)rnd.Next(4), Zone: Cloud, Lane: lane));
         }
         return [.. sliders.Take(at + 1), .. zone, .. sliders.Skip(at + 1)];
     }
@@ -340,49 +365,48 @@ public static class LevelGenerator
     /// Ячейки «Раста»: они добавляются к уровню, поэтому помещаются и в короткий. Это две стрелки по очереди,
     /// скорости заполнения у них нет: проходятся нажатиями в любом темпе. Пока ивент не начался, они выглядят обычными (Was).
     /// </summary>
-    private static Slider[] AddRast(Slider[] sliders, int at, Random rnd)
+    private static Slider[] AddRast(Slider[] sliders, int at, Random rnd, int n = GameRules.RastCells)
     {
         var first = (Arrow)rnd.Next(4);
         var second = (Arrow)(((int)first + 1 + rnd.Next(3)) % 4);
-        var zone = Enumerable.Range(0, GameRules.RastCells)
+        var zone = Enumerable.Range(0, n)
             .Select(i => new Slider(i % 2 == 0 ? first : second, 0, Was: (Arrow)rnd.Next(4), Zone: Rast));
 
         return [.. sliders.Take(at + 1), .. zone, .. sliders.Skip(at + 1)];
     }
 
-    /// <summary>Ивент на следующие ячейки. Выглядят они как обычные, пока он не начался.</summary>
-    private static int AddEvent(Slider[] sliders, int at, string name)
+    /// <summary>Ивент на следующие n ячеек. Выглядят они как обычные, пока он не начался. over — во сколько раз быстрее заполняются ячейки «Овердрайва».</summary>
+    private static int AddEvent(Slider[] sliders, int at, string name, int n = GameRules.EventCells, double over = GameRules.OverdriveFill)
     {
         sliders[at] = sliders[at] with { Event = name };
-        for (var i = at + 1; i <= at + GameRules.EventCells; i++)
+        for (var i = at + 1; i <= at + n; i++)
         {
-            var seconds = sliders[i].FillSeconds * (name == "over" ? GameRules.OverdriveFill : 1);
+            var seconds = sliders[i].FillSeconds * (name == "over" ? over : 1);
             sliders[i] = sliders[i] with { Zone = name, FillSeconds = Math.Round(seconds, 2) };
         }
-        return GameRules.EventCells;
+        return n;
     }
 
-    /// <summary>Чарт: за ним идут одинаковые ячейки, прежняя стрелка остаётся в Was. same — какой стрелкой, иначе случайной.</summary>
-    private static int AddChart(Slider[] sliders, int at, Random rnd, Arrow? chosen = null)
+    /// <summary>Чарт: за ним идут n одинаковых ячеек, прежняя стрелка остаётся в Was. same — какой стрелкой, иначе случайной.</summary>
+    private static int AddChart(Slider[] sliders, int at, Random rnd, Arrow? chosen = null, int n = GameRules.ChartCells)
     {
         sliders[at] = sliders[at] with { Chart = true };
         var same = chosen ?? (Arrow)rnd.Next(4);
-        for (var i = at + 1; i <= at + GameRules.ChartCells; i++)
+        for (var i = at + 1; i <= at + n; i++)
         {
             sliders[i] = sliders[i] with { Arrow = same, Was = sliders[i].Arrow };
         }
-        return GameRules.ChartCells;
+        return n;
     }
 
-    /// <summary>Свам: следующие ячейки становятся препятствиями, прежняя стрелка остаётся в Was. До первой из них лететь дольше: идёт сцена прилёта НЛО.</summary>
-    private static int AddSwam(Slider[] sliders, int at)
+    /// <summary>Свам: следующие n ячеек становятся препятствиями, прежняя стрелка остаётся в Was. До первой из них лететь дольше: идёт сцена прилёта НЛО. seconds — сколько НЛО летит до следующей.</summary>
+    private static int AddSwam(Slider[] sliders, int at, int n = GameRules.SwamCells, double seconds = GameRules.SwamCellSeconds)
     {
         sliders[at] = sliders[at] with { Swam = true };
-        for (var i = at + 1; i <= at + GameRules.SwamCells; i++)
+        for (var i = at + 1; i <= at + n; i++)
         {
-            var seconds = i == at + 1 ? GameRules.SwamIntroSeconds : GameRules.SwamCellSeconds;
-            sliders[i] = sliders[i] with { FillSeconds = seconds, Was = sliders[i].Arrow, Ufo = true };
+            sliders[i] = sliders[i] with { FillSeconds = i == at + 1 ? GameRules.SwamIntroSeconds : seconds, Was = sliders[i].Arrow, Ufo = true };
         }
-        return GameRules.SwamCells;
+        return n;
     }
 }

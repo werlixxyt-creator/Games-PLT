@@ -159,7 +159,7 @@ public static class LevelEndpoints
         level.Difficulty = Difficulties.Parse(body.Difficulty);
         level.Theme = LobbySettings.Themes.Contains(body.Theme) ? body.Theme! : "auto";
         // в быстром темпе секунды не нужны, но храним их: автор может переключить темп обратно
-        level.Cells = JsonSerializer.Serialize(body.Cells!.Select(c => c with { F = Math.Round(c.F, 2) }), JsonSerializerOptions.Web);
+        level.Cells = JsonSerializer.Serialize(body.Cells!.Select(c => c with { F = Math.Round(c.F, 2), P = Math.Round(c.P, 2) }), JsonSerializerOptions.Web);
         level.Objects = JsonSerializer.Serialize((body.Objects ?? []).Select(o => o with
         {
             X = Math.Round(o.X, 1),
@@ -256,7 +256,10 @@ public static class LevelEndpoints
                 if (i <= busyUntil) return $"Ячейка {i + 1}: препятствие внутри участка особой ячейки";
             }
             if (c.S is null) continue;
-            if (!LevelGenerator.EditorSpecials.TryGetValue(c.S, out var span)) return $"Ячейка {i + 1}: неизвестная особая ячейка";
+            if (!LevelGenerator.EditorSpecials.TryGetValue(c.S, out var set)) return $"Ячейка {i + 1}: неизвестная особая ячейка";
+            if (c.N != 0 && (c.N < set.MinN || c.N > set.MaxN)) return $"Ячейка {i + 1}: длина от {set.MinN} до {set.MaxN}";
+            if (c.P != 0 && (!set.HasP || !double.IsFinite(c.P) || c.P < set.MinP || c.P > set.MaxP)) return $"Ячейка {i + 1}: неверная сила особой ячейки";
+            var span = set.Span(c);
             if (i <= busyUntil) return $"Ячейка {i + 1}: внутри участка прошлой особой ячейки";
             if (i + span >= cells.Count) return $"Ячейка {i + 1}: за ней нужно ещё {span} ячеек";
             busyUntil = i + span;
@@ -283,9 +286,10 @@ public static class LevelEndpoints
             if (!double.IsFinite(o.G) || o.G < 0 || o.G > 1) return "Свечение объекта от 0 до 1";
             if (o.Z is not (0 or 1)) return "Слой объекта: 0 или 1";
             if (o.Gr is < 0 or > GameRules.EditorMaxGroup) return $"Группа объекта от 0 до {GameRules.EditorMaxGroup}";
-            if (!double.IsFinite(o.P) || !double.IsFinite(o.Q) || Math.Abs(o.P) > 5000 || Math.Abs(o.Q) > 5000) return "Значение триггера слишком большое";
+            if (!double.IsFinite(o.P) || !double.IsFinite(o.Q) || Math.Abs(o.P) > 10000 || Math.Abs(o.Q) > 10000) return "Значение триггера слишком большое";
             if (!double.IsFinite(o.D) || o.D < 0 || o.D > 30) return "Длительность триггера от 0 до 30 секунд";
-            if (o.E is < 0 or > 3) return "Неизвестная плавность триггера";
+            if (o.E is < 0 or > 9) return "Неизвестная плавность триггера";
+            if (o.B is { } b && (b.Length > 40 || !System.Text.RegularExpressions.Regex.IsMatch(b, @"^-?\d+(\.\d+)?(,-?\d+(\.\d+)?){3}$"))) return "Неверная кривая плавности";
         }
         return null;
     }

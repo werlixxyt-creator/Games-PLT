@@ -2885,6 +2885,8 @@ const course = (() => {
     if (tv.effect.k < 1) bgart.effect(ctx, tv.effect.prev, bgView, palette, 1 - tv.effect.k);
     bgart.effect(ctx, tv.effect.id, bgView, palette, tv.effect.k);
     bgart.darken(ctx, cssW, cssH, tv.dark);
+    bgart.invert(ctx, cssW, cssH, tv.invert);
+    bgart.letterbox(ctx, cssW, cssH, tv.letterbox);
     if (tv.message) bgart.message(ctx, cssW, cssH, tv.message.text, tv.message.alpha);
     if (!reduce && flash > 0.02) {
       ctx.fillStyle = rgba(flashRgb, flash * 0.6);
