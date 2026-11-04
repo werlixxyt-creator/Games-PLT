@@ -243,6 +243,8 @@ const levels = (() => {
     opts.show("editor");
     edview.reset();
     focused = sel;
+    codeConfirmed = false;
+    toggleCode(false);
     renderEditor();
     if (!id) $("ed-name").focus();
   }
@@ -367,6 +369,7 @@ const levels = (() => {
     // камера едет только к новой выбранной ячейке: иначе смена инструмента или ввод названия возвращали бы её назад
     if (sel !== focused) edview.focus(sel);
     focused = sel;
+    if (!$("ed-code").hidden) checkCode(); // «Вставить после ячейки N» и запрет у опубликованного
   }
 
   /** Клик по ячейке на превью: выбранный инструмент применяется к ней. */
@@ -428,6 +431,11 @@ const levels = (() => {
     if (problem()) return false;
     try {
       const d = ed.id ? await call("PUT", `/${ed.id}`, body()) : await call("POST", "/", body());
+      if (!ed.id) {
+        // у нового уровня появился номер: код переезжает к нему
+        storeCode(loadCode(null), d.id);
+        storeCode("", null);
+      }
       ed.id = d.id;
       ed.verified = d.verified;
       ed.published = d.published;
@@ -458,8 +466,122 @@ const levels = (() => {
   }
 
   function copy() {
+    const code = loadCode();
     ed = { ...ed, id: null, name: `${ed.name} (копия)`.slice(0, NAME_MAX), published: false, verified: false, dirty: true, cells: ed.cells.map((c) => ({ ...c })) };
+    storeCode(code); // код переезжает в копию
     renderEditor();
+  }
+
+  // ---------- Код уровня ----------
+  // Текст кода хранится только в этом браузере, у каждого уровня свой: на сервер уходят уже собранные ячейки.
+
+  const CODE_LIMITS = { maxCells: MAX_CELLS, minFill: MIN_FILL, maxFill: MAX_FILL };
+  const codeKey = (id) => "arrowrush.code." + (id || "new");
+  let codeConfirmed = false; // заменить уровень кодом спрашиваем один раз за открытие уровня
+
+  function loadCode(id = ed.id) {
+    try {
+      return localStorage.getItem(codeKey(id)) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function storeCode(text, id = ed.id) {
+    try {
+      if (text) localStorage.setItem(codeKey(id), text);
+      else localStorage.removeItem(codeKey(id));
+    } catch { /* хранилище недоступно — код живёт до закрытия панели */ }
+  }
+
+  function toggleCode(on = $("ed-code").hidden) {
+    $("ed-code").hidden = !on;
+    $("ed-code-btn").classList.toggle("on", on);
+    if (!on) return;
+    $("ed-code-src").value = loadCode();
+    checkCode();
+    $("ed-code-src").focus();
+  }
+
+  /** Проверка на лету: сколько ячеек получится или где ошибка. Возвращает ячейки, если код можно применить. */
+  function checkCode() {
+    const src = $("ed-code-src").value;
+    const r = src.trim() ? levelcode.compile(src, CODE_LIMITS) : null;
+    const status = $("ed-code-status");
+    status.classList.toggle("bad", !!(r && r.error));
+    status.textContent = !r ? "Напиши код или нажми «Пример»"
+      : r.error ? `Строка ${r.line}: ${r.error}`
+      : `Получится ${r.cells.length} яч.`;
+    const ok = !!r && !r.error && !locked();
+    $("ed-code-replace").disabled = !ok;
+    $("ed-code-insert").disabled = !ok || ed.cells.length + r.cells.length > MAX_CELLS;
+    $("ed-code-insert").textContent = `Вставить после ячейки ${sel + 1}`;
+    return ok ? r.cells : null;
+  }
+
+  function runCode(replace) {
+    const cells = checkCode();
+    if (!cells) return;
+    if (replace && !codeConfirmed && ed.cells.length > 1 && !confirm(`Заменить все ${ed.cells.length} ячеек уровнем из кода?`)) return;
+    if (replace) codeConfirmed = true;
+    focused = -1; // камера едет к тому, что получилось
+    change(() => {
+      if (replace) {
+        ed.cells = cells;
+        sel = 0;
+      } else {
+        ed.cells.splice(sel + 1, 0, ...cells);
+        sel += cells.length;
+      }
+    });
+  }
+
+  /** back — на сколько знаков вернуть курсор: у «{  }» он встаёт между скобками. */
+  function insertIntoCode(text, back = 0) {
+    const src = $("ed-code-src");
+    src.focus();
+    src.setRangeText(text, src.selectionStart, src.selectionEnd, "end");
+    src.selectionStart = src.selectionEnd = src.selectionEnd - back;
+    src.dispatchEvent(new Event("input"));
+  }
+
+  function initCode() {
+    $("ed-code-help").replaceChildren(...levelcode.HELP.map(([syntax, what]) => {
+      const li = document.createElement("li");
+      const code = document.createElement("code");
+      code.textContent = syntax;
+      li.append(code, " — " + what);
+      return li;
+    }));
+    $("ed-code-keys").replaceChildren(...["←", "↑", "→", "↓", "?", "{ }"].map((k) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = k;
+      b.title = "Вставить в код";
+      b.addEventListener("click", () => (k === "{ }" ? insertIntoCode("{  }", 2) : insertIntoCode(k + " ")));
+      return b;
+    }));
+    $("ed-code-btn").addEventListener("click", () => toggleCode());
+    $("ed-code-close").addEventListener("click", () => toggleCode(false));
+    $("ed-code-help-btn").addEventListener("click", () => { $("ed-code-help").hidden = !$("ed-code-help").hidden; });
+    $("ed-code-example").addEventListener("click", () => {
+      const src = $("ed-code-src");
+      if (src.value.trim() && !confirm("Заменить твой код примером?")) return;
+      src.value = levelcode.EXAMPLE;
+      src.dispatchEvent(new Event("input"));
+    });
+    $("ed-code-src").addEventListener("input", () => {
+      storeCode($("ed-code-src").value);
+      checkCode();
+    });
+    $("ed-code-src").addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        runCode(true);
+      }
+    });
+    $("ed-code-replace").addEventListener("click", () => runCode(true));
+    $("ed-code-insert").addEventListener("click", () => runCode(false));
   }
 
   function back() {
@@ -556,6 +678,7 @@ const levels = (() => {
     $("ed-publish").addEventListener("click", publish);
     $("ed-copy").addEventListener("click", copy);
     $("btn-editor-back").addEventListener("click", back);
+    initCode();
     addEventListener("keydown", onKey);
   }
 

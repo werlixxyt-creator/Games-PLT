@@ -287,6 +287,24 @@
           <p class="ed-keys">Стрелки или WASD — поставить стрелку и перейти дальше · Shift + ← → — выбрать ячейку · Delete — удалить · Esc — выбор · Ctrl+S — сохранить</p>
           <div id="ed-error" class="ed-error" role="alert"></div>
         </div>
+
+        <!-- «Код уровня»: свой маленький язык, собирается в ячейки (levelcode.js) -->
+        <div id="ed-code" class="ed-code" hidden>
+          <div class="ed-code-head">
+            <b>Код уровня</b>
+            <button id="ed-code-example" class="ed-code-link" type="button">Пример</button>
+            <button id="ed-code-help-btn" class="ed-code-link" type="button">Справка</button>
+            <button id="ed-code-close" class="ed-code-x" type="button" aria-label="Закрыть">×</button>
+          </div>
+          <ul id="ed-code-help" class="ed-code-help" hidden></ul>
+          <div id="ed-code-keys" class="ed-code-keys" aria-label="Вставить стрелку"></div>
+          <textarea id="ed-code-src" class="ed-code-src" spellcheck="false" autocomplete="off" placeholder="повтор 4 { ↑ → }"></textarea>
+          <p id="ed-code-status" class="ed-code-status"></p>
+          <div class="ed-code-actions">
+            <button id="ed-code-replace" class="btn primary small" type="button" title="Ctrl+Enter">Заменить уровень</button>
+            <button id="ed-code-insert" class="btn ghost small" type="button">Вставить после выбранной</button>
+          </div>
+        </div>
       </div>
 
       <aside class="ed-right">
@@ -298,6 +316,9 @@
         </button>
         <button id="ed-copy" class="ed-side primary" type="button" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ed-copy-icon"/></svg><span>Копия уровня</span>
+        </button>
+        <button id="ed-code-btn" class="ed-side" type="button" title="Собрать уровень из кода">
+          <b>&lt;/&gt;</b><span>Код</span>
         </button>
         <i class="ed-sep"></i>
         <button id="ed-add" class="ed-side" type="button" title="Новая ячейка после выбранной">
@@ -770,6 +791,7 @@
   <script src="rewards.js?v=2"></script>
   <script src="lobby.js?v=2"></script>
   <script src="edview.js?v=2"></script>
+  <script src="levelcode.js?v=2"></script>
   <script src="levels.js?v=2"></script>
   <script src="app.js?v=2"></script>
   <script src="fullscreen.js?v=2"></script>

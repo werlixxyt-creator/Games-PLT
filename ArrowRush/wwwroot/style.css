@@ -2507,3 +2507,51 @@ button.ed-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
   .level-row { flex-wrap: wrap; }
   .level-buttons { max-width: none; flex-basis: 100%; justify-content: flex-start; }
 }
+
+/* ---------- Код уровня: панель поверх превью справа ---------- */
+
+.ed-side.on { background: var(--a3); }
+.ed-code {
+  position: absolute; top: 12px; right: 12px; bottom: 44px;
+  display: flex; flex-direction: column; gap: 8px;
+  width: min(400px, calc(100% - 24px));
+  padding: 12px;
+  color: #fff;
+  background: rgba(16, 12, 34, .88);
+  border: 3px solid var(--outline);
+  border-radius: 14px;
+}
+.ed-code-head { display: flex; align-items: center; gap: 10px; }
+.ed-code-head b { flex: 1; font: 900 15px var(--font-display); }
+.ed-code-link { padding: 0; font: 800 13px var(--font-body); color: var(--a0); background: none; border: 0; cursor: pointer; text-decoration: underline; }
+.ed-code-x { width: 28px; height: 28px; font: 900 20px/1 var(--font-body); color: #fff; background: rgba(255, 255, 255, .12); border: 0; border-radius: 8px; cursor: pointer; }
+.ed-code-help { max-height: 40%; overflow-y: auto; margin: 0; padding: 8px 10px 8px 24px; font-size: 12px; line-height: 1.5; background: rgba(255, 255, 255, .08); border-radius: 10px; }
+.ed-code-help code, .ed-code-src { font-family: ui-monospace, Consolas, "Courier New", monospace; }
+.ed-code-help code { color: var(--a3); font-weight: 700; }
+.ed-code-keys { display: flex; gap: 6px; }
+.ed-code-keys button {
+  min-width: 34px; height: 30px;
+  font: 900 16px var(--font-body);
+  color: var(--text);
+  background: var(--panel);
+  border: 2px solid var(--outline);
+  border-radius: 8px;
+  box-shadow: 0 2px 0 var(--outline);
+  cursor: pointer;
+}
+.ed-code-src {
+  flex: 1; min-height: 120px;
+  resize: none;
+  padding: 10px;
+  font-size: 15px; line-height: 1.5;
+  color: #f4f1ff;
+  background: #0d0a1f;
+  border: 2px solid rgba(255, 255, 255, .2);
+  border-radius: 10px;
+  outline: none;
+  tab-size: 2;
+}
+.ed-code-src:focus { border-color: var(--a0); }
+.ed-code-status { margin: 0; font-size: 13px; font-weight: 800; color: var(--a1); }
+.ed-code-status.bad { color: #ff8da1; }
+.ed-code-actions { display: flex; flex-wrap: wrap; gap: 8px; }
