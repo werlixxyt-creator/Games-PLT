@@ -343,10 +343,14 @@ const levels = (() => {
 
   // ---------- Объекты: блоки, декор, триггеры ----------
 
-  /** Объект в том виде, в каком его хранит сервер (LevelObject). */
-  const cleanObj = (o) => ({
+  /** Объект в том виде, в каком его хранит сервер (LevelObject). Старые зум и наклон хранили число в v — оно переезжает в p. */
+  const cleanObj = (o) => (o.k === "t-zoom" || o.k === "t-tilt") && o.v != null && o.v !== "" && Number.isFinite(+o.v)
+    ? cleanObj({ ...o, p: +o.v, v: null, d: o.d || 0.6 })
+    : ({
     k: o.k, c: o.c, x: o.x, y: o.y, v: o.v ?? null,
     s: o.s ?? 1, r: o.r || 0, w: o.w ?? 1, h: o.h ?? 1, fx: !!o.fx, fy: !!o.fy, a: o.a ?? 1, z: o.z ? 1 : 0, g: o.g || 0,
+    // группа объекта и настройки триггера (trigrun.js)
+    gr: o.gr || 0, p: o.p ?? 0, q: o.q ?? 0, d: o.d ?? 0, e: o.e ?? 1,
   });
   const clampReach = (v) => Math.round(Math.max(-OBJECT_REACH, Math.min(OBJECT_REACH, v)));
 
@@ -425,16 +429,43 @@ const levels = (() => {
     ["g", "Свечение", 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`],
   ];
   const LOOK_KEYS = ["s", "w", "h", "r", "a", "g", "fx", "fy", "z"];
+  const EASES = [[0, "Ровно"], [1, "Плавно"], [2, "Замедление"], [3, "Отскок"]];
+  const MAX_GROUP = 99; // как GameRules.EditorMaxGroup
   let styleClip = null; // «Копировать стиль»: вид и цвет, которые вставит «Вставить стиль»
   let objShown = null;  // какой объект сейчас в панели: панель не пересобирается, пока его правят
 
   /** Поворот в пределах −180…180. */
   const wrapAngle = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
 
+  /** Как показать число с единицей из описания триггера. */
+  const showUnit = (unit) => (v) => (unit === "%" ? `${Math.round(v * 100)}%` : unit === "×" ? `×${(+v).toFixed(2)}` : `${Math.round(v * 10) / 10}${unit}`);
+
+  /** Маленькая картинка фона для выбора в триггере «Картинка фона». */
+  function bgPreview(id) {
+    const cv = document.createElement("canvas");
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const w = 92, h = 52;
+    cv.width = w * dpr;
+    cv.height = h * dpr;
+    cv.style.width = w + "px";
+    cv.style.height = h + "px";
+    const c = cv.getContext("2d");
+    c.scale(dpr, dpr);
+    const pal = course.themes.violet;
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, `rgb(${pal.sky.join(",")})`);
+    g.addColorStop(1, `rgb(${pal.sky2.join(",")})`);
+    c.fillStyle = g;
+    c.fillRect(0, 0, w, h);
+    bgart.draw(c, id, { w, h, camX: 0, scale: 0.1, time: 1 }, pal);
+    return cv;
+  }
+
   /**
-   * Свойства выбранного объекта: цвет (палитра), значение, текст, вид (размер, растяжение, поворот, прозрачность, свечение),
-   * отражение, слой, точное положение и стиль. Панель собирается, только когда выбран другой объект или force:
-   * пока тянешь ползунок или цвет, она живёт сама и только меняет объект.
+   * Свойства выбранного объекта на половине превью, в две колонки. У блоков и декора: цвет (палитра) или текст,
+   * вид (размер, растяжение, поворот, прозрачность, свечение), отражение, слой, группа, положение и стиль.
+   * У триггеров — их настройки из levelobj (ui): цвет, выбор, текст, числа, длительность, плавность, группа.
+   * Панель собирается, только когда выбран другой объект или force: пока тянешь ползунок или цвет, она живёт сама.
    */
   function renderObj(force = false) {
     const box = $("ed-obj");
@@ -446,11 +477,11 @@ const levels = (() => {
     }
     if (selObj === objShown && !force) return;
     objShown = selObj;
-    const ob = selObj, kind = levelobj.KINDS[ob.k], trigger = levelobj.isTrigger(ob.k);
+    const ob = selObj, kind = levelobj.KINDS[ob.k], trigger = levelobj.isTrigger(ob.k), ui = kind.ui || {};
     const el = (tag, cls, text) => {
       const e = document.createElement(tag);
       if (cls) e.className = cls;
-      if (text) e.textContent = text;
+      if (text !== undefined && text !== null) e.textContent = text;
       return e;
     };
     const button = (cls, text, fn, on) => {
@@ -464,70 +495,120 @@ const levels = (() => {
     const set = (fn) => change(fn);
     const section = (title) => el("div", "ed-obj-sec", title);
 
+    /** Ползунок: значение ob[key] (по умолчанию def), подпись дважды кликнуть — сбросить. */
+    function slider(key, name, min, max, step, show, def) {
+      const row = el("label", "ed-obj-slider");
+      const title = el("span", null, name);
+      title.title = "Двойной клик — по умолчанию";
+      const range = el("input");
+      Object.assign(range, { type: "range", min, max, step, disabled: locked() });
+      const out = el("b");
+      const sync = () => {
+        const v = ob[key] ?? def;
+        range.value = v;
+        out.textContent = show(+v);
+      };
+      range.addEventListener("input", () => {
+        set(() => { ob[key] = +range.value; });
+        out.textContent = show(+range.value);
+      });
+      title.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        if (locked()) return;
+        set(() => { ob[key] = def; });
+        sync();
+      });
+      sync();
+      row.append(title, range, out);
+      return row;
+    }
+
+    /** Выбор одного из вариантов: chips [значение, подпись]; render(подпись, значение) может вернуть свою кнопку. */
+    function choice(key, items, def, cls = "ed-obj-toggles", make) {
+      const row = el("div", cls);
+      const current = () => ob[key] ?? def;
+      const buttons = items.map(([v, text]) => {
+        const b = button("ed-chip", make ? null : text, () => {
+          set(() => { ob[key] = v; });
+          buttons.forEach((x, i) => x.classList.toggle("on", items[i][0] === v));
+        }, current() === v);
+        if (make) b.append(...make(v, text));
+        return b;
+      });
+      row.append(...buttons);
+      return row;
+    }
+
+    function numberInput(key, label, min, max, step, hint) {
+      const wrap = el("label", "ed-obj-num", label);
+      const input = el("input", "ed-input");
+      Object.assign(input, { type: "number", min, max, step, value: Math.round(ob[key] || 0), disabled: locked() });
+      if (hint) wrap.title = hint;
+      input.addEventListener("input", () => {
+        if (input.value === "" || !Number.isFinite(+input.value)) return;
+        set(() => { ob[key] = Math.max(min, Math.min(max, Math.round(+input.value))); });
+      });
+      wrap.append(input);
+      return wrap;
+    }
+
     const head = el("div", "ed-obj-head");
     const close = button("ed-code-x", "×", () => pickObj(null));
     close.disabled = false;
     close.setAttribute("aria-label", "Снять выбор");
     head.append(el("b", null, kind.name), el("span", null, `у ячейки ${ob.c + 1}`), close);
     const rows = [head];
-    if (trigger) rows.push(el("p", "ed-obj-hint", `Срабатывает, когда игрок проходит ячейку ${ob.c + 1}: ${kind.hint}`));
+    if (trigger) rows.push(el("p", "ed-obj-hint", `Срабатывает, когда игрок проходит ячейку ${ob.c + 1}: ${kind.hint}.`));
 
+    const left = el("div", "ed-obj-col"), right = el("div", "ed-obj-col");
+
+    // ---- левая колонка: цвет, выбор из списка или текст
     if (levelobj.colored(ob.k)) {
-      rows.push(section("Цвет"));
+      left.append(section("Цвет"));
       const picker = colorpick.create({
         value: ob.v,
-        none: ob.k === "t-color" ? "Цвет дизайна" : null,
+        none: typeof ui.color === "string" ? ui.color : null,
         onInput: (v) => set(() => { ob.v = v; }),
       });
       if (locked()) picker.el.classList.add("off");
-      rows.push(picker.el);
-    } else if (levelobj.OPTIONS[ob.k]) {
-      const row = el("div", "ed-chips");
-      const chips = levelobj.OPTIONS[ob.k].map(([v, text]) => button("ed-chip", text, () => {
-        set(() => { ob.v = v; });
-        chips.forEach((c, i) => c.classList.toggle("on", levelobj.OPTIONS[ob.k][i][0] === v));
-      }, ob.v === v));
-      row.append(...chips);
-      rows.push(row);
-    } else {
-      // текст и надпись «Бах!»
-      rows.push(section("Текст"));
+      left.append(picker.el);
+    }
+    const opts = levelobj.optionsOf(ob.k);
+    if (opts && ui.opts === "bg") {
+      left.append(section("Картинка"), choice("v", opts, kind.v, "ed-obj-bgs", (v, text) => [bgPreview(v), el("span", null, text)]));
+    } else if (opts) {
+      left.append(section(ui.opts === "effect" ? "Эффект" : "Вариант"), choice("v", opts, kind.v));
+    }
+    if (ui.text || (!trigger && !levelobj.colored(ob.k))) {
+      // текст, надпись «Бах!», надпись триггера
+      left.append(section("Текст"));
       const input = el("input", "ed-input");
-      input.maxLength = ob.k === "text" ? 40 : 8;
+      input.maxLength = ui.text || (ob.k === "text" ? 40 : 8);
       input.value = ob.v || "";
       input.disabled = locked();
       input.addEventListener("input", () => set(() => { ob.v = input.value; }));
-      rows.push(input);
+      left.append(input);
     }
 
-    if (!trigger) {
-      rows.push(section("Вид"));
-      for (const [key, name, min, max, step, show] of LOOK_SLIDERS) {
-        const row = el("label", "ed-obj-slider");
-        const title = el("span", null, name);
-        title.title = "Двойной клик — по умолчанию";
-        const range = el("input");
-        Object.assign(range, { type: "range", min, max, step, disabled: locked() });
-        const out = el("b");
-        const sync = () => {
-          const v = ob[key] ?? levelobj.LOOK[key];
-          range.value = v;
-          out.textContent = show(+v);
-        };
-        range.addEventListener("input", () => {
-          set(() => { ob[key] = +range.value; });
-          out.textContent = show(+range.value);
-        });
-        title.addEventListener("dblclick", (e) => {
-          e.preventDefault();
-          if (locked()) return;
-          set(() => { ob[key] = levelobj.LOOK[key]; });
-          sync();
-        });
-        sync();
-        row.append(title, range, out);
-        rows.push(row);
+    if (trigger) {
+      // ---- триггер: числа, длительность, плавность, группа
+      const params = left.childElementCount ? right : left;
+      if (ui.gr) {
+        params.append(section("Группа"), numberInput("gr", "Группа", 0, MAX_GROUP, 1, "Какие объекты меняет триггер; 0 — все объекты уровня"));
+        params.append(el("p", "ed-obj-hint", "Группу объекту задаёшь в его настройках. 0 — все объекты уровня."));
       }
+      if (ui.p || ui.q || ui.d !== undefined) params.append(section("Настройки"));
+      for (const key of ["p", "q"]) {
+        if (!ui[key]) continue;
+        const [name, min, max, step, def, unit] = ui[key];
+        params.append(slider(key, name, min, max, step, showUnit(unit), def));
+      }
+      if (ui.d !== undefined) params.append(slider("d", ob.k === "t-msg" ? "Показ" : "Время", 0, ob.k === "t-msg" ? 10 : 5, 0.05, (v) => `${v.toFixed(2)} с`, ui.d));
+      if (ui.e) params.append(section("Плавность"), choice("e", EASES, 1));
+    } else {
+      // ---- блоки и декор: вид, отражение, слой, группа, положение, стиль
+      right.append(section("Вид"));
+      for (const [key, name, min, max, step, show] of LOOK_SLIDERS) right.append(slider(key, name, min, max, step, show, levelobj.LOOK[key]));
 
       const toggles = el("div", "ed-obj-toggles");
       const toggle = (key, text, hint) => {
@@ -539,30 +620,19 @@ const levels = (() => {
         return b;
       };
       toggles.append(toggle("fx", "⇋ Отразить", "Отразить по горизонтали"), toggle("fy", "⇵ Отразить", "Отразить по вертикали"));
-      rows.push(toggles);
+      right.append(toggles);
 
-      const layer = el("div", "ed-obj-toggles");
-      const layers = [[0, "За дорогой"], [1, "Перед дорогой"]].map(([z, text]) => button("ed-chip", text, () => {
-        set(() => { ob.z = z; });
-        layers.forEach((b, i) => b.classList.toggle("on", i === z));
-      }, (ob.z || 0) === z));
-      layer.append(el("span", null, "Слой"), ...layers);
-      rows.push(layer);
+      const layer = choice("z", [[0, "За дорогой"], [1, "Перед дорогой"]], 0);
+      layer.prepend(el("span", null, "Слой"));
+      right.append(layer);
 
-      rows.push(section("Положение от стрелки ячейки"));
-      const pos = el("div", "ed-obj-pos");
-      for (const key of ["x", "y"]) {
-        const input = el("input", "ed-input");
-        Object.assign(input, { type: "number", step: GRID, min: -OBJECT_REACH, max: OBJECT_REACH, value: Math.round(ob[key]), disabled: locked() });
-        input.addEventListener("input", () => {
-          if (input.value === "" || !Number.isFinite(+input.value)) return;
-          set(() => { ob[key] = clampReach(+input.value); });
-        });
-        const label = el("label", null, key.toUpperCase());
-        label.append(input);
-        pos.append(label);
-      }
-      rows.push(pos);
+      const place = el("div", "ed-obj-pos");
+      place.append(
+        numberInput("gr", "Группа", 0, MAX_GROUP, 1, "Номер группы: её двигают, крутят и красят триггеры анимации; 0 — без группы"),
+        numberInput("x", "X", -OBJECT_REACH, OBJECT_REACH, GRID),
+        numberInput("y", "Y", -OBJECT_REACH, OBJECT_REACH, GRID),
+      );
+      right.append(section("Группа и положение от стрелки ячейки"), place);
 
       const style = el("div", "ed-obj-toggles");
       style.append(
@@ -583,9 +653,14 @@ const levels = (() => {
         }),
       );
       style.children[1].disabled = locked() || !styleClip;
-      rows.push(style);
+      (left.childElementCount ? left : right).append(section("Стиль"), style);
     }
-    rows.push(button("btn ghost small", "Удалить объект", () => eraseObj(ob)));
+
+    const cols = el("div", "ed-obj-cols");
+    cols.append(left);
+    if (right.childElementCount) cols.append(right);
+    else cols.classList.add("one");
+    rows.push(cols, button("btn ghost small", "Удалить объект", () => eraseObj(ob)));
     const scroll = box.scrollTop;
     box.replaceChildren(...rows);
     box.scrollTop = scroll;
@@ -901,7 +976,7 @@ const levels = (() => {
       toggleCode(false);
       if (document.activeElement) document.activeElement.blur(); // стрелки идут в тест, а не в поле ввода
       edview.play({
-        cells: playable(), from: sel, fast: ed.fast,
+        cells: playable(), from: sel, fast: ed.fast, objects: ed.objects,
         rules: { ...QUICK, ...(QUICK_DIFF[ed.difficulty] || QUICK_DIFF.normal) },
         onEnd: () => quickTest(false),
       });

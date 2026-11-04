@@ -2676,11 +2676,12 @@ button.ed-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
 
 /* ---------- Свойства выбранного объекта ---------- */
 
-/* панель занимает правый край превью по высоте и прокручивается, если настроек больше, чем места */
+/* панель занимает правую половину превью и прокручивается, если настроек больше, чем места */
 .ed-obj {
-  position: absolute; top: 12px; right: 12px;
+  position: absolute; top: 12px; right: 12px; bottom: 12px;
   display: flex; flex-direction: column; gap: 7px;
-  width: 270px;
+  width: calc(50% - 12px);
+  min-width: 420px;
   max-height: calc(100% - 24px);
   overflow-y: auto;
   scrollbar-width: thin;
@@ -2705,10 +2706,19 @@ button.ed-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
 .ed-obj-toggles > span { margin-right: 2px; opacity: .8; }
 .ed-obj .ed-chip { color: #fff; background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .25); }
 .ed-obj .ed-chip.on { color: var(--text); background: var(--a3); border-color: var(--outline); }
-.ed-obj-pos { display: flex; gap: 8px; }
-.ed-obj-pos label { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 900; }
+.ed-obj-pos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ed-obj-pos label { display: flex; flex-direction: column; align-items: stretch; gap: 3px; font-size: 11px; font-weight: 900; }
 .ed-obj-pos input { width: 100%; min-width: 0; padding: 4px 8px; font-size: 13px; }
-.ed-obj .btn { align-self: flex-start; }
+.ed-obj .btn { align-self: flex-start; margin-top: auto; }
+/* две колонки: слева цвет или выбор, справа вид и настройки */
+.ed-obj-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.ed-obj-cols.one { grid-template-columns: minmax(0, 1fr); }
+.ed-obj-col { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.ed-obj-num { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 900; }
+.ed-obj-num input { width: 100%; min-width: 0; padding: 4px 8px; font-size: 13px; }
+.ed-obj-bgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.ed-obj-bgs .ed-chip { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 3px 3px 4px; font-size: 11px; border-radius: 10px; }
+.ed-obj-bgs canvas { display: block; border-radius: 7px; }
 
 /* ---------- Цветовая палитра (colorpick.js) ---------- */
 

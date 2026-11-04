@@ -21,11 +21,14 @@ const levelobj = (() => {
     ["fx", "Эффекты", "fx-boom"],
     ["deco", "Декор", "d-gear"],
     ["triggers", "Триггеры", "t-color"],
+    ["anim", "Анимация групп", "t-move"],
   ];
 
   // cat — вкладка редактора; color — цвет нового объекта; r — радиус для клика; v — значение нового объекта;
   // old — вид из прошлых версий: рисуется в старых уровнях, но в палитре его нет
   const B = (name, color = "#22c7f0") => ({ cat: "blocks", name, color, r: 34 });
+  /** Триггер: v — значение нового триггера (если не цвет). */
+  const T = (cat, name, color, hint, ui, v) => ({ cat, name, color, r: 28, hint, ui, ...(v !== undefined ? { v } : {}) });
   const KINDS = {
     block: B("Блок"),
     "b-gem": B("Пирамида", "#8b5cff"),
@@ -91,26 +94,51 @@ const levelobj = (() => {
     cloud: { cat: "deco", name: "Облако", color: "#ffffff", r: 44, old: true },
     ring: { cat: "deco", name: "Кольцо", color: "#7ee03a", r: 40, old: true },
 
-    "t-color": { cat: "triggers", name: "Цвет", color: "#ff4f9a", r: 28, hint: "мир уходит в этот цвет до следующего триггера цвета" },
-    "t-flash": { cat: "triggers", name: "Вспышка", color: "#ffffff", r: 28, hint: "экран вспыхивает этим цветом" },
-    "t-shake": { cat: "triggers", name: "Тряска", color: "#ffb31f", r: 28, v: "0.6", hint: "камера вздрагивает" },
-    "t-zoom": { cat: "triggers", name: "Зум", color: "#22c7f0", r: 28, v: "1.25", hint: "камера приближается или отдаляется до следующего зума" },
-    "t-tilt": { cat: "triggers", name: "Наклон", color: "#7ee03a", r: 28, v: "8", hint: "камера наклоняется до следующего наклона" },
+    // Триггеры: ui — какие настройки у него в панели (их собирает levels.js, выполняет trigrun.js):
+    //   color — цвет в v (строка — подпись кнопки «без цвета»), opts — выбор из списка в v, text — текст в v (макс. длина),
+    //   p, q — числа [подпись, мин, макс, шаг, по умолчанию, единица], d — длительность (по умолчанию), e — плавность, gr — группа
+    "t-color": T("triggers", "Цвет мира", "#ff4f9a", "весь мир плавно уходит в этот цвет до следующего такого триггера", { color: "Цвет дизайна", d: 0.6, e: true }),
+    "t-bg": T("triggers", "Цвет фона", "#3d7bff", "небо и туманности уходят в этот цвет", { color: "Цвет дизайна", d: 0.6, e: true }),
+    "t-ground": T("triggers", "Цвет стен", "#7ee03a", "пол и потолок коридора уходят в этот цвет", { color: "Цвет дизайна", d: 0.6, e: true }),
+    "t-bgimg": T("triggers", "Картинка фона", "#2fd39a", "за коридором появляется картинка", { opts: "bg", d: 1 }, "city"),
+    "t-effect": T("triggers", "Эффект фона", "#ffffff", "по экрану летят частицы", { opts: "effect", d: 1 }, "snow"),
+    "t-dark": T("triggers", "Затемнение", "#8a8399", "края экрана темнеют", { p: ["Темнота", 0, 0.95, 0.05, 0.5, "%"], d: 0.6, e: true }),
+    "t-flash": T("triggers", "Вспышка", "#ffffff", "экран вспыхивает этим цветом", { color: true, p: ["Сила", 0.1, 1, 0.05, 1, "%"] }),
+    "t-shake": T("triggers", "Тряска", "#ffb31f", "камера вздрагивает; с длительностью — трясётся всё это время", { opts: "shake", d: 0 }, "0.6"),
+    "t-zoom": T("triggers", "Зум", "#22c7f0", "камера приближается или отдаляется до следующего зума", { p: ["Зум", 0.4, 2.5, 0.05, 1.25, "×"], d: 0.6, e: true }),
+    "t-tilt": T("triggers", "Наклон", "#7ee03a", "камера наклоняется до следующего наклона", { p: ["Наклон", -45, 45, 1, 8, "°"], d: 0.6, e: true }),
+    "t-offset": T("triggers", "Сдвиг камеры", "#22c7f0", "камера смещается до следующего сдвига", { p: ["По X", -600, 600, 10, 0, ""], q: ["По Y", -400, 400, 10, 0, ""], d: 0.6, e: true }),
+    "t-msg": T("triggers", "Надпись", "#ffe14a", "крупная надпись вверху экрана", { text: 40, d: 2 }, "Вперёд!"),
+
+    "t-move": T("anim", "Движение", "#7ee03a", "объекты группы сдвигаются", { gr: true, p: ["По X", -2000, 2000, 10, 120, ""], q: ["По Y", -1000, 1000, 10, 0, ""], d: 0.5, e: true }),
+    "t-rotate": T("anim", "Вращение", "#ff8a3d", "объекты группы поворачиваются, каждый вокруг себя", { gr: true, p: ["Угол", -1440, 1440, 5, 90, "°"], d: 0.5, e: true }),
+    "t-spin": T("anim", "Кружение", "#ffb31f", "объекты группы крутятся без остановки; 0 — перестать", { gr: true, p: ["Скорость", -720, 720, 5, 90, "°/с"] }),
+    "t-scale": T("anim", "Масштаб", "#22c7f0", "объекты группы растут или сжимаются", { gr: true, p: ["Масштаб", 0.1, 5, 0.05, 1.5, "×"], d: 0.5, e: true }),
+    "t-alpha": T("anim", "Прозрачность", "#c9c3dc", "объекты группы бледнеют или проявляются", { gr: true, p: ["Видимость", 0, 1, 0.05, 0.3, "%"], d: 0.5, e: true }),
+    "t-toggle": T("anim", "Вкл/выкл", "#2fd39a", "объекты группы появляются или исчезают", { gr: true, opts: "toggle", d: 0 }, "off"),
+    "t-gcolor": T("anim", "Цвет группы", "#c86bff", "объекты группы перекрашиваются", { gr: true, color: true, d: 0.5, e: true }),
+    "t-pulse": T("anim", "Пульс", "#ff3b5c", "объекты группы вспыхивают цветом и возвращаются", { gr: true, color: true, d: 0.6 }),
+    "t-stop": T("anim", "Стоп", "#8a8399", "анимации группы замирают там, где они сейчас", { gr: true }),
   };
 
-  /** Значения триггеров без цвета: [значение, подпись]. */
-  const OPTIONS = {
-    "t-shake": [["0.3", "Слабо"], ["0.6", "Средне"], ["1", "Сильно"]],
-    "t-zoom": [["0.7", "×0.7"], ["0.85", "×0.85"], ["1", "×1"], ["1.25", "×1.25"], ["1.5", "×1.5"]],
-    "t-tilt": [["-15", "−15°"], ["-8", "−8°"], ["0", "0°"], ["8", "8°"], ["15", "15°"]],
+  /** Списки выбора для триггеров: [значение, подпись]. */
+  const LISTS = {
+    shake: [["0.3", "Слабо"], ["0.6", "Средне"], ["1", "Сильно"]],
+    toggle: [["on", "Показать"], ["off", "Спрятать"]],
+    bg: bgart.BGS,
+    effect: bgart.EFFECTS,
   };
+  /** Выбор из списка у триггера k или null. */
+  const optionsOf = (k) => (KINDS[k].ui && typeof KINDS[k].ui.opts === "string" ? LISTS[KINDS[k].ui.opts] : null);
+  /** Для старого кода: у каких триггеров выбор из списка. */
+  const OPTIONS = Object.fromEntries(Object.keys(KINDS).filter((k) => optionsOf(k)).map((k) => [k, optionsOf(k)]));
 
   /** Виды, у которых значение — текст, а не цвет. */
-  const TEXTS = new Set(["text", "fx-bang"]);
+  const TEXTS = new Set(["text", "fx-bang", "t-msg"]);
 
   const isTrigger = (k) => k.startsWith("t-");
-  /** У каких видов значение — цвет. У текста значение — сам текст, у остальных триггеров — число. */
-  const colored = (k) => !OPTIONS[k] && !TEXTS.has(k);
+  /** У каких видов значение — цвет: у объектов — кроме текстовых, у триггеров — если так сказано в ui. */
+  const colored = (k) => (isTrigger(k) ? !!(KINDS[k].ui && KINDS[k].ui.color) : !TEXTS.has(k));
   const radius = (o) => KINDS[o.k].r * (isTrigger(o.k) ? 1 : (o.s || 1) * Math.max(o.w || 1, o.h || 1));
   const colorOf = (o) => (colored(o.k) && /^#[0-9a-f]{6}$/i.test(o.v || "") ? o.v : KINDS[o.k].color);
 
@@ -780,6 +808,28 @@ const levelobj = (() => {
     c.restore();
   }
 
+  const GLYPHS = {
+    "t-bg": "▣", "t-ground": "▤", "t-bgimg": "▲", "t-effect": "❄", "t-dark": "◑", "t-offset": "✥", "t-msg": "T",
+    "t-move": "⇄", "t-rotate": "↻", "t-spin": "✣", "t-scale": "⤢", "t-alpha": "◌", "t-toggle": "⏻",
+    "t-gcolor": "◆", "t-pulse": "✺", "t-stop": "■",
+  };
+
+  /** Подпись триггера в редакторе: название и главное значение, у анимаций — группа. */
+  function triggerLabel(o) {
+    const kind = KINDS[o.k], ui = kind.ui || {};
+    const opts = optionsOf(o.k);
+    let text = kind.name;
+    if (opts) text = (opts.find((p) => p[0] === o.v) || ["", kind.name])[1];
+    else if (ui.p) {
+      const legacy = (o.k === "t-zoom" || o.k === "t-tilt") && o.v != null && o.v !== "" && Number.isFinite(+o.v);
+      const v = legacy ? +o.v : o.p ?? ui.p[4];
+      const unit = ui.p[5];
+      text = `${kind.name} ${unit === "%" ? Math.round(v * 100) + "%" : unit === "×" ? "×" + v : Math.round(v * 10) / 10 + unit}`;
+    } else if (ui.text && o.v) text = `«${String(o.v).slice(0, 12)}»`;
+    if (ui.gr) text += ` · гр.${o.gr || "все"}`;
+    return text;
+  }
+
   /** Значок триггера в редакторе: кружок с картинкой и подпись значения. В матче триггеры не видны. */
   function drawTrigger(c, o, selected, label = true) {
     const color = colorOf(o);
@@ -802,6 +852,14 @@ const levelobj = (() => {
         c.arc(0, 0, 11, 0, TAU);
         c.fill();
         break;
+      default: {
+        // у новых триггеров значок — знак в кружке
+        c.font = "900 17px 'Segoe UI Symbol', 'Noto Sans Symbols 2', sans-serif";
+        c.textAlign = "center";
+        c.textBaseline = "middle";
+        c.fillText(GLYPHS[o.k] || "?", 0, 1);
+        break;
+      }
       case "t-flash":
         c.beginPath();
         for (let i = 0; i < 8; i++) {
@@ -837,7 +895,7 @@ const levelobj = (() => {
     }
     c.restore();
     if (!label) return;
-    const text = OPTIONS[o.k] ? (OPTIONS[o.k].find((p) => p[0] === o.v) || ["", o.v])[1] : KINDS[o.k].name;
+    const text = triggerLabel(o);
     c.font = "900 13px Nunito, sans-serif";
     c.textAlign = "center";
     c.lineJoin = "round";
@@ -918,11 +976,21 @@ const levelobj = (() => {
   /** Новый объект вида k: цвет, значение и размер по умолчанию. */
   function create(k, c, x, y) {
     const kind = KINDS[k];
-    return { k, c, x: Math.round(x), y: Math.round(y), ...LOOK, v: kind.v ?? (colored(k) ? kind.color : null) };
+    const o = { k, c, x: Math.round(x), y: Math.round(y), ...LOOK, v: kind.v ?? (colored(k) ? kind.color : null), gr: 0 };
+    if (isTrigger(k)) {
+      const ui = kind.ui || {};
+      // настройки триггера по умолчанию: числа из ui, плавность «плавно»
+      o.p = ui.p ? ui.p[4] : 0;
+      o.q = ui.q ? ui.q[4] : 0;
+      o.d = typeof ui.d === "number" ? ui.d : 0;
+      o.e = 1;
+      if (ui.color === "Цвет дизайна") o.v = kind.color;
+    }
+    return o;
   }
 
   return {
-    KINDS, CATS, COLORS, OPTIONS, SPIKE, LOOK, isTrigger, colored, rotatable, radius, hexRgb, palette,
-    draw, drawTrigger, icon, create, spikes, wall,
+    KINDS, CATS, COLORS, OPTIONS, SPIKE, LOOK, isTrigger, colored, colorOf, optionsOf, rotatable, radius, hexRgb, palette,
+    draw, drawTrigger, triggerLabel, icon, create, spikes, wall,
   };
 })();

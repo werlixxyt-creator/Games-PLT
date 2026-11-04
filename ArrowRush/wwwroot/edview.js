@@ -391,10 +391,23 @@ const edview = (() => {
         ctx.stroke();
         ctx.setLineDash([]);
       }
+      // в тесте объекты двигают и красят триггеры анимации
+      const look = run && !triggers ? run.rt.look(ob) : null;
+      if (run && !triggers && !look) continue;
       ctx.save();
       ctx.translate(x, y);
       if (triggers) levelobj.drawTrigger(ctx, ob, ob === s.selObj);
+      else if (look) trigrun.drawObject(ctx, ob, look, time);
       else levelobj.draw(ctx, ob, time);
+      if (!run && !triggers && ob.gr > 0) {
+        // номер группы — маленькой плашкой, чтобы видеть, что двигают триггеры
+        ctx.font = "900 13px Nunito, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(16,12,34,.8)";
+        ctx.fillRect(r * 0.5, -r - 4, 26, 17);
+        ctx.fillStyle = "#ffe14a";
+        ctx.fillText(ob.gr, r * 0.5 + 13, -r + 9);
+      }
       if (ob === s.selObj || ob === hover) {
         ctx.strokeStyle = ob === s.selObj ? SEL : "rgba(255,255,255,.7)";
         ctx.lineWidth = 4;
@@ -469,11 +482,27 @@ const edview = (() => {
     }
     clampCam();
 
-    const p = paletteOf(s.theme);
+    // в тесте триггеры уровня меняют палитру, камеру и фон, как в матче
+    const tv = run ? run.rt.view() : null;
+    const p = run ? run.rt.palette(paletteOf(s.theme)) : paletteOf(s.theme);
     const left = camX - 60, right = camX + viewW() + 60;
     drawSky(p);
+    const bgView = { w, h, camX, scale, time };
+    if (tv) {
+      if (tv.bg.k < 1) bgart.draw(ctx, tv.bg.prev, bgView, p, 1 - tv.bg.k);
+      bgart.draw(ctx, tv.bg.id, bgView, p, tv.bg.k);
+    }
 
     ctx.save();
+    if (tv) {
+      // зум и наклон — вокруг персонажа, сдвиг и тряска — всей камерой
+      const shake = reduce ? 0 : Math.max(run.shake, tv.rumble * 0.7) * 16;
+      const ax = w * 0.35, ay = h / 2;
+      ctx.translate(ax + (Math.random() - 0.5) * shake, ay + (Math.random() - 0.5) * shake);
+      ctx.rotate(tv.tilt);
+      ctx.scale(tv.zoom, tv.zoom);
+      ctx.translate(-ax - tv.ox * scale, -ay - tv.oy * scale);
+    }
     ctx.translate(-camX * scale, h / 2);
     ctx.scale(scale, scale);
     drawBlocks(p, left, right);
@@ -500,6 +529,16 @@ const edview = (() => {
     }
     ctx.restore();
 
+    if (tv) {
+      if (tv.effect.k < 1) bgart.effect(ctx, tv.effect.prev, bgView, p, 1 - tv.effect.k);
+      bgart.effect(ctx, tv.effect.id, bgView, p, tv.effect.k);
+      bgart.darken(ctx, w, h, tv.dark);
+      if (tv.message) bgart.message(ctx, w, h, tv.message.text, tv.message.alpha);
+      if (run.flash.k > 0.02 && !reduce) {
+        ctx.fillStyle = `rgba(${run.flash.rgb.join(",")},${run.flash.k * 0.6})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+    }
     drawMap(s);
     if (run) drawHud(s);
   }
@@ -519,6 +558,7 @@ const edview = (() => {
     run = {
       cells: level.cells, from: level.from, fast: level.fast, rules: level.rules,
       held: 0, t: 0, attempt: 0, msg: null, saved: camX, onEnd: level.onEnd,
+      objects: level.objects || [], rt: null, flash: { rgb: [255, 255, 255], k: 0 }, shake: 0,
     };
     restart();
     hover = null;
@@ -542,6 +582,9 @@ const edview = (() => {
       i: run.from, k: 0, startT: run.t, entered: run.t, stunUntil: -Infinity, jumpAt: -Infinity,
       hits: 0, wallSeconds: 0, done: null, failAt: null, shown: run.from, attempt: run.attempt + 1,
     });
+    // триггеры заново: всё, что позади стартовой ячейки, уже включено
+    run.rt = trigrun.create(run.objects);
+    run.rt.seek(run.from);
   }
 
   function say(text, color = "#fff") {
@@ -581,6 +624,12 @@ const edview = (() => {
 
   function stepRun(dt) {
     run.t += dt;
+    for (const ev of run.rt.update(run.i, dt)) {
+      if (ev.type === "flash") run.flash = { rgb: ev.rgb, k: Math.max(run.flash.k, ev.power) };
+      else if (ev.type === "shake") run.shake = Math.max(run.shake, ev.power);
+    }
+    run.flash.k *= Math.exp(-dt * 4);
+    run.shake *= Math.exp(-dt * 5);
     if (run.failAt !== null) {
       if (run.t - run.failAt > 0.8) {
         restart();

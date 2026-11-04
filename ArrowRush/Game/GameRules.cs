@@ -117,6 +117,8 @@ public static class GameRules
     public const int EditorMaxObjects = 400;
     /// <summary>Насколько далеко от своей ячейки может стоять объект, в единицах сцены.</summary>
     public const double EditorObjectReach = 2000;
+    /// <summary>Сколько групп объектов можно завести на уровне: их двигают и красят триггеры анимации.</summary>
+    public const int EditorMaxGroup = 99;
     /// <summary>Шипы в быстром темпе: столько секунд ничего не нажимать (в обычном — время заполнения ячейки).</summary>
     public const double SpikeFastSeconds = 0.6;
     /// <summary>Столько секунд после входа на шипы нажатие не считается ударом: последний удар по стене или лишнее нажатие не наказывают.</summary>

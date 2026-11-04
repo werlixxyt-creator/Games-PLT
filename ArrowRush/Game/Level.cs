@@ -115,9 +115,12 @@ public sealed record EditorCell(int A, double F, string? S = null, string? O = n
 /// рисует и запускает их клиент. C — номер ячейки, к которой объект привязан, X и Y — сдвиг от её стрелки,
 /// S — размер, V — цвет, текст или сила триггера, R — поворот в градусах, W и H — растяжение по ширине и высоте,
 /// Fx и Fy — отражение, A — непрозрачность, Z — слой (0 — за дорогой, 1 — перед ней), G — сила свечения.
+/// Gr — группа: у объекта — в какой он группе, у триггера анимации — какую группу двигает (0 — все объекты).
+/// Настройки триггера (их выполняет клиент, trigrun.js): P и Q — числа (сдвиг, угол, сила…), D — длительность, E — плавность 0–3.
 /// </summary>
 public sealed record LevelObject(string K, int C, double X, double Y, double S = 1, string? V = null, double R = 0,
-    double W = 1, double H = 1, bool Fx = false, bool Fy = false, double A = 1, int Z = 0, double G = 0);
+    double W = 1, double H = 1, bool Fx = false, bool Fy = false, double A = 1, int Z = 0, double G = 0,
+    int Gr = 0, double P = 0, double Q = 0, double D = 0, int E = 0);
 
 public static class LevelGenerator
 {
@@ -274,8 +277,10 @@ public static class LevelGenerator
         // декор (cloud и ring остались от прошлых версий: в палитре их нет, но старые уровни их рисуют)
         "text", "star", "crystal", "lamp", "d-gear", "d-arrow", "d-sign", "d-flag", "d-chain", "d-pipe", "d-grass", "d-heart", "d-moon",
         "cloud", "ring",
-        // триггеры
-        "t-color", "t-flash", "t-shake", "t-zoom", "t-tilt",
+        // триггеры мира и камеры
+        "t-color", "t-bg", "t-ground", "t-bgimg", "t-effect", "t-dark", "t-flash", "t-shake", "t-zoom", "t-tilt", "t-offset", "t-msg",
+        // триггеры анимации групп
+        "t-move", "t-rotate", "t-spin", "t-scale", "t-alpha", "t-toggle", "t-gcolor", "t-pulse", "t-stop",
     ];
 
     /// <summary>Номер ячейки редактора → номер ползунка в матче: «Раст» и «Кловд» вставляют свои ячейки и сдвигают следующие.</summary>

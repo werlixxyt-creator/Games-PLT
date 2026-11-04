@@ -171,6 +171,9 @@ public static class LevelEndpoints
             H = Math.Round(o.H, 2),
             A = Math.Round(o.A, 2),
             G = Math.Round(o.G, 2),
+            P = Math.Round(o.P, 2),
+            Q = Math.Round(o.Q, 2),
+            D = Math.Round(o.D, 2),
         }), JsonSerializerOptions.Web);
         level.CellCount = body.Cells!.Count;
         level.UpdatedAt = now;
@@ -279,6 +282,10 @@ public static class LevelEndpoints
             if (!double.IsFinite(o.A) || o.A < 0.1 || o.A > 1) return "Непрозрачность объекта от 0.1 до 1";
             if (!double.IsFinite(o.G) || o.G < 0 || o.G > 1) return "Свечение объекта от 0 до 1";
             if (o.Z is not (0 or 1)) return "Слой объекта: 0 или 1";
+            if (o.Gr is < 0 or > GameRules.EditorMaxGroup) return $"Группа объекта от 0 до {GameRules.EditorMaxGroup}";
+            if (!double.IsFinite(o.P) || !double.IsFinite(o.Q) || Math.Abs(o.P) > 5000 || Math.Abs(o.Q) > 5000) return "Значение триггера слишком большое";
+            if (!double.IsFinite(o.D) || o.D < 0 || o.D > 30) return "Длительность триггера от 0 до 30 секунд";
+            if (o.E is < 0 or > 3) return "Неизвестная плавность триггера";
         }
         return null;
     }
