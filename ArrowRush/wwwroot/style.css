@@ -2337,18 +2337,18 @@ body[data-screen="lobby"] #app { max-width: none; padding: 0; }
 .levels-bar .ed-chip { background: var(--panel); border-color: var(--outline); }
 .levels-bar .ed-chip.on { background: var(--a3); }
 
-/* ---------- Редактор уровней, как в GD: превью сверху, настройки слева, действия справа, палитра снизу ---------- */
+/* ---------- Редактор уровней: палитра сверху, настройки слева, действия справа, превью в центре ---------- */
 
 body[data-screen="editor"] #app { max-width: none; padding: 0; }
 body[data-screen="editor"] .top-right { display: none; }
 #screen-editor.active {
   display: grid;
   grid-template-columns: 128px minmax(0, 1fr) 92px;
-  grid-template-rows: minmax(0, 1fr) auto;
-  grid-template-areas: "left stage right" "bottom bottom bottom";
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "panel panel panel" "left stage right";
   gap: 10px 12px;
   height: 100vh;
-  padding: 10px 12px 0;
+  padding: 0 12px 10px;
   align-items: stretch;
 }
 
@@ -2367,21 +2367,21 @@ body[data-screen="editor"] .top-right { display: none; }
 }
 .ed-round svg { width: 28px; height: 28px; }
 
-/* ---------- Палитра снизу: режимы слева, вкладки и сетка объектов по страницам, действия справа ---------- */
+/* ---------- Палитра сверху: режимы слева, вкладки и сетка объектов по страницам, действия справа ---------- */
 
-.ed-bottom {
-  grid-area: bottom;
+.ed-panel {
+  grid-area: panel;
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr) 196px;
   gap: 12px;
   align-items: center;
   margin: 0 -12px;
-  padding: 0 12px 10px;
+  padding: 8px 12px 6px;
   background: rgba(10, 7, 26, .82);
-  border-top: 3px solid var(--outline);
+  border-bottom: 3px solid var(--outline);
   box-shadow: 0 -3px 0 rgba(255, 255, 255, .08) inset;
 }
-.ed-modes, .ed-acts { display: grid; gap: 8px; padding-top: 12px; }
+.ed-modes, .ed-acts { display: grid; gap: 8px; }
 .ed-acts { grid-template-columns: 1fr 1fr; }
 .ed-mode, .ed-act {
   font: 900 15px var(--font-display);
@@ -2402,8 +2402,14 @@ body[data-screen="editor"] .top-right { display: none; }
 .ed-mode:disabled, .ed-act:disabled { opacity: .4; cursor: default; filter: grayscale(.6); }
 
 .ed-palette { min-width: 0; display: flex; flex-direction: column; align-items: stretch; }
-/* вкладки сидят на верхнем краю панели, как закладки */
-.ed-cats { display: flex; justify-content: center; gap: 4px; margin-top: -26px; padding: 0 4px; overflow-x: auto; scrollbar-width: none; }
+/* вкладки — закладки над сеткой объектов, стоят на общей линии */
+.ed-cats {
+  display: flex; justify-content: center; align-items: flex-end; gap: 4px;
+  min-height: 46px;
+  padding: 0 4px;
+  border-bottom: 3px solid var(--outline);
+  overflow-x: auto; scrollbar-width: none;
+}
 .ed-cat {
   --c: var(--a0);
   flex: none;
@@ -2418,11 +2424,11 @@ body[data-screen="editor"] .top-right { display: none; }
   cursor: pointer;
   transition: transform .1s, background .15s;
 }
-.ed-cat.on { background: #f3eefe; transform: translateY(-4px); height: 42px; }
+.ed-cat.on { background: #f3eefe; height: 44px; }
 .ed-cat:hover:not(.on) { background: #3a2f6b; }
 .ed-cat canvas, .ed-cat .ed-tool-svg svg { width: 28px; height: 28px; }
 
-.ed-grid { display: flex; align-items: center; gap: 8px; min-width: 0; padding-top: 10px; }
+.ed-grid { display: flex; align-items: center; gap: 8px; min-width: 0; padding-top: 8px; }
 .ed-page {
   flex: none;
   width: 34px; height: 54px;
@@ -2470,7 +2476,7 @@ body[data-screen="editor"] .top-right { display: none; }
 .ed-left, .ed-right { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 2px 2px 8px; }
 .ed-left { grid-area: left; }
 .ed-right { grid-area: right; align-items: center; }
-/* колонки ниже из-за палитры снизу — карточки компактнее */
+/* колонки ниже из-за палитры сверху — карточки компактнее */
 .ed-left .ed-card { padding: 5px 6px; gap: 1px; }
 .ed-left .ed-card > svg { display: none; }
 .ed-left .ed-clap { height: 12px; }
@@ -2542,7 +2548,7 @@ button.ed-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
 .ed-quick.on { color: #fff; background: var(--bad); }
 .ed-quick + .ed-play { margin-top: 0; }
 /* пока идёт быстрый тест, редактор замирает: работают превью и «Стоп» */
-#screen-editor.testing :is(.ed-bottom, .ed-right, .ed-left > :not(#ed-quick)) { opacity: .35; pointer-events: none; }
+#screen-editor.testing :is(.ed-panel, .ed-right, .ed-left > :not(#ed-quick)) { opacity: .35; pointer-events: none; }
 #screen-editor.testing :is(.ed-plate, .ed-info, .ed-obj, .ed-code) { display: none; }
 #screen-editor.testing #ed-canvas { cursor: default; }
 
