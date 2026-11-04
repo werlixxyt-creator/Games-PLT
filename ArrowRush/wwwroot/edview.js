@@ -394,9 +394,12 @@ const edview = (() => {
       // в тесте объекты двигают и красят триггеры анимации
       const look = run && !triggers ? run.rt.look(ob) : null;
       if (run && !triggers && !look) continue;
+      const picked = !run && s.selSet && s.selSet.has(ob);
       ctx.save();
+      // объекты чужих слоёв редактора бледные: их не задеть, пока строишь на своём
+      if (!run && !onLayer(s, ob)) ctx.globalAlpha *= 0.22;
       ctx.translate(x, y);
-      if (triggers) levelobj.drawTrigger(ctx, ob, ob === s.selObj);
+      if (triggers) levelobj.drawTrigger(ctx, ob, picked);
       else if (look) trigrun.drawObject(ctx, ob, look, time);
       else levelobj.draw(ctx, ob, time);
       if (!run && !triggers && ob.gr > 0) {
@@ -408,8 +411,8 @@ const edview = (() => {
         ctx.fillStyle = "#ffe14a";
         ctx.fillText(ob.gr, r * 0.5 + 13, -r + 9);
       }
-      if (ob === s.selObj || ob === hover) {
-        ctx.strokeStyle = ob === s.selObj ? SEL : "rgba(255,255,255,.7)";
+      if (picked || ob === hover) {
+        ctx.strokeStyle = ob === s.selObj ? SEL : picked ? "#22c7f0" : "rgba(255,255,255,.7)";
         ctx.lineWidth = 4;
         ctx.setLineDash([10, 8]);
         ctx.lineDashOffset = reduce ? 0 : -time * 30;
@@ -543,6 +546,24 @@ const edview = (() => {
     }
     drawMap(s);
     if (run) drawHud(s);
+    if (drag && drag.kind === "box") {
+      // рамка выделения
+      const x = Math.min(drag.x0, drag.x1), y = Math.min(drag.y0, drag.y1);
+      const bw = Math.abs(drag.x1 - drag.x0), bh = Math.abs(drag.y1 - drag.y0);
+      ctx.fillStyle = "rgba(34,199,240,.12)";
+      ctx.fillRect(x, y, bw, bh);
+      ctx.strokeStyle = "#22c7f0";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(x, y, bw, bh);
+      ctx.setLineDash([]);
+    }
+    if (!run && s.layer !== null && s.layer !== undefined) {
+      // какой слой редактора сейчас открыт
+      ctx.font = "900 14px Unbounded, sans-serif";
+      ctx.textAlign = "right";
+      outlinedText(`СЛОЙ ${s.layer}`, w - 60, h - 40, "#ffe14a", "900 14px Unbounded, sans-serif");
+    }
   }
 
   // ---------- Быстрый тест ----------
@@ -848,14 +869,23 @@ const edview = (() => {
     return null;
   }
 
-  /** Объект под точкой экрана: сверху то, что нарисовано позже, — триггеры, потом декор с конца списка. */
+  /** Объект на текущем слое редактора (null — видны и доступны все слои). */
+  const onLayer = (s, ob) => s.layer === null || s.layer === undefined || (ob.l || 0) === s.layer;
+
+  /** Где объект в мире. */
+  const worldOf = (ob) => {
+    const k = keyAt(ob.c);
+    return { x: k.x + ob.x, y: k.y + ob.y };
+  };
+
+  /** Объект под точкой экрана: сверху то, что нарисовано позже, — триггеры, потом декор с конца списка. Только текущий слой. */
   function hitObject({ x, y }) {
     const s = o.get();
     const wx = toWorld(x), wy = (y - h / 2) / scale;
     for (const triggers of [true, false]) {
       for (let i = s.objects.length - 1; i >= 0; i--) {
         const ob = s.objects[i];
-        if (levelobj.isTrigger(ob.k) !== triggers || ob.c >= s.cells.length) continue;
+        if (levelobj.isTrigger(ob.k) !== triggers || ob.c >= s.cells.length || !onLayer(s, ob)) continue;
         const k = keyAt(ob.c);
         if (Math.hypot(wx - (k.x + ob.x), wy - (k.y + ob.y)) <= levelobj.radius(ob) + 8) return ob;
       }
@@ -888,8 +918,20 @@ const edview = (() => {
     if (ob) {
       drag = null;
       if (s.mode === "erase") return o.eraseObj(ob);
+      // Shift + клик добавляет объект к выделению или убирает из него
+      if (e.shiftKey) return o.pickObj(ob, "toggle");
+      // тянешь один из выделенных — едут все
+      if (s.selSet && s.selSet.size > 1 && s.selSet.has(ob)) {
+        if (!s.locked) drag = { kind: "group", x: pt.x, y: pt.y, items: [...s.selSet].map((it) => ({ ob: it, x: it.x, y: it.y })), moved: false };
+        return;
+      }
       o.pickObj(ob);
       if (!s.locked) drag = { kind: "move", ob, x: pt.x, y: pt.y, oc: ob.c, ox: ob.x, oy: ob.y, moved: false };
+      return;
+    }
+    // рамка выделения: Shift + протяжка по пустому месту или «Протяжка» в «Правке»
+    if (s.mode === "pick" && (e.shiftKey || s.swipe)) {
+      drag = { kind: "box", x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, add: e.shiftKey };
       return;
     }
     const hit = hitTest(pt);
@@ -965,6 +1007,19 @@ const edview = (() => {
     }
     if (drag.kind === "map") {
       jumpMap(pt.x);
+    } else if (drag.kind === "box") {
+      drag.x1 = pt.x;
+      drag.y1 = pt.y;
+    } else if (drag.kind === "group") {
+      // все выделенные сдвигаются на одно и то же, по сетке — целыми клетками; привязка к ячейкам не меняется
+      if (Math.abs(pt.x - drag.x) + Math.abs(pt.y - drag.y) > 4) drag.moved = true;
+      if (!drag.moved) return;
+      const g = gridPoint((pt.x - drag.x) / scale, (pt.y - drag.y) / scale, o.get().grid);
+      for (const it of drag.items) {
+        if (!levelobj.isTrigger(it.ob.k)) it.ob.x = Math.round(it.x + g.x);
+        it.ob.y = Math.round(it.y + g.y);
+      }
+      canvas.style.cursor = "grabbing";
     } else if (drag.kind === "swipe") {
       swipeTo(pt);
     } else if (drag.kind === "move") {
@@ -991,7 +1046,20 @@ const edview = (() => {
       if (drag.hit !== null) o.hit(drag.hit);
       else o.pickObj(null); // клик в пустоту снимает выбор с объекта
     }
-    if (drag && drag.kind === "move" && drag.moved) o.moved();
+    if (drag && (drag.kind === "move" || drag.kind === "group") && drag.moved) o.moved();
+    if (drag && drag.kind === "box") {
+      const s = o.get();
+      const ax = toWorld(Math.min(drag.x0, drag.x1)), bx = toWorld(Math.max(drag.x0, drag.x1));
+      const ay = (Math.min(drag.y0, drag.y1) - h / 2) / scale, by = (Math.max(drag.y0, drag.y1) - h / 2) / scale;
+      const tiny = Math.abs(drag.x1 - drag.x0) + Math.abs(drag.y1 - drag.y0) < 6;
+      // в рамку попадают объекты текущего слоя, чей центр внутри
+      const inside = tiny ? [] : s.objects.filter((ob) => {
+        if (ob.c >= s.cells.length || !onLayer(s, ob)) return false;
+        const p = worldOf(ob);
+        return p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by;
+      });
+      o.selectMany(inside, drag.add);
+    }
     drag = null;
     canvas.style.cursor = "grab";
   }

@@ -286,6 +286,7 @@ public static class LevelEndpoints
             if (!double.IsFinite(o.G) || o.G < 0 || o.G > 1) return "Свечение объекта от 0 до 1";
             if (o.Z is not (0 or 1)) return "Слой объекта: 0 или 1";
             if (o.Gr is < 0 or > GameRules.EditorMaxGroup) return $"Группа объекта от 0 до {GameRules.EditorMaxGroup}";
+            if (o.L is < 0 or > GameRules.EditorMaxGroup) return $"Слой редактора от 0 до {GameRules.EditorMaxGroup}";
             if (!double.IsFinite(o.P) || !double.IsFinite(o.Q) || Math.Abs(o.P) > 10000 || Math.Abs(o.Q) > 10000) return "Значение триггера слишком большое";
             if (!double.IsFinite(o.D) || o.D < 0 || o.D > 30) return "Длительность триггера от 0 до 30 секунд";
             if (o.E is < 0 or > 9) return "Неизвестная плавность триггера";

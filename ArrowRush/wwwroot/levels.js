@@ -330,6 +330,9 @@ const levels = (() => {
     }
     sel = 0;
     selObj = null;
+    selection = [];
+    edLayer = null;
+    renderLayer();
     opts.show("editor");
     edview.reset();
     focused = sel;
@@ -377,7 +380,7 @@ const levels = (() => {
     k: o.k, c: o.c, x: o.x, y: o.y, v: o.v ?? null,
     s: o.s ?? 1, r: o.r || 0, w: o.w ?? 1, h: o.h ?? 1, fx: !!o.fx, fy: !!o.fy, a: o.a ?? 1, z: o.z ? 1 : 0, g: o.g || 0,
     // группа объекта и настройки триггера (trigrun.js)
-    gr: o.gr || 0, p: o.p ?? 0, q: o.q ?? 0, d: o.d ?? 0, e: o.e ?? 1, b: o.b || null,
+    gr: o.gr || 0, p: o.p ?? 0, q: o.q ?? 0, d: o.d ?? 0, e: o.e ?? 1, b: o.b || null, l: o.l || 0,
   });
   const clampReach = (v) => Math.round(Math.max(-OBJECT_REACH, Math.min(OBJECT_REACH, v)));
 
@@ -400,51 +403,150 @@ const levels = (() => {
     }
     const k = TOOL[tool].object;
     const ob = levelobj.create(k, c, levelobj.isTrigger(k) ? 0 : clampReach(x), clampReach(y));
+    ob.l = edLayer ?? 0; // новый объект — на открытый слой редактора
     change(() => {
       ed.objects.push(ob);
-      selObj = ob;
+      setSelection([ob]);
     });
   }
 
-  function pickObj(ob) {
-    if (selObj === ob) return;
-    selObj = ob;
-    if (ob) cellPanel = false;
-    renderObj();
-    renderTools(); // «Поворот» и «Копия» работают с выбранным объектом
+  // ---------- Выделение: один или много объектов ----------
+  // selection — все выделенные, selObj — главный (последний выбранный): его показывают настройки одного объекта.
+
+  let selection = [];
+  let selVersion = 0; // меняется при каждой смене выделения: настройки нескольких объектов привязаны к нему
+
+  function setSelection(list) {
+    selection = [...new Set(list)].filter((ob) => ed.objects.includes(ob));
+    selObj = selection[selection.length - 1] || null;
+    selVersion++;
   }
+
+  /** Выбрать объект; mode "toggle" — добавить к выделению или убрать из него (Shift + клик). */
+  function pickObj(ob, mode) {
+    if (mode === "toggle" && ob) {
+      setSelection(selection.includes(ob) ? selection.filter((x) => x !== ob) : [...selection, ob]);
+    } else {
+      if (selObj === ob && selection.length <= 1) return;
+      setSelection(ob ? [ob] : []);
+    }
+    renderObj();
+    renderTools(); // кнопки «Правки», «Поворот» и «Копия» работают с выделенными
+  }
+
+  /** Рамка выделения: add — добавить к уже выделенным (Shift). */
+  function selectMany(list, add) {
+    setSelection(add ? [...selection, ...list] : list);
+    renderObj();
+    renderTools();
+  }
+
+  /** Ctrl+A: все объекты открытого слоя редактора. */
+  function selectAll() {
+    selectMany(ed.objects.filter((ob) => edLayer === null || (ob.l || 0) === edLayer), false);
+  }
+
+  /** Выделенные, которые ещё есть на уровне. */
+  const picked = () => selection.filter((ob) => ed.objects.includes(ob));
 
   function eraseObj(ob) {
     change(() => {
       ed.objects.splice(ed.objects.indexOf(ob), 1);
-      if (selObj === ob) selObj = null;
+      setSelection(selection.filter((x) => x !== ob));
     });
   }
 
-  /** «Поворот»: выбранный объект на 90° по часовой (точный угол — ползунком в панели). */
+  /** Delete: удалить все выделенные. */
+  function eraseSelected() {
+    const list = picked();
+    if (!list.length) return false;
+    change(() => {
+      ed.objects = ed.objects.filter((ob) => !list.includes(ob));
+      setSelection([]);
+    });
+    return true;
+  }
+
+  /** «Поворот»: выделенное на 90° по часовой (несколько — вокруг общего центра). */
   function rotateObj() {
-    if (!selObj || !levelobj.rotatable(selObj.k)) return;
-    const ob = selObj;
-    change(() => { ob.r = wrapAngle(Math.round((ob.r || 0) / 90) * 90 + 90); });
-    renderObj(true);
+    if (!picked().length) return;
+    transformSelection((p) => ({ x: -p.y, y: p.x }), (ob) => ({ r: wrapAngle(Math.round((ob.r || 0) / 90) * 90 + 90) }));
   }
 
   /** Ширина объекта вида k размера s, округлённая до клеток сетки: шаг «Протяжки» и «Копии». */
   const swipeStep = (k, s = 1) => Math.max(GRID, Math.round((levelobj.KINDS[k].r * s * 1.8) / GRID) * GRID);
 
-  /** «Копия»: такой же объект правее на свою ширину (по сетке — на целые клетки). */
+  /** «Копия»: такие же объекты правее на ширину выделения (по сетке — на целые клетки); выделяются копии. */
   function cloneObj() {
-    if (!selObj || locked()) return;
-    if (ed.objects.length >= MAX_OBJECTS) {
+    const list = picked();
+    if (!list.length || locked()) return;
+    if (ed.objects.length + list.length > MAX_OBJECTS) {
       $("ed-error").textContent = `Не больше ${MAX_OBJECTS} объектов`;
       return;
     }
-    const ob = { ...selObj };
-    if (!levelobj.isTrigger(ob.k)) ob.x = clampReach(ob.x + swipeStep(ob.k, ob.s || 1));
+    let step = Math.max(...list.map((ob) => (levelobj.isTrigger(ob.k) ? GRID : swipeStep(ob.k, ob.s || 1))));
+    if (list.length > 1) {
+      const xs = list.map((ob) => edview.keyPoint(ob.c).x + ob.x);
+      step = Math.max(GRID, Math.ceil((Math.max(...xs) - Math.min(...xs) + step) / GRID) * GRID);
+    }
+    const copies = list.map((ob) => ({ ...ob, x: levelobj.isTrigger(ob.k) ? ob.x : clampReach(ob.x + step) }));
     change(() => {
-      ed.objects.push(ob);
-      selObj = ob;
+      ed.objects.push(...copies);
+      setSelection(copies);
     });
+    renderObj(true);
+  }
+
+  /**
+   * Изменить выделенные одним шагом: place(p) поворачивает или отражает их положение вокруг общего центра
+   * (p — сдвиг от центра, только когда выделено несколько), patch(ob) — что меняется у каждого.
+   */
+  function transformSelection(place, patch) {
+    const list = picked().filter((ob) => levelobj.rotatable(ob.k));
+    if (!list.length || locked()) return;
+    const pos = list.map((ob) => {
+      const k = edview.keyPoint(ob.c);
+      return { ob, k, x: k.x + ob.x, y: k.y + ob.y };
+    });
+    const cx = pos.reduce((a, p) => a + p.x, 0) / pos.length, cy = pos.reduce((a, p) => a + p.y, 0) / pos.length;
+    change(() => {
+      for (const p of pos) {
+        Object.assign(p.ob, patch(p.ob));
+        if (place && pos.length > 1) {
+          const q = place({ x: p.x - cx, y: p.y - cy });
+          p.ob.x = clampReach(cx + q.x - p.k.x);
+          p.ob.y = clampReach(cy + q.y - p.k.y);
+        }
+      }
+    });
+    renderObj(true);
+  }
+
+  // ---------- Слои редактора, как в GD ----------
+  // У объекта есть номер слоя редактора (l). Когда открыт слой, объекты других слоёв бледные и не выбираются:
+  // можно строить, не задевая их. «Все» — видны и доступны все слои. На игру слои не влияют.
+
+  let edLayer = null; // открытый слой; null — все
+
+  function setLayer(l) {
+    edLayer = l === null ? null : Math.max(0, Math.min(MAX_LAYER, l));
+    // выделение остаётся только на открытом слое
+    if (edLayer !== null) setSelection(selection.filter((ob) => (ob.l || 0) === edLayer));
+    renderLayer();
+    renderObj(true);
+    renderTools();
+  }
+
+  /** Номера слоёв, на которых есть объекты: подсказка «где что-то есть». */
+  const usedLayers = () => [...new Set(ed.objects.map((ob) => ob.l || 0))].sort((a, b) => a - b);
+
+  function renderLayer() {
+    $("ed-layer-name").textContent = edLayer === null ? "Все слои" : `Слой ${edLayer}`;
+    $("ed-layer-name").classList.toggle("on", edLayer !== null);
+    $("ed-layer-prev").disabled = edLayer === 0;
+    $("ed-layer-next").disabled = edLayer === MAX_LAYER;
+    const used = ed ? usedLayers() : [];
+    $("ed-layer-name").title = `Нажми — ${edLayer === null ? "открыть слой 0" : "показать все слои"}. Объекты есть на слоях: ${used.join(", ") || "—"}`;
   }
 
   // Настройки вида: [свойство, подпись, мин, макс, шаг, как показать]. Двойной клик по подписи — вернуть по умолчанию.
@@ -459,6 +561,7 @@ const levels = (() => {
   const LOOK_KEYS = ["s", "w", "h", "r", "a", "g", "fx", "fy", "z"];
 
   const MAX_GROUP = 99; // как GameRules.EditorMaxGroup
+  const MAX_LAYER = 99; // слои редактора: столько же
   let styleClip = null; // «Копировать стиль»: вид и цвет, которые вставит «Вставить стиль»
   let objShown = null;  // какой объект сейчас в панели: панель не пересобирается, пока его правят
 
@@ -467,6 +570,7 @@ const levels = (() => {
 
   /** Что сейчас можно настроить: выбранный объект или выбранная особая ячейка; null — ничего. */
   function settingsTarget() {
+    if (selection.length > 1) return `multi:${selVersion}`;
     if (selObj) return selObj;
     const c = ed && ed.cells[sel];
     return c && c.s ? `cell:${sel}:${c.s}` : null;
@@ -551,6 +655,102 @@ const levels = (() => {
     box.replaceChildren(...rows);
   }
 
+  /**
+   * Настройки сразу нескольких объектов: что меняешь, то ставится всем выделенным — цвет (тем, у кого он есть),
+   * группа, слой редактора, глубина, размер, прозрачность, свечение. Плюс копия и удаление всех.
+   */
+  function renderMultiPanel(box, list) {
+    const el = (tag, cls, text) => {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    };
+    const button = (cls, text, fn) => {
+      const b = el("button", cls, text);
+      b.type = "button";
+      b.disabled = locked();
+      b.addEventListener("click", fn);
+      return b;
+    };
+    const all = (fn) => change(() => list.forEach(fn));
+    const looks = list.filter((ob) => levelobj.rotatable(ob.k));
+    const colored = list.filter((ob) => levelobj.colored(ob.k));
+
+    const head = el("div", "ed-obj-head");
+    const close = button("ed-code-x", "×", () => toggleSettings(false));
+    close.disabled = false;
+    // какие виды выделены: «Кирпич ×3, Взрыв ×2…»
+    const kinds = Object.entries(list.reduce((m, ob) => ((m[levelobj.KINDS[ob.k].name] = (m[levelobj.KINDS[ob.k].name] || 0) + 1), m), {}));
+    head.append(el("b", null, `Выделено: ${list.length}`), el("span", null, kinds.slice(0, 4).map(([n, c]) => (c > 1 ? `${n} ×${c}` : n)).join(", ") + (kinds.length > 4 ? "…" : "")), close);
+    const rows = [head, el("p", "ed-obj-hint", "Что меняешь здесь, ставится всем выделенным. Shift + клик добавляет или убирает объект, Shift + рамка — выделить ещё.")];
+    const left = el("div", "ed-obj-col"), right = el("div", "ed-obj-col");
+
+    if (colored.length) {
+      const first = colored[0].v;
+      left.append(el("div", "ed-obj-sec", `Цвет (${colored.length})`), colorpick.create({ value: first, onInput: (v) => all((ob) => { if (levelobj.colored(ob.k)) ob.v = v; }) }).el);
+    }
+
+    const num = (label, key, min, max, hint) => {
+      const wrap = el("label", "ed-obj-num", label);
+      const input = el("input", "ed-input");
+      const same = list.every((ob) => (ob[key] || 0) === (list[0][key] || 0));
+      Object.assign(input, { type: "number", min, max, step: 1, value: same ? list[0][key] || 0 : "", placeholder: "разные", disabled: locked() });
+      wrap.title = hint;
+      input.addEventListener("input", () => {
+        if (input.value === "" || !Number.isFinite(+input.value)) return;
+        const v = Math.max(min, Math.min(max, Math.round(+input.value)));
+        all((ob) => { ob[key] = v; });
+        if (key === "l") renderLayer();
+      });
+      wrap.append(input);
+      return wrap;
+    };
+    const place = el("div", "ed-obj-pos");
+    place.append(
+      num("Группа", "gr", 0, MAX_GROUP, "Группа для триггеров анимации"),
+      num("Слой редактора", "l", 0, MAX_LAYER, "Слой редактора: на игру не влияет"),
+    );
+    right.append(el("div", "ed-obj-sec", "Группа и слой"), place);
+
+    if (looks.length) {
+      right.append(el("div", "ed-obj-sec", `Вид (${looks.length})`));
+      for (const [key, name, min, max, step, show] of LOOK_SLIDERS.filter(([k]) => ["s", "a", "g"].includes(k))) {
+        const row = el("label", "ed-obj-slider");
+        const range = el("input");
+        const v0 = looks[0][key] ?? levelobj.LOOK[key];
+        Object.assign(range, { type: "range", min, max, step, value: v0, disabled: locked() });
+        const out = el("b", null, show(+v0));
+        range.addEventListener("input", () => {
+          all((ob) => { if (levelobj.rotatable(ob.k)) ob[key] = +range.value; });
+          out.textContent = show(+range.value);
+        });
+        row.append(el("span", null, name), range, out);
+        right.append(row);
+      }
+      const depth = el("div", "ed-obj-toggles");
+      depth.append(el("span", null, "Глубина"),
+        button("ed-chip", "За дорогой", () => all((ob) => { if (levelobj.rotatable(ob.k)) ob.z = 0; })),
+        button("ed-chip", "Перед дорогой", () => all((ob) => { if (levelobj.rotatable(ob.k)) ob.z = 1; })));
+      right.append(depth);
+    }
+
+    const acts = el("div", "ed-obj-toggles");
+    acts.append(
+      button("ed-chip", "Копия всех", () => cloneObj()),
+      button("ed-chip", "Снять выделение", () => pickObj(null)),
+    );
+    acts.children[1].disabled = false;
+    right.append(el("div", "ed-obj-sec", "Действия"), acts);
+
+    const cols = el("div", "ed-obj-cols");
+    cols.append(left.childElementCount ? left : right);
+    if (left.childElementCount) cols.append(right);
+    else cols.classList.add("one");
+    rows.push(cols, button("btn ghost small", `Удалить все (${list.length})`, eraseSelected));
+    box.replaceChildren(...rows);
+  }
+
   /** Поворот в пределах −180…180. */
   const wrapAngle = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
 
@@ -586,7 +786,7 @@ const levels = (() => {
    */
   function renderObj(force = false) {
     const box = $("ed-obj");
-    if (selObj && !ed.objects.includes(selObj)) selObj = null;
+    if (selection.some((ob) => !ed.objects.includes(ob))) setSelection(selection);
     const cell = !selObj && ed.cells[sel] && ed.cells[sel].s ? ed.cells[sel] : null;
     const target = settingsTarget();
     // настройки открываются только кнопкой «Настройки» (или E) и только для того, для чего их открыли
@@ -602,6 +802,12 @@ const levels = (() => {
       if (key === objShown && !force) return;
       objShown = key;
       renderCellPanel(box, cell);
+      return;
+    }
+    if (selection.length > 1) {
+      if (target === objShown && !force) return;
+      objShown = target;
+      renderMultiPanel(box, picked());
       return;
     }
     if (selObj === objShown && !force) return;
@@ -757,16 +963,17 @@ const levels = (() => {
       right.append(toggles);
 
       const layer = choice("z", [[0, "За дорогой"], [1, "Перед дорогой"]], 0);
-      layer.prepend(el("span", null, "Слой"));
+      layer.prepend(el("span", null, "Глубина"));
       right.append(layer);
 
       const place = el("div", "ed-obj-pos");
       place.append(
         numberInput("gr", "Группа", 0, MAX_GROUP, 1, "Номер группы: её двигают, крутят и красят триггеры анимации; 0 — без группы"),
+        numberInput("l", "Слой ред.", 0, MAX_LAYER, 1, "Слой редактора: на игру не влияет, нужен, чтобы строить, не задевая другие объекты"),
         numberInput("x", "X", -OBJECT_REACH, OBJECT_REACH, GRID),
         numberInput("y", "Y", -OBJECT_REACH, OBJECT_REACH, GRID),
       );
-      right.append(section("Группа и положение от стрелки ячейки"), place);
+      right.append(section("Группа, слой редактора и положение от стрелки ячейки"), place);
 
       const style = el("div", "ed-obj-toggles");
       style.append(
@@ -895,7 +1102,7 @@ const levels = (() => {
     for (const b of shown) {
       if (mode === "edit") {
         const act = EDIT_ACTION[b.dataset.act];
-        b.disabled = locked() || !selObj || (act.ok && !act.ok(selObj));
+        b.disabled = locked() || !picked().some((ob) => !act.ok || act.ok(ob));
         continue;
       }
       b.classList.toggle("on", mode === "build" && b.dataset.tool === buildTool);
@@ -948,11 +1155,11 @@ const levels = (() => {
     { id: "snap", glyph: "⌗", label: "к сетке", title: "Выровнять по клеткам", run: (ob) => setObj(ob, { x: Math.round(ob.x / GRID) * GRID, y: Math.round(ob.y / GRID) * GRID }) },
     { id: "center", glyph: "◎", label: "к стрелке", title: "Поставить на стрелку своей ячейки", run: (ob) => setObj(ob, { x: 0, y: 0 }) },
     ...[[-90, "↺90"], [90, "↻90"], [-45, "↺45"], [45, "↻45"], [-15, "↺15"], [15, "↻15"]].map(([deg, glyph]) => ({
-      id: `r${deg}`, glyph, label: "поворот", title: `Повернуть на ${deg}°`, ok: (ob) => levelobj.rotatable(ob.k),
+      id: `r${deg}`, glyph, label: "поворот", title: `Повернуть на ${deg}°`, ok: (ob) => levelobj.rotatable(ob.k), turn: deg,
       run: (ob) => setObj(ob, { r: wrapAngle((ob.r || 0) + deg) }),
     })),
-    { id: "fx", glyph: "⇋", label: "отразить", title: "Отразить по горизонтали", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { fx: !ob.fx }) },
-    { id: "fy", glyph: "⇵", label: "отразить", title: "Отразить по вертикали", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { fy: !ob.fy }) },
+    { id: "fx", glyph: "⇋", label: "отразить", title: "Отразить по горизонтали", flip: "fx", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { fx: !ob.fx }) },
+    { id: "fy", glyph: "⇵", label: "отразить", title: "Отразить по вертикали", flip: "fy", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { fy: !ob.fy }) },
     { id: "big", glyph: "＋", label: "больше", title: "Увеличить на 25%", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { s: Math.min(4, Math.round((ob.s || 1) * 1.25 * 100) / 100) }) },
     { id: "small", glyph: "－", label: "меньше", title: "Уменьшить на 20%", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { s: Math.max(0.25, Math.round((ob.s || 1) * 0.8 * 100) / 100) }) },
     { id: "front", glyph: "▲", label: "вперёд", title: "Перед дорогой", ok: (ob) => levelobj.rotatable(ob.k), run: (ob) => setObj(ob, { z: 1 }) },
@@ -974,15 +1181,37 @@ const levels = (() => {
     b.innerHTML = `<b></b><small></small>`;
     b.firstChild.textContent = a.glyph;
     b.lastChild.textContent = a.label;
-    b.addEventListener("click", () => {
-      if (selObj && !locked()) a.run(selObj);
-    });
+    b.addEventListener("click", () => runEdit(a));
     editButtons.set(a.id, b);
     return b;
   }
 
+  /** Действие «Правки» над всеми выделенными: поворот и отражение нескольких — вокруг их общего центра. */
+  function runEdit(a) {
+    const list = picked();
+    if (!list.length || locked()) return;
+    if (a.id === "dup") return cloneObj();
+    if (a.id === "del") return eraseSelected();
+    if (a.turn !== undefined) {
+      const rad = (a.turn * Math.PI) / 180, c = Math.cos(rad), s = Math.sin(rad);
+      return transformSelection((p) => ({ x: p.x * c - p.y * s, y: p.x * s + p.y * c }), (ob) => ({ r: wrapAngle((ob.r || 0) + a.turn) }));
+    }
+    if (a.flip) return transformSelection((p) => (a.flip === "fx" ? { x: -p.x, y: p.y } : { x: p.x, y: -p.y }), (ob) => ({ [a.flip]: !ob[a.flip] }));
+    // остальное — каждому по очереди, одним изменением уровня
+    batching = true;
+    try {
+      for (const ob of list) if (!a.ok || a.ok(ob)) a.run(ob);
+    } finally {
+      batching = false;
+    }
+    change(() => {});
+    renderObj(true);
+  }
+  let batching = false; // runEdit меняет много объектов: перерисовка — один раз в конце
+
   /** Изменить выбранный объект и обновить панель настроек. */
   function setObj(ob, patch) {
+    if (batching) return Object.assign(ob, patch);
     change(() => Object.assign(ob, patch));
     renderObj(true);
   }
@@ -1241,6 +1470,7 @@ const levels = (() => {
       cells: ed.cells.map((c) => ({ ...c })), objects: ed.objects.map((ob) => ({ ...ob })),
     };
     selObj = null;
+    selection = [];
     storeCode(code); // код переезжает в копию
     renderEditor();
   }
@@ -1392,7 +1622,8 @@ const levels = (() => {
     if (a !== undefined && e.altKey && selObj && !locked()) {
       e.preventDefault();
       const step = e.shiftKey ? 1 : GRID;
-      moveObj(selObj, [-step, 0, step, 0][a], [0, -step, 0, step][a]);
+      const dx = [-step, 0, step, 0][a], dy = [0, -step, 0, step][a];
+      runEdit({ id: "nudge", run: (ob) => setObj(ob, { x: levelobj.isTrigger(ob.k) ? ob.x : clampReach(ob.x + dx), y: clampReach(ob.y + dy) }) });
       return;
     }
     if (a !== undefined && e.shiftKey && (a === 0 || a === 2)) {
@@ -1407,8 +1638,7 @@ const levels = (() => {
       });
     } else if ((e.code === "Delete" || e.code === "Backspace") && !locked()) {
       e.preventDefault();
-      if (selObj) eraseObj(selObj);
-      else removeSel();
+      if (!eraseSelected()) removeSel(); // выделенные объекты, иначе ячейку
     } else if (e.code === "Escape") {
       if (panelFor) { toggleSettings(false); return; } // сначала Esc закрывает настройки
       pickObj(null);
@@ -1421,6 +1651,9 @@ const levels = (() => {
       setMode("delete");
     } else if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey) {
       rotateObj();
+    } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyA") {
+      e.preventDefault();
+      selectAll();
     } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyD") {
       e.preventDefault();
       cloneObj();
@@ -1463,7 +1696,7 @@ const levels = (() => {
           // протяжка красит ячейки, а не листает: стрелки, «Обычная» и препятствия
           paints: !locked() && (TOOL[tool].arrow !== undefined || tool === "plain" || TOOL[tool].obstacle !== undefined),
           canAppend: !locked() && ed.cells.length < MAX_CELLS,
-          objects: ed.objects, selObj, mode: TOOL[tool].mode, locked: locked(), tagOf,
+          objects: ed.objects, selObj, selSet: new Set(selection), layer: edLayer, mode: TOOL[tool].mode, locked: locked(), tagOf,
           // «Протяжка» ставит объекты подряд (триггеры — по одному), «Сетка» ровняет их по клеткам
           swipe: swipe && !levelobj.isTrigger(TOOL[tool].object || "t-"), grid: snap ? GRID : 0,
           swipeStep: TOOL[tool].object ? swipeStep(TOOL[tool].object) : GRID,
@@ -1473,6 +1706,7 @@ const levels = (() => {
       append,
       place: placeObj,
       pickObj,
+      selectMany,
       eraseObj,
       moved: () => {
         change(() => {}); // объект перетащили: уровень изменился
@@ -1508,6 +1742,9 @@ const levels = (() => {
     $("ed-rotate").addEventListener("click", rotateObj);
     $("ed-clone").addEventListener("click", cloneObj);
     $("ed-settings").addEventListener("click", () => toggleSettings());
+    $("ed-layer-prev").addEventListener("click", () => setLayer(edLayer === null ? 0 : edLayer - 1));
+    $("ed-layer-next").addEventListener("click", () => setLayer(edLayer === null ? 0 : edLayer + 1));
+    $("ed-layer-name").addEventListener("click", () => setLayer(edLayer === null ? 0 : null));
     // ширина сетки меняется с окном: на страницу влезает другое число кнопок
     new ResizeObserver(() => { if (ed) renderTools(); }).observe($("ed-tools"));
 

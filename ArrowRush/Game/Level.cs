@@ -117,11 +117,11 @@ public sealed record EditorCell(int A, double F, string? S = null, string? O = n
 /// Fx и Fy — отражение, A — непрозрачность, Z — слой (0 — за дорогой, 1 — перед ней), G — сила свечения.
 /// Gr — группа: у объекта — в какой он группе, у триггера анимации — какую группу двигает (0 — все объекты).
 /// Настройки триггера (их выполняет клиент, trigrun.js): P и Q — числа (сдвиг, угол, сила…), D — длительность,
-/// E — плавность 0–9 (easecurve.js), B — своя кривая плавности "x1,y1,x2,y2".
+/// E — плавность 0–9 (easecurve.js), B — своя кривая плавности "x1,y1,x2,y2". L — слой редактора (только для редактора, на игру не влияет).
 /// </summary>
 public sealed record LevelObject(string K, int C, double X, double Y, double S = 1, string? V = null, double R = 0,
     double W = 1, double H = 1, bool Fx = false, bool Fy = false, double A = 1, int Z = 0, double G = 0,
-    int Gr = 0, double P = 0, double Q = 0, double D = 0, int E = 0, string? B = null);
+    int Gr = 0, double P = 0, double Q = 0, double D = 0, int E = 0, string? B = null, int L = 0);
 
 public static class LevelGenerator
 {
