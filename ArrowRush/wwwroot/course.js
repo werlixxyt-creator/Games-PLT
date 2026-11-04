@@ -117,6 +117,8 @@ const course = (() => {
   let danger = 0;       // финал уровня: красные края экрана, 0..1
   let decor = [];       // блоки и декор уровня из редактора (levelobj.js)
   let levelObjects = []; // все объекты уровня из редактора: из них заново собирается rt при смене игрока
+  let levelWorld = null;  // настройки мира уровня из редактора: фон, частицы, цвета
+  let posNow = 0;         // где игрок, в ячейках, дробно
   let rt = trigrun.create([]); // триггеры уровня (trigrun.js)
   let tv = rt.view();   // что они показывают в этом кадре: камера, фон, эффект, надпись
   let lastFake = -1;    // обман, который уже открылся
@@ -954,7 +956,7 @@ const course = (() => {
 
   /** Триггеры уровня из редактора (trigrun.js): срабатывает тот, чью ячейку игрок прошёл. Здесь — только разовые вспышки и тряска. */
   function runTriggers(dt) {
-    for (const ev of rt.update(reached, dt)) {
+    for (const ev of rt.update(posNow, dt)) {
       if (ev.type === "flash") flashOf(ev.power, ev.rgb);
       else if (ev.type === "shake") {
         if (!reduce) shake = Math.max(shake, ev.power);
@@ -2307,8 +2309,10 @@ const course = (() => {
     // объекты из редактора: триггеры по порядку ячеек, блоки и декор — для рисования
     const objects = (o.objects || []).filter((x) => levelobj.KINDS[x.k] && x.c >= 0 && x.c < o.level.length);
     levelObjects = objects;
+    levelWorld = o.world || null;
+    posNow = 0;
     decor = objects.filter((x) => !levelobj.isTrigger(x.k));
-    rt = trigrun.create(objects);
+    rt = trigrun.create(objects, levelWorld);
     tv = rt.view();
     lastFake = -1;
     reached = 0;
@@ -2353,8 +2357,8 @@ const course = (() => {
     Object.assign(opts, { hero, cell, trailOf });
     s = pos;
     // триггеры заново, сразу в том виде, как у нового игрока; разовые позади него не срабатывают все разом
-    rt = trigrun.create(levelObjects);
-    rt.seek(Math.floor(pos));
+    rt = trigrun.create(levelObjects, levelWorld);
+    rt.seek(pos);
     tv = rt.view();
     pops = [];
     fly = null;
@@ -2581,6 +2585,7 @@ const course = (() => {
     const n = map.segs.length;
     const target = Math.min(o.pos, n + 1);
     reached = Math.floor(target);
+    posNow = target; // триггеры срабатывают и между ячейками
     s += (target - s) * (1 - Math.exp(-dt * (opts.fast ? 24 : 34)));
     if (Math.abs(target - s) < 0.001) s = target;
 

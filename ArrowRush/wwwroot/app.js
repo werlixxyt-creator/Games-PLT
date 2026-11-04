@@ -1257,6 +1257,7 @@ function startMatch(d) {
     ufo: "classic", // скины НЛО появятся позже
     jump: d.jump,
     objects: d.objects || [], // блоки, декор и триггеры уровня из редактора
+    world: d.world || null, // настройки мира уровня: фон, частицы, цвета
     thunder: () => music.sting("thunder"),
     laser: () => music.sting("laser"),
     trailOf: trailOf(me.skin),

@@ -102,7 +102,7 @@ public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false,
 /// только если уровень с тех пор не менялся.
 /// </summary>
 public sealed record PlayableLevel(int Id, string Name, string AuthorId, int Revision, bool Fast, Difficulty Difficulty, string Theme, bool Published, Slider[] Sliders,
-    IReadOnlyList<LevelObject> Objects);
+    IReadOnlyList<LevelObject> Objects, LevelWorld? World = null);
 
 /// <summary>
 /// Ячейка редактора уровней: стрелка 0..3, секунды заполнения в обычном темпе, особая ячейка (см. <see cref="LevelGenerator.EditorSpecials"/>) или null,
@@ -118,10 +118,17 @@ public sealed record EditorCell(int A, double F, string? S = null, string? O = n
 /// Gr — группа: у объекта — в какой он группе, у триггера анимации — какую группу двигает (0 — все объекты).
 /// Настройки триггера (их выполняет клиент, trigrun.js): P и Q — числа (сдвиг, угол, сила…), D — длительность,
 /// E — плавность 0–9 (easecurve.js), B — своя кривая плавности "x1,y1,x2,y2". L — слой редактора (только для редактора, на игру не влияет).
+/// T — где срабатывает триггер: позиция игрока в ячейках (стрелка ячейки c — это c + 1); null — на стрелке своей ячейки, как раньше.
 /// </summary>
 public sealed record LevelObject(string K, int C, double X, double Y, double S = 1, string? V = null, double R = 0,
     double W = 1, double H = 1, bool Fx = false, bool Fy = false, double A = 1, int Z = 0, double G = 0,
-    int Gr = 0, double P = 0, double Q = 0, double D = 0, int E = 0, string? B = null, int L = 0);
+    int Gr = 0, double P = 0, double Q = 0, double D = 0, int E = 0, string? B = null, int L = 0, double? T = null);
+
+/// <summary>
+/// Настройки мира уровня из редактора: с чего он начинается. Bg — картинка фона, Effect — частицы (виды — bgart.js),
+/// Sky, Ground, Glow — цвета неба, стен и свечения "#rrggbb" (null — цвета дизайна). Триггеры меняют это по ходу уровня.
+/// </summary>
+public sealed record LevelWorld(string? Bg = null, string? Effect = null, string? Sky = null, string? Ground = null, string? Glow = null);
 
 public static class LevelGenerator
 {

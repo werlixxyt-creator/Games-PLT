@@ -649,6 +649,7 @@ public sealed class Match
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall, lane = s.Lane, spike = s.Spike, fake = s.Fake }),
         // блоки, декор и триггеры уровня из редактора; C уже номер ползунка в матче
         objects = Custom?.Objects ?? [],
+        world = Custom?.World, // настройки мира: фон, частицы, цвета
         players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, hero = p.Hero, team = p.Team }),
     };
 

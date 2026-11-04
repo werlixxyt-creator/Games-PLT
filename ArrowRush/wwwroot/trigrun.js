@@ -44,16 +44,34 @@ const trigrun = (() => {
   /** Длительность: у триггеров из прошлых версий её нет — тогда как раньше, мягко за полсекунды. */
   const durOf = (t, def = 0.6) => Math.max(0, num(t.d, def));
 
-  function create(objects) {
-    const list = (objects || []).filter((o) => levelobj.isTrigger(o.k)).sort((a, b) => a.c - b.c);
+  /** Где срабатывает триггер: позиция игрока в ячейках (стрелка ячейки c — это c + 1). */
+  const atOf = (t) => (typeof t.t === "number" && Number.isFinite(t.t) ? t.t : t.c + 1);
+
+  /**
+   * Настройки мира поверх палитры дизайна: цвет неба (небо и туманности), стен и свечения. world — LevelWorld с сервера
+   * ({ bg, effect, sky, ground, glow }) или null. Её же рисует превью редактора.
+   */
+  function worldPalette(base, world) {
+    if (!world) return base;
+    const pal = { ...base };
+    if (HEX.test(world.sky || "")) Object.assign(pal, pick(levelobj.palette(world.sky), PAL_KEYS.bg));
+    if (HEX.test(world.ground || "")) Object.assign(pal, pick(levelobj.palette(world.ground), PAL_KEYS.ground));
+    if (HEX.test(world.glow || "")) pal.glow = rgbOf(world.glow);
+    return pal;
+  }
+
+  /** objects — объекты уровня, world — его настройки мира (картинка фона и частицы с начала, цвета). */
+  function create(objects, world) {
+    const list = (objects || []).filter((o) => levelobj.isTrigger(o.k)).map((o) => ({ ...o, at: atOf(o) })).sort((a, b) => a.at - b.at);
     let next = 0;     // первый ещё не сработавший триггер
     let now = 0;      // секунды с начала
     let instant = false; // перемотка: всё встаёт сразу, разовое не играет
     const scalars = {};  // zoom, tilt, ox, oy, dark → твин
     const pals = {};     // world, bg, ground → твин палитры (null — цвета дизайна)
     const lastBase = {}; // база каждого цветового канала в прошлом кадре: от неё считается новый переход
-    let bgimg = { id: "none", prev: "none", start: -1, dur: 0 };
-    let effect = { id: "none", prev: "none", start: -1, dur: 0 };
+    const bg0 = (world && world.bg) || "none", fx0 = (world && world.effect) || "none";
+    let bgimg = { id: bg0, prev: bg0, start: -1, dur: 0 };
+    let effect = { id: fx0, prev: fx0, start: -1, dur: 0 };
     let msg = null;
     let rumble = { power: 0, end: 0 };
     let events = [];
@@ -200,26 +218,28 @@ const trigrun = (() => {
     function effectNow() { return effect; }
 
     /** Игрок дошёл до ячейки reached (прошёл все ячейки до неё): сработали новые триггеры; dt — секунды кадра. Возвращает разовые события. */
-    function update(reached, dt) {
+    /** pos — где игрок, в ячейках (может быть дробным): срабатывают триггеры, чья позиция пройдена. */
+    function update(pos, dt) {
       now += dt;
       for (const g of groups.values()) g.spinRot += g.spin * dt;
       camAngle += camSpin * dt;
       hueAngle += hueSpeed * dt;
-      while (next < list.length && list[next].c < reached) fire(list[next++]);
+      while (next < list.length && list[next].at <= pos) fire(list[next++]);
       const out = events;
       events = [];
       return out;
     }
 
     /** Перемотка к ячейке cell без анимаций: смена игрока в наблюдении или старт теста с середины. */
-    function seek(cell) {
+    function seek(pos) {
       instant = true;
-      while (next < list.length && list[next].c < cell) fire(list[next++]);
+      while (next < list.length && list[next].at <= pos) fire(list[next++]);
       instant = false;
     }
 
     /** Палитра мира поверх палитры дизайна base: цвет мира, затем фон и стены. */
     function palette(base) {
+      base = worldPalette(base, world);
       lastBase.world = base;
       let pal = { ...base };
       const w = palNow("world", base);
@@ -315,5 +335,5 @@ const trigrun = (() => {
     ctx.restore();
   }
 
-  return { create, drawObject };
+  return { create, drawObject, worldPalette, atOf };
 })();

@@ -125,7 +125,7 @@ const levels = (() => {
     { id: "o-none", cat: "obstacles", obstacle: null, name: "Убрать", color: "#c3c7d9", hint: "клик убирает препятствие с ячейки" },
     ...Object.entries(levelobj.KINDS).filter(([, s]) => !s.old).map(([k, s]) => ({
       id: "obj-" + k, cat: s.cat, object: k, name: s.name, color: s.color,
-      hint: levelobj.isTrigger(k) ? `клик ставит триггер к ближайшей ячейке: ${s.hint}` : "клик ставит объект туда, куда нажал; в «Правке» его можно тащить",
+      hint: levelobj.isTrigger(k) ? `клик ставит триггер куда угодно, сработает, когда персонаж пересечёт его линию: ${s.hint}` : "клик ставит объект туда, куда нажал; в «Правке» его можно тащить",
     })),
     { id: "erase", mode: "erase", name: "Удалить", color: "#ff3b5c", hint: "клик удаляет объект или ячейку" },
   ];
@@ -320,13 +320,13 @@ const levels = (() => {
     if (id) {
       try {
         const d = await call("GET", `/${id}`);
-        ed = { ...d, cells: d.cells.map((c) => ({ a: c.a, f: c.f, s: c.s || null, o: c.o || null, n: c.n || 0, p: c.p || 0 })), objects: (d.objects || []).map(cleanObj), dirty: false };
+        ed = { ...d, cells: d.cells.map((c) => ({ a: c.a, f: c.f, s: c.s || null, o: c.o || null, n: c.n || 0, p: c.p || 0 })), objects: (d.objects || []).map(cleanObj), world: d.world || {}, dirty: false };
       } catch (e) {
         $("levels-error").textContent = e.message;
         return;
       }
     } else {
-      ed = { id: null, name: "", about: "", fast: false, difficulty: "normal", theme: "auto", cells: randomCells(12), objects: [], verified: false, published: false, dirty: true };
+      ed = { id: null, name: "", about: "", fast: false, difficulty: "normal", theme: "auto", cells: randomCells(12), objects: [], world: {}, verified: false, published: false, dirty: true };
     }
     sel = 0;
     selObj = null;
@@ -381,6 +381,8 @@ const levels = (() => {
     s: o.s ?? 1, r: o.r || 0, w: o.w ?? 1, h: o.h ?? 1, fx: !!o.fx, fy: !!o.fy, a: o.a ?? 1, z: o.z ? 1 : 0, g: o.g || 0,
     // группа объекта и настройки триггера (trigrun.js)
     gr: o.gr || 0, p: o.p ?? 0, q: o.q ?? 0, d: o.d ?? 0, e: o.e ?? 1, b: o.b || null, l: o.l || 0,
+    // триггер: где он срабатывает, в ячейках (считает syncTriggers по превью); у прочих объектов не нужно
+    t: levelobj.isTrigger(o.k) && typeof o.t === "number" ? o.t : null,
   });
   const clampReach = (v) => Math.round(Math.max(-OBJECT_REACH, Math.min(OBJECT_REACH, v)));
 
@@ -402,7 +404,7 @@ const levels = (() => {
       return;
     }
     const k = TOOL[tool].object;
-    const ob = levelobj.create(k, c, levelobj.isTrigger(k) ? 0 : clampReach(x), clampReach(y));
+    const ob = levelobj.create(k, c, clampReach(x), clampReach(y)); // и триггеры — куда кликнули, не только над ячейкой
     ob.l = edLayer ?? 0; // новый объект — на открытый слой редактора
     change(() => {
       ed.objects.push(ob);
@@ -484,12 +486,12 @@ const levels = (() => {
       $("ed-error").textContent = `Не больше ${MAX_OBJECTS} объектов`;
       return;
     }
-    let step = Math.max(...list.map((ob) => (levelobj.isTrigger(ob.k) ? GRID : swipeStep(ob.k, ob.s || 1))));
+    let step = Math.max(...list.map((ob) => (levelobj.isTrigger(ob.k) ? GRID * 2 : swipeStep(ob.k, ob.s || 1))));
     if (list.length > 1) {
       const xs = list.map((ob) => edview.keyPoint(ob.c).x + ob.x);
       step = Math.max(GRID, Math.ceil((Math.max(...xs) - Math.min(...xs) + step) / GRID) * GRID);
     }
-    const copies = list.map((ob) => ({ ...ob, x: levelobj.isTrigger(ob.k) ? ob.x : clampReach(ob.x + step) }));
+    const copies = list.map((ob) => ({ ...ob, x: clampReach(ob.x + step) }));
     change(() => {
       ed.objects.push(...copies);
       setSelection(copies);
@@ -751,6 +753,77 @@ const levels = (() => {
     box.replaceChildren(...rows);
   }
 
+  /** Кнопка «Мир» открывает и закрывает настройки мира. */
+  function toggleWorld() {
+    panelFor = panelFor === "world" ? null : "world";
+    renderObj(true);
+  }
+
+  /**
+   * Настройки мира: с чего начинается уровень — картинка фона, частицы, цвета неба, стен и свечения.
+   * Видны сразу на превью, в быстром тесте и в матче; триггеры меняют это по ходу уровня.
+   */
+  function renderWorldPanel(box) {
+    const w = ed.world || (ed.world = {});
+    const el = (tag, cls, text) => {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    };
+    const set = (fn) => change(fn);
+    const head = el("div", "ed-obj-head");
+    const close = el("button", "ed-code-x", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "Закрыть");
+    close.addEventListener("click", toggleWorld);
+    head.append(el("b", null, "Мир уровня"), el("span", null, "фон и цвета"), close);
+    const rows = [head, el("p", "ed-obj-hint", "С чего начинается уровень: картинка за коридором, частицы и цвета. Триггеры «Цвет фона», «Картинка фона» и другие меняют это по ходу.")];
+
+    /** Выбор одного из вариантов: кнопки подсвечиваются сразу, без пересборки панели. */
+    const choose = (key, items, cls, make) => {
+      const row = el("div", cls);
+      const now = () => w[key] || "none";
+      const buttons = items.map(([v, text]) => {
+        const b = el("button", "ed-chip" + (now() === v ? " on" : ""), make ? undefined : text);
+        b.type = "button";
+        b.disabled = locked();
+        if (make) b.append(...make(v, text));
+        b.addEventListener("click", () => {
+          set(() => { w[key] = v === "none" ? null : v; });
+          buttons.forEach((x, i) => x.classList.toggle("on", items[i][0] === v));
+        });
+        return b;
+      });
+      row.append(...buttons);
+      return row;
+    };
+
+    const left = el("div", "ed-obj-col"), right = el("div", "ed-obj-col");
+    left.append(
+      el("div", "ed-obj-sec", "Картинка фона"),
+      choose("bg", bgart.BGS, "ed-obj-bgs", (v, text) => [bgPreview(v), el("span", null, text)]),
+      el("div", "ed-obj-sec", "Частицы"),
+      choose("effect", bgart.EFFECTS, "ed-obj-toggles"),
+    );
+    for (const [key, name] of [["sky", "Цвет неба"], ["ground", "Цвет стен"], ["glow", "Цвет свечения"]]) {
+      const picker = colorpick.create({ value: w[key] || null, none: "Цвет дизайна", onInput: (v) => set(() => { w[key] = v; }) });
+      if (locked()) picker.el.classList.add("off");
+      right.append(el("div", "ed-obj-sec", name), picker.el);
+    }
+    const cols = el("div", "ed-obj-cols");
+    cols.append(left, right);
+    const reset = el("button", "btn ghost small", "Сбросить мир");
+    reset.type = "button";
+    reset.disabled = locked();
+    reset.addEventListener("click", () => {
+      set(() => { ed.world = {}; });
+      renderObj(true);
+    });
+    rows.push(cols, reset);
+    box.replaceChildren(...rows);
+  }
+
   /** Поворот в пределах −180…180. */
   const wrapAngle = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
 
@@ -789,6 +862,17 @@ const levels = (() => {
     if (selection.some((ob) => !ed.objects.includes(ob))) setSelection(selection);
     const cell = !selObj && ed.cells[sel] && ed.cells[sel].s ? ed.cells[sel] : null;
     const target = settingsTarget();
+    $("ed-world-btn").classList.toggle("on", panelFor === "world");
+    if (panelFor === "world") {
+      // настройки мира: открыты кнопкой «Мир», пока их не закроют
+      box.hidden = false;
+      renderSettingsButton(target, false);
+      if (objShown !== "world" || force) {
+        objShown = "world";
+        renderWorldPanel(box);
+      }
+      return;
+    }
     // настройки открываются только кнопкой «Настройки» (или E) и только для того, для чего их открыли
     const open = !!target && panelFor === target;
     box.hidden = !open;
@@ -893,7 +977,7 @@ const levels = (() => {
     close.setAttribute("aria-label", "Снять выбор");
     head.append(el("b", null, kind.name), el("span", null, `у ячейки ${ob.c + 1}`), close);
     const rows = [head];
-    if (trigger) rows.push(el("p", "ed-obj-hint", `Срабатывает, когда игрок проходит ячейку ${ob.c + 1}: ${kind.hint}.`));
+    if (trigger) rows.push(el("p", "ed-obj-hint", `Срабатывает, когда персонаж пересекает его линию (рядом с ячейкой ${ob.c + 1}): ${kind.hint}.`));
 
     const left = el("div", "ed-obj-col"), right = el("div", "ed-obj-col");
 
@@ -1356,10 +1440,31 @@ const levels = (() => {
     });
   }
 
-  const body = () => ({
-    name: ed.name.trim(), about: (ed.about || "").trim(), fast: ed.fast, difficulty: ed.difficulty, theme: ed.theme, cells: ed.cells,
-    objects: ed.objects.map((ob) => cleanObj({ ...ob, c: Math.min(ob.c, ed.cells.length - 1) })),
-  });
+  /** Где срабатывает каждый триггер, по его месту на превью: позиция в ячейках (стрелка ячейки c — это c + 1). */
+  function syncTriggers() {
+    for (const ob of ed.objects) {
+      if (!levelobj.isTrigger(ob.k)) continue;
+      const k = edview.keyPoint(Math.min(ob.c, ed.cells.length - 1));
+      const at = k && edview.posAt(k.x + ob.x);
+      if (typeof at === "number") ob.t = Math.round(at * 1000) / 1000;
+    }
+  }
+
+  /** Настройки мира без пустых полей; null — всё по умолчанию. */
+  const cleanWorld = (w) => {
+    const out = {};
+    for (const key of ["bg", "effect", "sky", "ground", "glow"]) if (w && w[key] && w[key] !== "none") out[key] = w[key];
+    return Object.keys(out).length ? out : null;
+  };
+
+  const body = () => {
+    syncTriggers();
+    return {
+      name: ed.name.trim(), about: (ed.about || "").trim(), fast: ed.fast, difficulty: ed.difficulty, theme: ed.theme, cells: ed.cells,
+      objects: ed.objects.map((ob) => cleanObj({ ...ob, c: Math.min(ob.c, ed.cells.length - 1) })),
+      world: cleanWorld(ed.world),
+    };
+  };
 
   async function save() {
     if (problem()) return false;
@@ -1423,7 +1528,7 @@ const levels = (() => {
       toggleCode(false);
       if (document.activeElement) document.activeElement.blur(); // стрелки идут в тест, а не в поле ввода
       edview.play({
-        cells: playable(), from: sel, fast: ed.fast, objects: ed.objects,
+        cells: playable(), from: sel, fast: ed.fast, objects: (syncTriggers(), ed.objects), world: cleanWorld(ed.world),
         rules: { ...QUICK, ...(QUICK_DIFF[ed.difficulty] || QUICK_DIFF.normal) },
         onEnd: () => quickTest(false),
       });
@@ -1623,7 +1728,7 @@ const levels = (() => {
       e.preventDefault();
       const step = e.shiftKey ? 1 : GRID;
       const dx = [-step, 0, step, 0][a], dy = [0, -step, 0, step][a];
-      runEdit({ id: "nudge", run: (ob) => setObj(ob, { x: levelobj.isTrigger(ob.k) ? ob.x : clampReach(ob.x + dx), y: clampReach(ob.y + dy) }) });
+      runEdit({ id: "nudge", run: (ob) => setObj(ob, { x: clampReach(ob.x + dx), y: clampReach(ob.y + dy) }) });
       return;
     }
     if (a !== undefined && e.shiftKey && (a === 0 || a === 2)) {
@@ -1696,7 +1801,7 @@ const levels = (() => {
           // протяжка красит ячейки, а не листает: стрелки, «Обычная» и препятствия
           paints: !locked() && (TOOL[tool].arrow !== undefined || tool === "plain" || TOOL[tool].obstacle !== undefined),
           canAppend: !locked() && ed.cells.length < MAX_CELLS,
-          objects: ed.objects, selObj, selSet: new Set(selection), layer: edLayer, mode: TOOL[tool].mode, locked: locked(), tagOf,
+          objects: ed.objects, selObj, selSet: new Set(selection), layer: edLayer, world: ed.world, mode: TOOL[tool].mode, locked: locked(), tagOf,
           // «Протяжка» ставит объекты подряд (триггеры — по одному), «Сетка» ровняет их по клеткам
           swipe: swipe && !levelobj.isTrigger(TOOL[tool].object || "t-"), grid: snap ? GRID : 0,
           swipeStep: TOOL[tool].object ? swipeStep(TOOL[tool].object) : GRID,
@@ -1742,6 +1847,7 @@ const levels = (() => {
     $("ed-rotate").addEventListener("click", rotateObj);
     $("ed-clone").addEventListener("click", cloneObj);
     $("ed-settings").addEventListener("click", () => toggleSettings());
+    $("ed-world-btn").addEventListener("click", toggleWorld);
     $("ed-layer-prev").addEventListener("click", () => setLayer(edLayer === null ? 0 : edLayer - 1));
     $("ed-layer-next").addEventListener("click", () => setLayer(edLayer === null ? 0 : edLayer + 1));
     $("ed-layer-name").addEventListener("click", () => setLayer(edLayer === null ? 0 : null));

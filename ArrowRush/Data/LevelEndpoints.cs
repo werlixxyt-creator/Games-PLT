@@ -15,7 +15,7 @@ public static class LevelEndpoints
     /// <summary>Сколько уровней в списке за раз.</summary>
     public const int ListSize = 50;
 
-    public sealed record LevelBody(string? Name, string? About, bool Fast, string? Difficulty, string? Theme, List<EditorCell>? Cells, List<LevelObject>? Objects);
+    public sealed record LevelBody(string? Name, string? About, bool Fast, string? Difficulty, string? Theme, List<EditorCell>? Cells, List<LevelObject>? Objects, LevelWorld? World = null);
 
     public static void MapLevels(this WebApplication app)
     {
@@ -40,12 +40,44 @@ public static class LevelEndpoints
         var cells = JsonSerializer.Deserialize<List<EditorCell>>(l.Cells, JsonSerializerOptions.Web)!;
         // объекты привязаны к ячейкам редактора, а в матче между ними могут встать ячейки «Раста» и «Кловда»
         var map = LevelGenerator.EditorIndexMap(cells);
-        var objects = ObjectsOf(l).Where(o => o.C >= 0 && o.C < map.Length).Select(o => o with { C = map[o.C] }).ToList();
+        var objects = ObjectsOf(l).Where(o => o.C >= 0 && o.C < map.Length)
+            .Select(o => o with { C = map[o.C], T = o.T is { } t ? MapPosition(t, map) : null }).ToList();
         return new(l.Id, l.Name, l.AuthorId, l.Revision, l.Fast, l.Difficulty, l.Theme, l.Published,
-            LevelGenerator.FromEditor(cells, l.Fast, new Random(l.Id)), objects);
+            LevelGenerator.FromEditor(cells, l.Fast, new Random(l.Id)), objects, WorldOf(l));
+    }
+
+    /// <summary>
+    /// Позиция в ячейках редактора → позиция в матче. Стрелка ячейки k — это k + 1; если после ячейки вставлены ячейки
+    /// «Раста» или «Кловда», доля пути до следующей стрелки растягивается на них.
+    /// </summary>
+    private static double MapPosition(double t, int[] map)
+    {
+        var k = (int)Math.Floor(t) - 1; // стрелка, после которой стоит позиция
+        if (k < 0) return t;
+        if (k >= map.Length) return t + map[^1] - (map.Length - 1);
+        var frac = t - Math.Floor(t);
+        var next = k + 1 < map.Length ? map[k + 1] : map[k] + 1;
+        return map[k] + 1 + frac * (next - map[k]);
     }
 
     private static List<LevelObject> ObjectsOf(CustomLevel l) => JsonSerializer.Deserialize<List<LevelObject>>(l.Objects, JsonSerializerOptions.Web) ?? [];
+
+    private static LevelWorld? WorldOf(CustomLevel l) =>
+        string.IsNullOrEmpty(l.World) ? null : JsonSerializer.Deserialize<LevelWorld>(l.World, JsonSerializerOptions.Web);
+
+    private static readonly System.Text.RegularExpressions.Regex HexColor = new("^#[0-9a-fA-F]{6}$");
+    private static readonly System.Text.RegularExpressions.Regex WorldId = new("^[a-z0-9-]{1,20}$");
+
+    /// <summary>Настройки мира: короткие имена фона и частиц, цвета — "#rrggbb".</summary>
+    private static string? ValidateWorld(LevelWorld? w)
+    {
+        if (w is null) return null;
+        if (w.Bg is { } bg && !WorldId.IsMatch(bg)) return "Неизвестная картинка фона";
+        if (w.Effect is { } fx && !WorldId.IsMatch(fx)) return "Неизвестный эффект фона";
+        foreach (var c in new[] { w.Sky, w.Ground, w.Glow })
+            if (c is not null && !HexColor.IsMatch(c)) return "Цвет мира — в виде #rrggbb";
+        return null;
+    }
 
     /// <summary>Опубликованные уровни. q — часть названия или ника автора; sort — new, popular или liked.</summary>
     private static async Task<IResult> List(string? q, string? sort, ClaimsPrincipal principal, AppDb db)
@@ -117,6 +149,7 @@ public static class LevelEndpoints
         likes = l.Likes,
         cells = JsonSerializer.Deserialize<List<EditorCell>>(l.Cells, JsonSerializerOptions.Web),
         objects = ObjectsOf(l),
+        world = WorldOf(l),
     };
 
     private static async Task<IResult> Create(LevelBody body, ClaimsPrincipal principal, AppDb db)
@@ -174,7 +207,9 @@ public static class LevelEndpoints
             P = Math.Round(o.P, 2),
             Q = Math.Round(o.Q, 2),
             D = Math.Round(o.D, 2),
+            T = o.T is { } t ? Math.Round(t, 3) : null,
         }), JsonSerializerOptions.Web);
+        level.World = body.World is { } w && (w.Bg ?? w.Effect ?? w.Sky ?? w.Ground ?? w.Glow) is not null ? JsonSerializer.Serialize(w, JsonSerializerOptions.Web) : null;
         level.CellCount = body.Cells!.Count;
         level.UpdatedAt = now;
     }
@@ -264,7 +299,7 @@ public static class LevelEndpoints
             if (i + span >= cells.Count) return $"Ячейка {i + 1}: за ней нужно ещё {span} ячеек";
             busyUntil = i + span;
         }
-        return ValidateObjects(body.Objects ?? [], cells.Count);
+        return ValidateWorld(body.World) ?? ValidateObjects(body.Objects ?? [], cells.Count);
     }
 
     /// <summary>Объекты: известный вид, своя ячейка есть, недалеко от неё, разумный размер и короткое значение.</summary>
@@ -287,6 +322,7 @@ public static class LevelEndpoints
             if (o.Z is not (0 or 1)) return "Слой объекта: 0 или 1";
             if (o.Gr is < 0 or > GameRules.EditorMaxGroup) return $"Группа объекта от 0 до {GameRules.EditorMaxGroup}";
             if (o.L is < 0 or > GameRules.EditorMaxGroup) return $"Слой редактора от 0 до {GameRules.EditorMaxGroup}";
+            if (o.T is { } t && (!double.IsFinite(t) || t < 0 || t > cellCount + 1)) return "Триггер стоит за пределами уровня";
             if (!double.IsFinite(o.P) || !double.IsFinite(o.Q) || Math.Abs(o.P) > 10000 || Math.Abs(o.Q) > 10000) return "Значение триггера слишком большое";
             if (!double.IsFinite(o.D) || o.D < 0 || o.D > 30) return "Длительность триггера от 0 до 30 секунд";
             if (o.E is < 0 or > 9) return "Неизвестная плавность триггера";

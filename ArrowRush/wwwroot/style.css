@@ -2800,3 +2800,7 @@ button.ed-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
 .ed-layer { display: grid; grid-template-columns: 32px 1fr 32px; gap: 4px; }
 .ed-layer .ed-act { min-height: 30px; padding: 2px; font-size: 12px; }
 #ed-layer-name.on { background: #ffe14a; }
+/* «Мир»: настройки фона уровня */
+.ed-world { background: linear-gradient(135deg, #3d7bff, #c86bff); color: #fff; }
+.ed-world > span { color: rgba(255, 255, 255, .85) !important; }
+.ed-world.on { outline: 3px solid var(--a3); outline-offset: 2px; }

@@ -64,6 +64,8 @@ public sealed class CustomLevel
     public required string Cells { get; set; }
     /// <summary>Блоки, декор и триггеры: JSON-список <see cref="Game.LevelObject"/>.</summary>
     public string Objects { get; set; } = "[]";
+    /// <summary>Настройки мира: JSON <see cref="Game.LevelWorld"/> или null.</summary>
+    public string? World { get; set; }
     public int CellCount { get; set; }
     public int Revision { get; set; }
     public bool Verified { get; set; }

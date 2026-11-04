@@ -386,8 +386,9 @@ const edview = (() => {
         ctx.lineWidth = 3;
         ctx.setLineDash([8, 8]);
         ctx.beginPath();
-        ctx.moveTo(x, y + (y < k.y ? 26 : -26));
-        ctx.lineTo(x, k.y);
+        // вертикальная линия: триггер срабатывает, когда персонаж её пересекает
+        ctx.moveTo(x, -FLOOR);
+        ctx.lineTo(x, FLOOR);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -487,13 +488,16 @@ const edview = (() => {
 
     // в тесте триггеры уровня меняют палитру, камеру и фон, как в матче
     const tv = run ? run.rt.view() : null;
-    const p = run ? run.rt.palette(paletteOf(s.theme)) : paletteOf(s.theme);
+    // настройки мира (фон, частицы, цвета) видны и в превью, в тесте поверх них работают триггеры
+    const p = run ? run.rt.palette(paletteOf(s.theme)) : trigrun.worldPalette(paletteOf(s.theme), s.world);
     const left = camX - 60, right = camX + viewW() + 60;
     drawSky(p);
     const bgView = { w, h, camX, scale, time };
     if (tv) {
       if (tv.bg.k < 1) bgart.draw(ctx, tv.bg.prev, bgView, p, 1 - tv.bg.k);
       bgart.draw(ctx, tv.bg.id, bgView, p, tv.bg.k);
+    } else if (s.world && s.world.bg) {
+      bgart.draw(ctx, s.world.bg, bgView, p);
     }
 
     ctx.save();
@@ -544,6 +548,7 @@ const edview = (() => {
         ctx.fillRect(0, 0, w, h);
       }
     }
+    if (!tv && s.world && s.world.effect) bgart.effect(ctx, s.world.effect, bgView, p);
     drawMap(s);
     if (run) drawHud(s);
     if (drag && drag.kind === "box") {
@@ -581,7 +586,7 @@ const edview = (() => {
     run = {
       cells: level.cells, from: level.from, fast: level.fast, rules: level.rules,
       held: 0, t: 0, attempt: 0, msg: null, saved: camX, onEnd: level.onEnd,
-      objects: level.objects || [], rt: null, flash: { rgb: [255, 255, 255], k: 0 }, shake: 0,
+      objects: level.objects || [], world: level.world || null, rt: null, flash: { rgb: [255, 255, 255], k: 0 }, shake: 0,
     };
     restart();
     hover = null;
@@ -606,7 +611,7 @@ const edview = (() => {
       hits: 0, wallSeconds: 0, done: null, failAt: null, shown: run.from, attempt: run.attempt + 1,
     });
     // триггеры заново: всё, что позади стартовой ячейки, уже включено
-    run.rt = trigrun.create(run.objects);
+    run.rt = trigrun.create(run.objects, run.world);
     run.rt.seek(run.from);
   }
 
@@ -647,7 +652,7 @@ const edview = (() => {
 
   function stepRun(dt) {
     run.t += dt;
-    for (const ev of run.rt.update(run.i, dt)) {
+    for (const ev of run.rt.update(run.i + Math.min(1, Math.max(0, run.k)), dt)) {
       if (ev.type === "flash") run.flash = { rgb: ev.rgb, k: Math.max(run.flash.k, ev.power) };
       else if (ev.type === "shake") run.shake = Math.max(run.shake, ev.power);
     }
@@ -990,7 +995,7 @@ const edview = (() => {
     const wx = g.x, wy = g.y;
     const c = anchor(wx), k = keyAt(c);
     drag.ob.c = c;
-    drag.ob.x = levelobj.isTrigger(drag.ob.k) ? 0 : Math.round(wx - k.x);
+    drag.ob.x = Math.round(wx - k.x); // и триггеры ставятся где угодно, не только над ячейкой
     drag.ob.y = Math.round(Math.max(-VIEW_H, Math.min(VIEW_H, wy)) - k.y);
     canvas.style.cursor = "grabbing";
   }
@@ -1016,7 +1021,7 @@ const edview = (() => {
       if (!drag.moved) return;
       const g = gridPoint((pt.x - drag.x) / scale, (pt.y - drag.y) / scale, o.get().grid);
       for (const it of drag.items) {
-        if (!levelobj.isTrigger(it.ob.k)) it.ob.x = Math.round(it.x + g.x);
+        it.ob.x = Math.round(it.x + g.x);
         it.ob.y = Math.round(it.y + g.y);
       }
       canvas.style.cursor = "grabbing";
@@ -1116,5 +1121,16 @@ const edview = (() => {
   /** Где стрелка ячейки c на превью (для перепривязки объектов), null — такой нет. */
   const keyPoint = (c) => (geo && c >= 0 && c < geo.xs.length - 1 ? keyAt(c) : null);
 
-  return { init, show, reset, focus, play, stop, press, release, releaseAll, keyPoint, playing: () => !!run };
+  /** Позиция в ячейках (стрелка ячейки c — это c + 1) для точки x мира: где сработает триггер, стоящий там. */
+  function posAt(x) {
+    if (!geo) return null;
+    const xs = geo.xs, n = xs.length - 1;
+    if (x <= xs[0]) return 0;
+    if (x >= xs[n]) return n;
+    let i = 0;
+    while (i < n - 1 && xs[i + 1] <= x) i++;
+    return i + (x - xs[i]) / (xs[i + 1] - xs[i]);
+  }
+
+  return { init, show, reset, focus, play, stop, press, release, releaseAll, keyPoint, posAt, playing: () => !!run };
 })();
