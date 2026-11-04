@@ -1256,6 +1256,7 @@ function startMatch(d) {
     hero: profile ? profile.equipped.hero : "circle",
     ufo: "classic", // скины НЛО появятся позже
     jump: d.jump,
+    objects: d.objects || [], // блоки, декор и триггеры уровня из редактора
     thunder: () => music.sting("thunder"),
     laser: () => music.sting("laser"),
     trailOf: trailOf(me.skin),
@@ -1555,7 +1556,7 @@ function showCombo() {
   if (combo % 10 === 0) playStreakFx(profile ? profile.equipped.streak : "flame", el, 0.5);
 }
 
-const held_by_server = (cell) => !!cell && (cell.ufo || cell.wall || cell.zone === "cloud");
+const held_by_server = (cell) => !!cell && (cell.ufo || cell.wall || cell.spike || cell.zone === "cloud");
 
 /** Режимы с нажатиями: сверяем своё предсказание с сервером. */
 function syncPrediction(server, now) {
@@ -1735,6 +1736,13 @@ function render(now) {
       progress = p.p;
       wrong = holding = false;
     }
+    // шипы: ячейка проходит сама, пока ничего не зажато; зажатая стрелка — уже ошибка
+    if (idx === p.idx && level[idx]?.spike) {
+      const mask = t < 0 ? 0 : isMe ? held : p.held;
+      progress = mask ? p.p : Math.min(1, p.p + elapsed / level[idx].fill);
+      wrong = mask !== 0;
+      holding = false;
+    }
 
     if (isMe) {
       if (p.crash > track.crash) crashed();
@@ -1771,7 +1779,7 @@ function render(now) {
   const myAir = (now - pred.jumpAt) / 1000;
   const shown = watched || mine;
   const hole = shown && inRast(shown) ? shown.hole / match.holeStart : 1;
-  const hp = shown && level[shown.idx]?.wall ? shown.hp : null;
+  const hp = shown && level[shown.idx]?.wall && level[shown.idx].zone === "rainbow" ? shown.hp : null; // у стены из редактора жизней нет
   const myLane = mine ? laneOf(mine, now) : pred.lane;
   const view = watched
     ? { pos: watched.idx + watched.p, air: watched.air, hole, hp, lane: watched.lane, ...handsOf(watched, t) }
@@ -1813,6 +1821,9 @@ function render(now) {
     need.textContent = "Перепрыгни ячейку: любая стрелка";
   } else if (level[myIdx].wall) {
     need.textContent = `Ломай стену любой стрелкой: ${mine.hits} / ${match.wallHits}`;
+  } else if (level[myIdx].spike) {
+    need.textContent = "Шипы! Ничего не нажимай";
+    need.classList.toggle("bad", held !== 0);
   } else if (level[myIdx].zone === "cloud") {
     need.textContent = "Уклоняйся: ↑ потолок, ↓ пол";
   } else if (rasting) {

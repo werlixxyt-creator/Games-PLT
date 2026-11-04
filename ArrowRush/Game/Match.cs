@@ -62,6 +62,9 @@ public sealed class Player
     public double WallSeconds { get; set; }
     public int WallLives => GameRules.WallLives - (int)(WallSeconds / GameRules.WallLifeSeconds);
 
+    /// <summary>Когда игрок встал на текущую ячейку, по игровому времени: на шипах первые мгновения нажатия прощаются.</summary>
+    public double EnteredAt { get; set; }
+
     public double? FinishTime { get; set; }
     public int Place { get; set; }
     public bool Left { get; set; }
@@ -200,6 +203,12 @@ public sealed class Match
             return;
         }
 
+        if (Level[p.Index].Spike)
+        {
+            Wait(p, dt);
+            return;
+        }
+
         if (Fast)
         {
             // люди продвигаются в SetInput, по нажатиям; здесь думает только бот
@@ -303,6 +312,24 @@ public sealed class Match
         if (bot.BotWrong == 0 && (1 - bot.Progress) * cell.FillSeconds <= bot.BotWait) bot.Lane = 1 - cell.Lane!.Value;
     }
 
+    /// <summary>Шипы: ячейка проходит сама, пока ничего не зажато. Держать стрелку с прошлой ячейки можно — время просто стоит.</summary>
+    private void Wait(Player p, double dt)
+    {
+        if (p.IsBot) p.HeldMask = 0;
+        if ((p.HeldMask & 0b1111) != 0) return;
+        p.Progress += dt / Level[p.Index].FillSeconds;
+        if (p.Progress >= 1) Advance(p);
+    }
+
+    /// <summary>Нажатие на шипах — удар: ячейка начинается заново, а где ошибка дорога, считает режим.</summary>
+    private void Prick(Player p)
+    {
+        if (GameTime - p.EnteredAt < GameRules.SpikeGraceSeconds) return;
+        p.Crashes++;
+        p.Progress = 0;
+        if (Punishes) Slip(p);
+    }
+
     /// <summary>Игрок подошёл к стене: счёт ударов и жизней начинается заново. Сюда можно попасть и назад из «Отката».</summary>
     private static void FaceWall(Player p)
     {
@@ -312,12 +339,12 @@ public sealed class Match
         p.WallSeconds = 0;
     }
 
-    /// <summary>«Радуга»: пока стена цела, лазеры снимают жизни; кончились — игрок выбыл.</summary>
+    /// <summary>«Радуга»: пока стена цела, лазеры снимают жизни; кончились — игрок выбыл. У стены из редактора лазеров нет.</summary>
     private void UnderFire(Player p, double dt)
     {
         FaceWall(p);
         if (p.IsBot) BotWall(p, dt);
-        if (!p.Active || !Level[p.Index].Wall) return; // бот мог сломать стену
+        if (!p.Active || !Level[p.Index].Wall || Level[p.Index].Zone != LevelGenerator.Rainbow) return; // бот мог сломать стену
 
         p.WallSeconds += dt;
         if (p.WallLives <= 0) p.Out = true;
@@ -401,6 +428,7 @@ public sealed class Match
     {
         p.Index++;
         p.Progress = 0;
+        p.EnteredAt = GameTime;
 
         if (p.Index >= Level.Length)
         {
@@ -452,6 +480,7 @@ public sealed class Match
         {
             p.Index = Math.Max(0, p.Index - _rules.Setback);
             p.Progress = 0;
+            p.EnteredAt = GameTime;
             if (InRast(p)) StartHole(p); // ошибка отбросила обратно в «Раст»
         }
         else if (++p.Mistakes >= _rules.Lives)
@@ -474,6 +503,7 @@ public sealed class Match
         else if (Phase == MatchPhase.Running && p.Active && InRast(p)) PressRast(p, pressed);
         else if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Wall) HitWall(p);
         else if (Phase == MatchPhase.Running && p.Active && InCloud(p)) Hop(p, pressed);
+        else if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Spike) Prick(p);
         else if (Fast) Press(p, pressed);
         else if (Punishes && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Slip(p);
     }
@@ -616,7 +646,9 @@ public sealed class Match
         jump = GameRules.SwamJumpSeconds,
         holeStart = GameRules.RastStartGap,
         wallHits = GameRules.WallHits,
-        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall, lane = s.Lane }),
+        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall, lane = s.Lane, spike = s.Spike, fake = s.Fake }),
+        // блоки, декор и триггеры уровня из редактора; C уже номер ползунка в матче
+        objects = Custom?.Objects ?? [],
         players = Players.Select(p => new { slot = p.Slot, name = p.Name, bot = p.IsBot, skin = p.Skin, hero = p.Hero, team = p.Team }),
     };
 

@@ -2555,3 +2555,43 @@ button.ed-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
 .ed-code-status { margin: 0; font-size: 13px; font-weight: 800; color: var(--a1); }
 .ed-code-status.bad { color: #ff8da1; }
 .ed-code-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- Вкладки палитры и свойства объекта ---------- */
+
+.ed-palette { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ed-cats { display: flex; gap: 6px; padding: 0 4px; }
+.ed-cat {
+  padding: 3px 12px;
+  font: 900 12px var(--font-body);
+  color: #fff;
+  background: rgba(16, 12, 34, .45);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ed-cat.on { color: var(--text); background: var(--a3); border-color: var(--outline); }
+
+.ed-obj {
+  position: absolute; right: 12px; bottom: 44px;
+  display: flex; flex-direction: column; gap: 8px;
+  width: 250px;
+  padding: 12px;
+  color: #fff;
+  background: rgba(16, 12, 34, .88);
+  border: 3px solid var(--outline);
+  border-radius: 14px;
+}
+/* с открытым кодом панель встаёт левее него */
+.ed-code:not([hidden]) ~ .ed-obj, .ed-obj:has(~ .ed-code:not([hidden])) { right: 424px; }
+.ed-obj-head { display: flex; align-items: center; gap: 8px; }
+.ed-obj-head b { font: 900 15px var(--font-display); }
+.ed-obj-head span { flex: 1; font-size: 12px; opacity: .7; }
+.ed-obj-hint { margin: 0; font-size: 12px; line-height: 1.35; opacity: .85; }
+.ed-obj-colors { display: flex; flex-wrap: wrap; gap: 6px; }
+.ed-swatch-btn { width: 26px; height: 26px; padding: 0; border: 2px solid rgba(255, 255, 255, .5); border-radius: 50%; cursor: pointer; }
+.ed-swatch-btn.on { outline: 3px solid var(--a3); outline-offset: 1px; }
+.ed-swatch-btn.reset { background: conic-gradient(#ff4f9a, #ffb31f, #7ee03a, #22c7f0, #ff4f9a); }
+.ed-obj-size { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.ed-obj-size span { flex: 1; }
+.ed-obj-size b { min-width: 44px; text-align: center; }
+.ed-obj .btn { align-self: flex-start; }

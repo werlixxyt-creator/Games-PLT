@@ -86,6 +86,7 @@ public static class Database
                 "Difficulty" INTEGER NOT NULL,
                 "Theme" TEXT NOT NULL,
                 "Cells" TEXT NOT NULL,
+                "Objects" TEXT NOT NULL DEFAULT '[]',
                 "CellCount" INTEGER NOT NULL,
                 "Revision" INTEGER NOT NULL,
                 "Verified" BOOLEAN NOT NULL,
@@ -99,6 +100,7 @@ public static class Database
             )
             """;
         db.ExecuteSqlRaw(levelsTable); // в строку подставлен только тип Id из кода, не ввод игрока
+        AddColumnIfMissing(db, "CustomLevels", "Objects", "TEXT NOT NULL DEFAULT '[]'");
         db.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_CustomLevels_AuthorId\" ON \"CustomLevels\" (\"AuthorId\")");
         db.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_CustomLevels_Published\" ON \"CustomLevels\" (\"Published\")");
         db.ExecuteSqlRaw("""

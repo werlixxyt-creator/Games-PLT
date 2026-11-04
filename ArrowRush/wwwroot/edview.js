@@ -3,12 +3,14 @@
 // Превью уровня в редакторе, как в GD: тот же космос, что в матче, пол и потолок из блоков, ячейки по порядку вдоль пути.
 // Ключи рисует cells.js, как в матче. ↑ уводит путь вверх, ↓ вниз, длина участка — время заполнения.
 // Что делать с ячейкой под курсором, решает levels.js: сюда приходят только клики, протяжка и прокрутка.
+// Блоки, декор и триггеры (levelobj.js) стоят у стрелки своей ячейки; инструментом «Выбор» их таскают, ластиком удаляют.
 const edview = (() => {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const css = getComputedStyle(document.documentElement);
   const COLORS = [0, 1, 2, 3].map((i) => css.getPropertyValue("--a" + i).trim());
   const OUTLINE = css.getPropertyValue("--outline").trim() || "#1d1340";
   const SEL = COLORS[3];
+  const FAKE = "#d36bff";
 
   const VIEW_H = 960;        // столько единиц мира видно по высоте: на экране 6–8 ячеек
   const BASE = 60;           // длина участка: BASE + секунды заполнения × PER_SECOND
@@ -24,11 +26,12 @@ const edview = (() => {
   const PORTAL_AT = 250;     // финишный портал
   const MAP_H = 16, MAP_PAD = 12; // полоска всего уровня внизу, в пикселях экрана
 
-  let canvas, ctx, o;        // o: { get, hit(i), append() }
+  // o: { get, hit(i), append(), place(c, x, y) — поставить объект, pickObj(obj), eraseObj(obj), moved() — объект перетащили }
+  let canvas, ctx, o;
   let w = 0, h = 0, scale = 1;
   let camX = -300, camTarget = null, pendingFocus = null;
   let geo = null;            // { xs, ys, end } последнего кадра
-  let hover = null;          // номер ячейки под курсором, "add" — ячейка «+»
+  let hover = null;          // номер ячейки под курсором, "add" — ячейка «+», объект — сам объект
   let drag = null;
   let raf = 0, last = 0, time = 0;
   let heroImg = null, heroId = null;
@@ -57,6 +60,16 @@ const edview = (() => {
       ys.push(Math.max(-Y_LIMIT, Math.min(Y_LIMIT, y)));
     });
     return { xs, ys, end: xs[xs.length - 1] };
+  }
+
+  /** Стрелка ячейки c: к ней привязаны объекты. */
+  const keyAt = (c) => ({ x: geo.xs[c + 1], y: geo.ys[c + 1] });
+
+  /** Ячейка, чья стрелка ближе всего к x мира. */
+  function anchor(wx) {
+    let best = 0;
+    for (let c = 1; c < geo.xs.length - 1; c++) if (Math.abs(geo.xs[c + 1] - wx) < Math.abs(geo.xs[best + 1] - wx)) best = c;
+    return best;
   }
 
   function clampCam() {
@@ -228,8 +241,34 @@ const edview = (() => {
       ctx.stroke();
     }
 
-    cells.draw(ctx, { skin: s.skin, r, color: COLORS[c.a], t: time });
-    cells.arrow(ctx, r, c.a, current);
+    // препятствия: стена вместо стрелки, шипы — красная ячейка, обман — настоящая стрелка с пометкой для автора
+    if (c.o === "wall") {
+      levelobj.wall(ctx, r);
+      outlinedText("СТЕНА", 0, r * 2.2 + 26, "#d8d2e6", "900 15px Unbounded, sans-serif");
+    } else if (c.o === "spike") {
+      cells.draw(ctx, { skin: s.skin, r, color: levelobj.SPIKE, t: time });
+      levelobj.spikes(ctx, r);
+      outlinedText("ШИПЫ", 0, r + 38, levelobj.SPIKE, "900 16px Unbounded, sans-serif");
+    } else {
+      cells.draw(ctx, { skin: s.skin, r, color: COLORS[c.a], t: time });
+      cells.arrow(ctx, r, c.a, current);
+    }
+    if (c.o === "fake") {
+      ctx.strokeStyle = FAKE;
+      ctx.lineWidth = 4;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.arc(0, 0, r + 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // какой она покажется издалека
+      ctx.save();
+      ctx.translate(r * 0.95, r * 0.95);
+      ctx.globalAlpha = 0.85;
+      cells.arrow(ctx, r * 0.42, (c.a + 2) % 4, false);
+      ctx.restore();
+      outlinedText("ОБМАН", 0, r + 38, FAKE, "900 16px Unbounded, sans-serif");
+    }
 
     if (c.s) {
       const sp = s.specials[c.s];
@@ -315,6 +354,40 @@ const edview = (() => {
     ctx.restore();
   }
 
+  /** Объекты уровня: блоки и декор за дорогой, триггеры — значками поверх, с пунктиром вниз к своей ячейке. */
+  function drawObjects(s, left, right, triggers) {
+    for (const ob of s.objects) {
+      if (levelobj.isTrigger(ob.k) !== triggers || ob.c >= s.cells.length) continue;
+      const k = keyAt(ob.c), x = k.x + ob.x, y = k.y + ob.y, r = levelobj.radius(ob);
+      if (x < left - r * 2 || x > right + r * 2) continue;
+      if (triggers) {
+        ctx.strokeStyle = "rgba(255,255,255,.5)";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 8]);
+        ctx.beginPath();
+        ctx.moveTo(x, y + (y < k.y ? 26 : -26));
+        ctx.lineTo(x, k.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.save();
+      ctx.translate(x, y);
+      if (triggers) levelobj.drawTrigger(ctx, ob, ob === s.selObj);
+      else levelobj.draw(ctx, ob, time);
+      if (ob === s.selObj || ob === hover) {
+        ctx.strokeStyle = ob === s.selObj ? SEL : "rgba(255,255,255,.7)";
+        ctx.lineWidth = 4;
+        ctx.setLineDash([10, 8]);
+        ctx.lineDashOffset = reduce ? 0 : -time * 30;
+        ctx.beginPath();
+        ctx.arc(0, 0, r + 12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.restore();
+    }
+  }
+
   /** Полоска всего уровня: цвета стрелок, особые ячейки, выбранная и видимая часть. */
   function mapRect() {
     return { x: MAP_PAD, y: h - MAP_PAD - MAP_H, w: w - MAP_PAD * 2, h: MAP_H };
@@ -379,6 +452,7 @@ const edview = (() => {
     ctx.scale(scale, scale);
     drawBlocks(p, left, right);
     drawPortal(p);
+    drawObjects(s, left, right, false);
     // рисуем только видимые участки
     let from = 0;
     while (from < s.cells.length && geo.xs[from + 1] < left - 120) from++;
@@ -389,6 +463,7 @@ const edview = (() => {
     for (let i = from; i < to; i++) if (i !== s.sel) drawKey(s, i);
     if (s.sel >= from && s.sel < to) drawKey(s, s.sel);
     drawGhost(s);
+    drawObjects(s, left, right, true);
     ctx.restore();
 
     drawMap(s);
@@ -420,6 +495,24 @@ const edview = (() => {
     return null;
   }
 
+  /** Объект под точкой экрана: сверху то, что нарисовано позже, — триггеры, потом декор с конца списка. */
+  function hitObject({ x, y }) {
+    const s = o.get();
+    const wx = toWorld(x), wy = (y - h / 2) / scale;
+    for (const triggers of [true, false]) {
+      for (let i = s.objects.length - 1; i >= 0; i--) {
+        const ob = s.objects[i];
+        if (levelobj.isTrigger(ob.k) !== triggers || ob.c >= s.cells.length) continue;
+        const k = keyAt(ob.c);
+        if (Math.hypot(wx - (k.x + ob.x), wy - (k.y + ob.y)) <= levelobj.radius(ob) + 8) return ob;
+      }
+    }
+    return null;
+  }
+
+  /** Объекты ловят курсор только у «Выбора» и ластика: остальные инструменты работают с ячейками под ними. */
+  const objectsClickable = (s) => s.mode === "pick" || s.mode === "erase";
+
   function jumpMap(x) {
     const m = mapRect();
     const total = geo.end + PORTAL_AT;
@@ -437,13 +530,30 @@ const edview = (() => {
       jumpMap(pt.x);
       return;
     }
+    const s = o.get();
+    const ob = objectsClickable(s) ? hitObject(pt) : null;
+    if (ob) {
+      drag = null;
+      if (s.mode === "erase") return o.eraseObj(ob);
+      o.pickObj(ob);
+      if (!s.locked) drag = { kind: "move", ob, x: pt.x, y: pt.y, oc: ob.c, ox: ob.x, oy: ob.y, moved: false };
+      return;
+    }
     const hit = hitTest(pt);
     if (hit === "add") {
       drag = null;
       o.append();
       return;
     }
-    if (hit !== null && o.get().paints) {
+    if (s.mode === "object") {
+      // новый объект у ближайшей ячейки, там, куда кликнули
+      drag = null;
+      const wx = toWorld(pt.x), wy = (pt.y - h / 2) / scale;
+      const c = anchor(wx), k = keyAt(c);
+      o.place(c, wx - k.x, wy - k.y);
+      return;
+    }
+    if (hit !== null && s.paints) {
       drag = { kind: "paint", done: new Set([hit]) };
       o.hit(hit);
       return;
@@ -451,15 +561,33 @@ const edview = (() => {
     drag = { kind: "pan", x: pt.x, camX, moved: false, hit };
   }
 
+  /** Перетаскивание объекта: он переходит к ближайшей ячейке, триггер встаёт прямо над её стрелкой. */
+  function moveObject(pt) {
+    if (Math.abs(pt.x - drag.x) + Math.abs(pt.y - drag.y) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    const from = keyAt(drag.oc);
+    const wx = from.x + drag.ox + (pt.x - drag.x) / scale;
+    const wy = from.y + drag.oy + (pt.y - drag.y) / scale;
+    const c = anchor(wx), k = keyAt(c);
+    drag.ob.c = c;
+    drag.ob.x = levelobj.isTrigger(drag.ob.k) ? 0 : Math.round(wx - k.x);
+    drag.ob.y = Math.round(Math.max(-VIEW_H, Math.min(VIEW_H, wy)) - k.y);
+    canvas.style.cursor = "grabbing";
+  }
+
   function onMove(e) {
     const pt = local(e);
     if (!drag) {
-      hover = inMap(pt) ? null : hitTest(pt);
-      canvas.style.cursor = inMap(pt) || hover !== null ? "pointer" : "grab";
+      const s = o.get();
+      const ob = !inMap(pt) && objectsClickable(s) ? hitObject(pt) : null;
+      hover = ob || (inMap(pt) ? null : hitTest(pt));
+      canvas.style.cursor = ob ? "move" : s.mode === "object" ? "copy" : inMap(pt) || hover !== null ? "pointer" : "grab";
       return;
     }
     if (drag.kind === "map") {
       jumpMap(pt.x);
+    } else if (drag.kind === "move") {
+      moveObject(pt);
     } else if (drag.kind === "paint") {
       const hit = hitTest(pt);
       hover = hit;
@@ -478,7 +606,11 @@ const edview = (() => {
   }
 
   function onUp() {
-    if (drag && drag.kind === "pan" && !drag.moved && drag.hit !== null) o.hit(drag.hit);
+    if (drag && drag.kind === "pan" && !drag.moved) {
+      if (drag.hit !== null) o.hit(drag.hit);
+      else o.pickObj(null); // клик в пустоту снимает выбор с объекта
+    }
+    if (drag && drag.kind === "move" && drag.moved) o.moved();
     drag = null;
     canvas.style.cursor = "grab";
   }

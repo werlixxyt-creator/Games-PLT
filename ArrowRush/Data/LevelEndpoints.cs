@@ -15,7 +15,7 @@ public static class LevelEndpoints
     /// <summary>Сколько уровней в списке за раз.</summary>
     public const int ListSize = 50;
 
-    public sealed record LevelBody(string? Name, string? About, bool Fast, string? Difficulty, string? Theme, List<EditorCell>? Cells);
+    public sealed record LevelBody(string? Name, string? About, bool Fast, string? Difficulty, string? Theme, List<EditorCell>? Cells, List<LevelObject>? Objects);
 
     public static void MapLevels(this WebApplication app)
     {
@@ -35,8 +35,17 @@ public static class LevelEndpoints
     private static IResult NotFound() => AccountEndpoints.Error("Уровень не найден", 404);
 
     /// <summary>Уровень, готовый к матчу. Случайные части «Раста» и «Кловда» от id: у всех игроков уровень одинаковый.</summary>
-    public static PlayableLevel Playable(CustomLevel l) => new(l.Id, l.Name, l.AuthorId, l.Revision, l.Fast, l.Difficulty, l.Theme, l.Published,
-        LevelGenerator.FromEditor(JsonSerializer.Deserialize<List<EditorCell>>(l.Cells, JsonSerializerOptions.Web)!, l.Fast, new Random(l.Id)));
+    public static PlayableLevel Playable(CustomLevel l)
+    {
+        var cells = JsonSerializer.Deserialize<List<EditorCell>>(l.Cells, JsonSerializerOptions.Web)!;
+        // объекты привязаны к ячейкам редактора, а в матче между ними могут встать ячейки «Раста» и «Кловда»
+        var map = LevelGenerator.EditorIndexMap(cells);
+        var objects = ObjectsOf(l).Where(o => o.C >= 0 && o.C < map.Length).Select(o => o with { C = map[o.C] }).ToList();
+        return new(l.Id, l.Name, l.AuthorId, l.Revision, l.Fast, l.Difficulty, l.Theme, l.Published,
+            LevelGenerator.FromEditor(cells, l.Fast, new Random(l.Id)), objects);
+    }
+
+    private static List<LevelObject> ObjectsOf(CustomLevel l) => JsonSerializer.Deserialize<List<LevelObject>>(l.Objects, JsonSerializerOptions.Web) ?? [];
 
     /// <summary>Опубликованные уровни. q — часть названия или ника автора; sort — new, popular или liked.</summary>
     private static async Task<IResult> List(string? q, string? sort, ClaimsPrincipal principal, AppDb db)
@@ -107,6 +116,7 @@ public static class LevelEndpoints
         clears = l.Clears,
         likes = l.Likes,
         cells = JsonSerializer.Deserialize<List<EditorCell>>(l.Cells, JsonSerializerOptions.Web),
+        objects = ObjectsOf(l),
     };
 
     private static async Task<IResult> Create(LevelBody body, ClaimsPrincipal principal, AppDb db)
@@ -150,6 +160,13 @@ public static class LevelEndpoints
         level.Theme = LobbySettings.Themes.Contains(body.Theme) ? body.Theme! : "auto";
         // в быстром темпе секунды не нужны, но храним их: автор может переключить темп обратно
         level.Cells = JsonSerializer.Serialize(body.Cells!.Select(c => c with { F = Math.Round(c.F, 2) }), JsonSerializerOptions.Web);
+        level.Objects = JsonSerializer.Serialize((body.Objects ?? []).Select(o => o with
+        {
+            X = Math.Round(o.X, 1),
+            Y = Math.Round(o.Y, 1),
+            S = Math.Round(o.S, 2),
+            V = string.IsNullOrWhiteSpace(o.V) ? null : o.V.Trim(),
+        }), JsonSerializerOptions.Web);
         level.CellCount = body.Cells!.Count;
         level.UpdatedAt = now;
     }
@@ -224,11 +241,33 @@ public static class LevelEndpoints
             if (c.A is < 0 or > 3) return $"Ячейка {i + 1}: неизвестная стрелка";
             if (!body.Fast && (double.IsNaN(c.F) || c.F < GameRules.EditorMinFill || c.F > GameRules.EditorMaxFill))
                 return $"Ячейка {i + 1}: заполнение от {GameRules.EditorMinFill} до {GameRules.EditorMaxFill} с";
+            if (c.O is not null)
+            {
+                if (!LevelGenerator.EditorObstacles.Contains(c.O)) return $"Ячейка {i + 1}: неизвестное препятствие";
+                if (c.S is not null) return $"Ячейка {i + 1}: препятствие не ставится на особую ячейку";
+                if (i <= busyUntil) return $"Ячейка {i + 1}: препятствие внутри участка особой ячейки";
+            }
             if (c.S is null) continue;
             if (!LevelGenerator.EditorSpecials.TryGetValue(c.S, out var span)) return $"Ячейка {i + 1}: неизвестная особая ячейка";
             if (i <= busyUntil) return $"Ячейка {i + 1}: внутри участка прошлой особой ячейки";
             if (i + span >= cells.Count) return $"Ячейка {i + 1}: за ней нужно ещё {span} ячеек";
             busyUntil = i + span;
+        }
+        return ValidateObjects(body.Objects ?? [], cells.Count);
+    }
+
+    /// <summary>Объекты: известный вид, своя ячейка есть, недалеко от неё, разумный размер и короткое значение.</summary>
+    private static string? ValidateObjects(List<LevelObject> objects, int cellCount)
+    {
+        if (objects.Count > GameRules.EditorMaxObjects) return $"Не больше {GameRules.EditorMaxObjects} объектов";
+        foreach (var o in objects)
+        {
+            if (o.K is null || !LevelGenerator.EditorObjects.Contains(o.K)) return "Неизвестный объект";
+            if (o.C < 0 || o.C >= cellCount) return "Объект привязан к ячейке, которой нет";
+            if (!double.IsFinite(o.X) || !double.IsFinite(o.Y) || Math.Abs(o.X) > GameRules.EditorObjectReach || Math.Abs(o.Y) > GameRules.EditorObjectReach)
+                return "Объект слишком далеко от своей ячейки";
+            if (!double.IsFinite(o.S) || o.S < 0.25 || o.S > 4) return "Размер объекта от 0.25 до 4";
+            if (o.V is { Length: > 40 }) return "Текст объекта не длиннее 40 символов";
         }
         return null;
     }

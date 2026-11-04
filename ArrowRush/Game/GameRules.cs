@@ -113,6 +113,14 @@ public static class GameRules
     public const int LevelAboutMax = 140;
     /// <summary>Сколько уровней (черновиков и опубликованных) может быть у одного игрока.</summary>
     public const int LevelsPerUser = 50;
+    /// <summary>Сколько блоков, декораций и триггеров можно поставить на уровень.</summary>
+    public const int EditorMaxObjects = 400;
+    /// <summary>Насколько далеко от своей ячейки может стоять объект, в единицах сцены.</summary>
+    public const double EditorObjectReach = 2000;
+    /// <summary>Шипы в быстром темпе: столько секунд ничего не нажимать (в обычном — время заполнения ячейки).</summary>
+    public const double SpikeFastSeconds = 0.6;
+    /// <summary>Столько секунд после входа на шипы нажатие не считается ударом: последний удар по стене или лишнее нажатие не наказывают.</summary>
+    public const double SpikeGraceSeconds = 0.3;
     /// <summary>Лимит времени матча на своём уровне: столько раз дольше, чем нужно на сами ячейки, и не меньше обычного.</summary>
     public const double CustomTimeFactor = 3;
 }

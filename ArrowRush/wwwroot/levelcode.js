@@ -1,12 +1,13 @@
 "use strict";
 
 // «Код уровня» — маленький язык редактора: текст собирается в ячейки { a, f, s }, как будто их расставили руками.
-// В нём только то, из чего состоит уровень: стрелки, время заполнения, особые ячейки, повторы,
+// В нём только то, из чего состоит уровень: стрелки, время заполнения, особые ячейки, препятствия, повторы,
 // превращения стрелок и шаблоны. Шаблон можно позвать только после того, как он описан, поэтому зациклиться нельзя.
 const levelcode = (() => {
   const ARROWS = { "←": 0, "↑": 1, "→": 2, "↓": 3, l: 0, u: 1, r: 2, d: 3 }; // буквы — в любом регистре
   const SPECIALS = { чарт: "chart", свам: "swam", овердрайв: "over", шторм: "storm", переворот: "flip", радуга: "rainbow", раст: "rast", кловд: "cloud" };
-  const WORDS = new Set(["время", "повтор", "зеркало", "поворот", "разгон", "шаблон", ...Object.keys(SPECIALS)]);
+  const OBSTACLES = { стена: "wall", шипы: "spike", обман: "fake" };
+  const WORDS = new Set(["время", "повтор", "зеркало", "поворот", "разгон", "шаблон", ...Object.keys(SPECIALS), ...Object.keys(OBSTACLES)]);
   const MIRROR = [2, 3, 0, 1]; // стрелка наоборот, как в режиме «Зеркало»
   const TURN = [1, 2, 3, 0];   // поворот по часовой: ← ↑ → ↓ → ↑ → ↓ ←
 
@@ -20,6 +21,7 @@ const levelcode = (() => {
     ["поворот { … }", "стрелки блока повёрнуты по часовой: ↑ → ↓ ←"],
     ["разгон 1.5 0.5 { … }", "время ячеек блока плавно меняется от первого числа ко второму"],
     ["чарт ↑", "особая ячейка со стрелкой, так же свам, овердрайв, шторм, переворот, радуга, раст, кловд"],
+    ["стена  шипы  обман ↑", "препятствие: стену ломают нажатиями, на шипах ничего не жми, обман показывает не ту стрелку"],
     ["шаблон имя { … }", "запомнить блок под именем; дальше просто пиши имя"],
     ["# текст", "комментарий до конца строки"],
   ];
@@ -94,11 +96,13 @@ const levelcode = (() => {
       const tok = take();
       const { t, line } = tok;
       if (t in ARROWS || t === "?") return { kind: "cell", a: t === "?" ? null : ARROWS[t], line };
-      if (t in SPECIALS) {
+      if (t in SPECIALS || t in OBSTACLES) {
+        // стрелка после слова необязательна: без неё — случайная
         const next = peek();
         const hasArrow = next && (next.t in ARROWS || next.t === "?");
         if (hasArrow) take();
-        return { kind: "cell", a: hasArrow && next.t !== "?" ? ARROWS[next.t] : null, s: SPECIALS[t], line };
+        const a = hasArrow && next.t !== "?" ? ARROWS[next.t] : null;
+        return t in SPECIALS ? { kind: "cell", a, s: SPECIALS[t], line } : { kind: "cell", a, o: OBSTACLES[t], line };
       }
       if (t === "время") return { kind: "time", v: number(t), line };
       if (t === "повтор") {
@@ -151,7 +155,7 @@ const levelcode = (() => {
           if (st.kind === "time") f = fill(st.v, st.line);
           else if (st.kind === "cell") {
             if (out.length >= limits.maxCells) throw new CodeError(st.line, `Больше ${limits.maxCells} ячеек не поместится`);
-            out.push({ a: st.a === null ? randomArrow() : map(st.a), f, s: st.s || null });
+            out.push({ a: st.a === null ? randomArrow() : map(st.a), f, s: st.s || null, o: st.o || null });
           } else if (st.kind === "repeat") {
             for (let k = 0; k < st.n; k++) run(st.body, f, map);
           } else if (st.kind === "map") {

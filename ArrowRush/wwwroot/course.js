@@ -115,6 +115,11 @@ const course = (() => {
   let strike = 0, strikeAt = 0; // шторм: яркость молнии и когда ударит следующая
   let punch = 0;        // толчок камеры, затухает
   let danger = 0;       // финал уровня: красные края экрана, 0..1
+  let decor = [];       // блоки и декор уровня из редактора (levelobj.js)
+  let triggers = [];    // его триггеры, по порядку ячеек
+  // что сейчас показывают триггеры: pal — палитра космоса (null — своя), zoomNow, tiltNow — камера; from — с какой ячейки ещё не сработали разовые
+  let trig = { pal: null, zoomNow: 1, tiltNow: 0, from: 0 };
+  let lastFake = -1;    // обман, который уже открылся
 
   /** Повторяемый генератор случайных чисел: один и тот же матч — одна и та же траектория. */
   function rng(seed) {
@@ -864,7 +869,7 @@ const course = (() => {
   function drawKey(i, current, progress, wrong) {
     const pts = map.segs[i], p = pts[pts.length - 1];
     const arrow = arrowOf(i);
-    const color = COLORS[arrow]; // цвет стрелки зависит только от направления
+    const color = opts.level[i].spike ? SPIKE : COLORS[arrow]; // цвет стрелки зависит только от направления, у шипов — красный
     const hidden = hiddenCell(i);
     const r = (opts.fast || opts.level[i].zone === "rast" ? 25 : 33) * (current ? 1.26 + beat * 0.12 : 1);
 
@@ -906,8 +911,11 @@ const course = (() => {
     // «Радуга» приходит без предупреждения: её ячейка выглядит обычной
     const named = opts.level[i].event;
     if (named && named !== "rainbow") drawBadge(r, EVENTS[named].label, EVENTS[named].color);
+    if (opts.level[i].spike) drawBadge(r, "ШИПЫ", SPIKE);
 
-    if (hidden) {
+    if (opts.level[i].spike && !hidden) {
+      drawSpikes(r);
+    } else if (hidden) {
       ctx.fillStyle = "#fff";
       ctx.font = `900 ${r}px Unbounded, sans-serif`;
       ctx.textAlign = "center";
@@ -918,6 +926,11 @@ const course = (() => {
     }
     ctx.restore();
   }
+
+  const SPIKE = levelobj.SPIKE;
+
+  /** Шипы вместо стрелки: здесь ничего не нажимать. */
+  const drawSpikes = (r) => levelobj.spikes(ctx, r);
 
   /** Портал между секциями и финишный — овалы с полупрозрачным сиянием. */
   function drawPortal(x, y, color, size) {
@@ -937,6 +950,55 @@ const course = (() => {
       ctx.stroke();
     }
     ctx.restore();
+  }
+
+  const HEX = /^#[0-9a-f]{6}$/i;
+
+  /**
+   * Триггеры уровня из редактора: срабатывает тот, чью ячейку игрок прошёл.
+   * Цвет, зум и наклон — последний пройденный своего вида, к нему всё плавно перетекает;
+   * вспышка и тряска — разово, в момент, когда игрок их пересёк.
+   */
+  function runTriggers(dt) {
+    if (!triggers.length) return;
+    let zoom = 1, turn = 0, color = null;
+    for (const t of triggers) {
+      if (t.c >= reached) break;
+      if (t.k === "t-zoom") zoom = clamp(+t.v || 1, 0.5, 2);
+      else if (t.k === "t-tilt") turn = (clamp(+t.v || 0, -30, 30) * Math.PI) / 180;
+      else if (t.k === "t-color") color = HEX.test(t.v || "") ? t.v : null;
+      else if (t.c >= trig.from && t.k === "t-flash") flashOf(1, levelobj.hexRgb(HEX.test(t.v || "") ? t.v : "#ffffff"));
+      else if (t.c >= trig.from && t.k === "t-shake") {
+        const power = clamp(+t.v || 0.6, 0, 1);
+        if (!reduce) shake = Math.max(shake, power);
+        punch = Math.max(punch, power * 0.6);
+        kick(0.05 * power);
+      }
+    }
+    trig.from = Math.max(trig.from, reached);
+
+    const k = 1 - Math.exp(-dt * 3);
+    const target = color ? levelobj.palette(color) : map.colors;
+    if (!trig.pal) trig.pal = { ...map.colors };
+    for (const key of Object.keys(target)) trig.pal[key] = mixRgb(trig.pal[key], target[key], k);
+    trig.zoomNow += (zoom - trig.zoomNow) * k;
+    trig.tiltNow += (turn - trig.tiltNow) * k;
+  }
+
+  /** Блоки и декор уровня из редактора: стоят у стрелки своей ячейки, сдвинутые на x, y. */
+  function drawDecor(left, right) {
+    for (const o of decor) {
+      const pts = map.segs[o.c];
+      if (!pts) continue;
+      const p = pts[pts.length - 1];
+      const x = p[0] + o.x, r = levelobj.radius(o) * 2;
+      if (x < left - r || x > right + r) continue;
+      ctx.save();
+      ctx.translate(x, p[1] + o.y);
+      if (flipY() < 0) ctx.scale(1, -1); // в перевороте текст и блоки не встают вверх ногами
+      levelobj.draw(ctx, o, time);
+      ctx.restore();
+    }
   }
 
   function drawPortals(left, right) {
@@ -2238,8 +2300,9 @@ const course = (() => {
     // камера дышит: медленно покачивается и пружинит от ударов
     const sway = Math.sin(time * 0.6) * 0.012 + Math.sin(time * 0.23) * 0.008;
     ctx.translate(cssW * heroAt() + sx, cssH / 2 + sy);
-    ctx.rotate(reduce ? 0 : tilt + roll + sway);
-    ctx.scale(scale * zoom, scale * zoom * flipY());
+    // зум и наклон из триггеров уровня работают и при reduce: это задумка автора, а не тряска
+    ctx.rotate((reduce ? 0 : tilt + roll + sway) + trig.tiltNow);
+    ctx.scale(scale * zoom * trig.zoomNow, scale * zoom * trig.zoomNow * flipY());
     ctx.translate(-camX, -camY);
   }
 
@@ -2253,7 +2316,16 @@ const course = (() => {
     o.level.forEach((cell, i) => {
       if (cell.chart || cell.swam || cell.event) chartAt = i;
       cell.chartAt = chartAt;
+      // препятствия из редактора: обман открывает настоящую стрелку, когда игрок дошёл; отдельная стена видна сразу
+      if (cell.fake) cell.chartAt = i - 1;
+      if (cell.wall && cell.zone !== "rainbow") cell.chartAt = -1;
     });
+    // объекты из редактора: триггеры по порядку ячеек, блоки и декор — для рисования
+    const objects = (o.objects || []).filter((x) => levelobj.KINDS[x.k] && x.c >= 0 && x.c < o.level.length);
+    triggers = objects.filter((x) => levelobj.isTrigger(x.k)).sort((a, b) => a.c - b.c);
+    decor = objects.filter((x) => !levelobj.isTrigger(x.k));
+    trig = { pal: null, zoomNow: 1, tiltNow: 0, from: 0 };
+    lastFake = -1;
     reached = 0;
     map = build(o.level, o.fast, o.seed, o.theme);
     s = 0;
@@ -2295,6 +2367,7 @@ const course = (() => {
   function follow({ hero, cell, trailOf, pos }) {
     Object.assign(opts, { hero, cell, trailOf });
     s = pos;
+    trig.from = Math.floor(pos); // разовые триггеры позади нового игрока не срабатывают все разом
     pops = [];
     fly = null;
     rain = null;
@@ -2555,13 +2628,22 @@ const course = (() => {
 
     // ивент текущей ячейки: включается и гаснет плавно, космос уходит в его цвета
     zoneNow = s < n ? opts.level[Math.floor(s)].zone : null;
+    // обман открылся: короткая вспышка, чтобы было видно, что стрелка сменилась
+    if (opts.level[reached]?.fake && reached !== lastFake) {
+      lastFake = reached;
+      flashOf(0.3, [255, 90, 170]);
+      kick(0.02);
+    }
     for (const k of Object.keys(zones)) zones[k] += ((zoneNow === k ? 1 : 0) - zones[k]) * (1 - Math.exp(-dt * 3.5));
     const tinted = zones.cloud > zones.over ? [CLOUD_PALETTE, zones.cloud] : [OVER_PALETTE, zones.over];
+    runTriggers(dt);
+    // триггер цвета меняет сам космос, ивенты окрашивают уже его
+    const base = trig.pal || map.colors;
     if (tinted[1] > 0.01) {
       palette = {};
-      for (const key of Object.keys(OVER_PALETTE)) palette[key] = mixRgb(map.colors[key], tinted[0][key], tinted[1]);
+      for (const key of Object.keys(OVER_PALETTE)) palette[key] = mixRgb(base[key], tinted[0][key], tinted[1]);
     } else {
-      palette = map.colors;
+      palette = base;
     }
     morphed *= Math.exp(-dt * 4);
 
@@ -2716,6 +2798,7 @@ const course = (() => {
       ctx.globalAlpha = 1;
     }
     drawPortals(left, right);
+    drawDecor(left, right);
     if (zones.rast > 0.01) {
       // весь мир исчезает: остаются чернота, дорога и персонаж
       ctx.save();

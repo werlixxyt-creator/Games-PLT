@@ -91,17 +91,31 @@ public static class GameModes
 /// Event — ячейка ивента (см. <see cref="LevelGenerator.Events"/>), проходится как обычная. Zone — ячейка за ней: тот же ивент в действии.
 /// Wall — стена «Радуги»: её ломают нажатиями любой клавиши. Пока ивент не начался, она выглядит обычной ячейкой со стрелкой Was.
 /// Lane — ячейка «Кловда»: стрелка летит по этой линии (0 — потолок, 1 — пол), FillSeconds — через сколько она долетит до игрока.
+/// Препятствия из редактора: Wall без Zone — отдельная стена, жизни у неё не тают. Spike — шипы: ячейка проходит сама,
+/// пока ничего не нажато, а нажатие — удар. Fake — обман: до неё видна стрелка Was, настоящая открывается, когда игрок дошёл.
 /// </summary>
-public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false, string? Event = null, string? Zone = null, bool Wall = false, int? Lane = null);
+public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false, string? Event = null, string? Zone = null, bool Wall = false, int? Lane = null,
+    bool Spike = false, bool Fake = false);
 
 /// <summary>
 /// Уровень из редактора, готовый к матчу. Revision — номер правки: прохождение автора засчитывается,
 /// только если уровень с тех пор не менялся.
 /// </summary>
-public sealed record PlayableLevel(int Id, string Name, string AuthorId, int Revision, bool Fast, Difficulty Difficulty, string Theme, bool Published, Slider[] Sliders);
+public sealed record PlayableLevel(int Id, string Name, string AuthorId, int Revision, bool Fast, Difficulty Difficulty, string Theme, bool Published, Slider[] Sliders,
+    IReadOnlyList<LevelObject> Objects);
 
-/// <summary>Ячейка редактора уровней: стрелка 0..3, секунды заполнения в обычном темпе, особая ячейка (см. <see cref="LevelGenerator.EditorSpecials"/>) или null.</summary>
-public sealed record EditorCell(int A, double F, string? S = null);
+/// <summary>
+/// Ячейка редактора уровней: стрелка 0..3, секунды заполнения в обычном темпе, особая ячейка (см. <see cref="LevelGenerator.EditorSpecials"/>) или null,
+/// препятствие (см. <see cref="LevelGenerator.EditorObstacles"/>) или null.
+/// </summary>
+public sealed record EditorCell(int A, double F, string? S = null, string? O = null);
+
+/// <summary>
+/// Блок, декорация или триггер из редактора (виды — <see cref="LevelGenerator.EditorObjects"/>). На игру сервер их не тратит:
+/// рисует и запускает их клиент. C — номер ячейки, к которой объект привязан, X и Y — сдвиг от её стрелки,
+/// S — размер, V — цвет, текст или сила триггера.
+/// </summary>
+public sealed record LevelObject(string K, int C, double X, double Y, double S = 1, string? V = null);
 
 public static class LevelGenerator
 {
@@ -214,7 +228,14 @@ public static class LevelGenerator
     /// </summary>
     public static Slider[] FromEditor(IReadOnlyList<EditorCell> cells, bool fast, Random rnd)
     {
-        var sliders = cells.Select(c => new Slider((Arrow)c.A, fast ? 0 : Math.Round(c.F, 2))).ToArray();
+        var sliders = cells.Select(c => c.O switch
+        {
+            // стена до удара выглядит своей стрелкой, обман — противоположной
+            "wall" => new Slider((Arrow)c.A, 0, Wall: true, Was: (Arrow)c.A),
+            "spike" => new Slider((Arrow)c.A, fast ? GameRules.SpikeFastSeconds : Math.Round(c.F, 2), Spike: true),
+            "fake" => new Slider((Arrow)c.A, fast ? 0 : Math.Round(c.F, 2), Was: (Arrow)((c.A + 2) % 4), Fake: true),
+            _ => new Slider((Arrow)c.A, fast ? 0 : Math.Round(c.F, 2)),
+        }).ToArray();
         var added = new List<(int At, string Name)>();
         for (var i = 0; i < cells.Count; i++)
         {
@@ -230,6 +251,30 @@ public static class LevelGenerator
         foreach (var (spot, name) in Enumerable.Reverse(added))
             sliders = name == Rast ? AddRast(sliders, spot, rnd) : AddCloud(sliders, spot, rnd);
         return sliders;
+    }
+
+    /// <summary>Препятствия, которые автор ставит на ячейку. Особой ячейкой и ячейкой внутри её участка оно быть не может.</summary>
+    public static readonly HashSet<string> EditorObstacles = ["wall", "spike", "fake"];
+
+    /// <summary>Виды объектов редактора: блоки, декор и триггеры (t-…). Как они выглядят и что делают — levelobj.js.</summary>
+    public static readonly HashSet<string> EditorObjects =
+    [
+        "block", "half", "ramp", "pillar",
+        "text", "star", "cloud", "ring", "crystal", "lamp",
+        "t-color", "t-flash", "t-shake", "t-zoom", "t-tilt",
+    ];
+
+    /// <summary>Номер ячейки редактора → номер ползунка в матче: «Раст» и «Кловд» вставляют свои ячейки и сдвигают следующие.</summary>
+    public static int[] EditorIndexMap(IReadOnlyList<EditorCell> cells)
+    {
+        var map = new int[cells.Count];
+        var shift = 0;
+        for (var i = 0; i < cells.Count; i++)
+        {
+            map[i] = i + shift;
+            shift += cells[i].S switch { Rast => GameRules.RastCells, Cloud => GameRules.CloudCells, _ => 0 };
+        }
+        return map;
     }
 
     /// <summary>«Радуга»: каждая вторая ячейка за особой становится стеной, между ними обычные ячейки.</summary>

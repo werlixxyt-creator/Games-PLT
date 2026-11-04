@@ -62,6 +62,8 @@ public sealed class CustomLevel
     public Difficulty Difficulty { get; set; } = Difficulty.Normal;
     public required string Theme { get; set; }
     public required string Cells { get; set; }
+    /// <summary>Блоки, декор и триггеры: JSON-список <see cref="Game.LevelObject"/>.</summary>
+    public string Objects { get; set; } = "[]";
     public int CellCount { get; set; }
     public int Revision { get; set; }
     public bool Verified { get; set; }
