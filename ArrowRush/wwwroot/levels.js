@@ -462,7 +462,29 @@ const levels = (() => {
   let styleClip = null; // «Копировать стиль»: вид и цвет, которые вставит «Вставить стиль»
   let objShown = null;  // какой объект сейчас в панели: панель не пересобирается, пока его правят
 
-  let cellPanel = false; // показывать настройки выбранной особой ячейки
+  let cellPanel = false; // устарело: настройки теперь открываются только кнопкой, см. panelFor
+  let panelFor = null;   // для чего открыты настройки: объект или "cell:N:вид"; null — закрыты
+
+  /** Что сейчас можно настроить: выбранный объект или выбранная особая ячейка; null — ничего. */
+  function settingsTarget() {
+    if (selObj) return selObj;
+    const c = ed && ed.cells[sel];
+    return c && c.s ? `cell:${sel}:${c.s}` : null;
+  }
+
+  /** Кнопка «Настройки» открывает и закрывает окно настроек выбранного. */
+  function toggleSettings(on) {
+    const target = settingsTarget();
+    panelFor = target && (on ?? panelFor !== target) ? target : null;
+    renderObj(true);
+  }
+
+  function renderSettingsButton(target, open) {
+    const b = $("ed-settings");
+    b.disabled = !target;
+    b.classList.toggle("on", open);
+    b.title = target ? (open ? "Закрыть настройки (E)" : "Открыть настройки выбранного (E)") : "Выбери объект или особую ячейку в «Правке»";
+  }
 
   /** Настройки особой ячейки: длина участка (или сколько ячеек она добавит) и сила, если она у неё есть. */
   function renderCellPanel(box, c) {
@@ -477,7 +499,7 @@ const levels = (() => {
     const close = el("button", "ed-code-x", "×");
     close.type = "button";
     close.setAttribute("aria-label", "Закрыть");
-    close.addEventListener("click", () => { cellPanel = false; renderObj(true); });
+    close.addEventListener("click", () => toggleSettings(false));
     const title = el("b", null, sp.name);
     title.style.color = sp.color;
     head.append(title, el("span", null, `особая ячейка ${sel + 1}`), close);
@@ -565,9 +587,13 @@ const levels = (() => {
   function renderObj(force = false) {
     const box = $("ed-obj");
     if (selObj && !ed.objects.includes(selObj)) selObj = null;
-    const cell = !selObj && cellPanel && ed.cells[sel] && ed.cells[sel].s ? ed.cells[sel] : null;
-    box.hidden = !selObj && !cell;
-    if (!selObj && !cell) {
+    const cell = !selObj && ed.cells[sel] && ed.cells[sel].s ? ed.cells[sel] : null;
+    const target = settingsTarget();
+    // настройки открываются только кнопкой «Настройки» (или E) и только для того, для чего их открыли
+    const open = !!target && panelFor === target;
+    box.hidden = !open;
+    renderSettingsButton(target, open);
+    if (!open) {
       objShown = null;
       return;
     }
@@ -656,7 +682,7 @@ const levels = (() => {
     }
 
     const head = el("div", "ed-obj-head");
-    const close = button("ed-code-x", "×", () => pickObj(null));
+    const close = button("ed-code-x", "×", () => toggleSettings(false));
     close.disabled = false;
     close.setAttribute("aria-label", "Снять выбор");
     head.append(el("b", null, kind.name), el("span", null, `у ячейки ${ob.c + 1}`), close);
@@ -1384,8 +1410,11 @@ const levels = (() => {
       if (selObj) eraseObj(selObj);
       else removeSel();
     } else if (e.code === "Escape") {
+      if (panelFor) { toggleSettings(false); return; } // сначала Esc закрывает настройки
       pickObj(null);
       setMode("edit");
+    } else if (e.code === "KeyE" && !e.ctrlKey && !e.metaKey) {
+      toggleSettings();
     } else if (e.code === "KeyB" && !e.ctrlKey && !e.metaKey) {
       setMode("build");
     } else if (e.code === "KeyX" && !e.ctrlKey && !e.metaKey) {
@@ -1478,6 +1507,7 @@ const levels = (() => {
     $("ed-snap").addEventListener("click", () => { snap = !snap; renderTools(); });
     $("ed-rotate").addEventListener("click", rotateObj);
     $("ed-clone").addEventListener("click", cloneObj);
+    $("ed-settings").addEventListener("click", () => toggleSettings());
     // ширина сетки меняется с окном: на страницу влезает другое число кнопок
     new ResizeObserver(() => { if (ed) renderTools(); }).observe($("ed-tools"));
 
@@ -1508,7 +1538,7 @@ const levels = (() => {
         for (let k = at - 1; k >= 0; k--) if (ed.cells[k].s && k + spanOf(ed.cells[k]) >= at) { at = k; break; }
       }
       select(at);
-      cellPanel = !!ed.cells[sel].s;
+      panelFor = settingsTarget(); // клик по ошибке — явная просьба показать, что поправить
       renderObj(true);
     });
     $("ed-test").addEventListener("click", test);

@@ -2397,6 +2397,7 @@ body[data-screen="editor"] .top-right { display: none; }
 .ed-mode.on { background: var(--a0); transform: translateY(3px); box-shadow: 0 1px 0 var(--outline), inset 0 3px 0 rgba(0, 0, 0, .18); }
 .ed-act { min-height: 50px; padding: 4px; font-size: 12px; }
 .ed-act.on { background: var(--a3); }
+.ed-act-wide { grid-column: 1 / -1; min-height: 34px; }
 .ed-mode:hover:not(:disabled):not(.on), .ed-act:hover:not(:disabled) { filter: brightness(1.1); }
 .ed-act:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--outline); }
 .ed-mode:disabled, .ed-act:disabled { opacity: .4; cursor: default; filter: grayscale(.6); }
