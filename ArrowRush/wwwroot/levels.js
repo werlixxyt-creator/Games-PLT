@@ -74,8 +74,13 @@ const levels = (() => {
     hard: { idle: 0.55, wrong: 1.7, stun: 0.7 },
   };
 
-  // вкладки палитры, как в GD; «Выбор» и «Ластик» есть на каждой
-  const CATS = [["cells", "Ячейки"], ["obstacles", "Препятствия"], ["blocks", "Блоки"], ["deco", "Декор"], ["triggers", "Триггеры"]];
+  // вкладки палитры снизу, как в GD: [id, название, значок — инструмент, чей значок рисуется на вкладке]
+  const CATS = [
+    ["cells", "Стрелки", "a1"],
+    ["special", "Особые ячейки", "chart"],
+    ["obstacles", "Препятствия", "o-spike"],
+    ...levelobj.CATS.map(([id, name, k]) => [id, name, "obj-" + k]),
+  ];
   // препятствия на ячейке, как LevelGenerator.EditorObstacles
   const OBSTACLES = {
     wall: { name: "Стена", color: "#8a8399", hint: "ячейку ломают 10 нажатиями любой стрелки" },
@@ -83,22 +88,25 @@ const levels = (() => {
     fake: { name: "Обман", color: "#d36bff", hint: "издалека видна противоположная стрелка, настоящая открывается, когда до неё дошёл" },
   };
 
-  // инструменты верхней панели: что делает клик по превью. mode — для edview: cell, object, pick или erase
+  // инструменты: что делает клик по превью. mode — для edview: cell, object, pick или erase.
+  // «Выбор» и «Ластик» — это режимы «Правка» и «Удалить» слева, в палитре их нет
   const TOOLS = [
-    { id: "pick", mode: "pick", name: "Выбор", color: "var(--muted-room)", hint: "клик выбирает ячейку или объект, объект можно тащить, протяжка по пустому месту листает уровень" },
+    { id: "pick", mode: "pick", name: "Правка", color: "var(--muted-room)", hint: "клик выбирает ячейку или объект, объект можно тащить, протяжка по пустому месту листает уровень" },
     ...[0, 1, 2, 3].map((a) => ({ id: "a" + a, cat: "cells", arrow: a, name: ARROW_NAMES[a], color: `var(--a${a})`, hint: "клик или протяжка по ячейкам ставит эту стрелку, «+» в конце добавляет ячейку" })),
     { id: "plain", cat: "cells", name: "Обычная", color: "#c3c7d9", hint: "клик убирает особую ячейку" },
-    ...Object.entries(SPECIALS).map(([id, s]) => ({ id, cat: "cells", special: true, name: s.name, color: s.color, hint: s.hint })),
+    ...Object.entries(SPECIALS).map(([id, s]) => ({ id, cat: "special", special: true, name: s.name, color: s.color, hint: s.hint })),
     ...Object.entries(OBSTACLES).map(([id, s]) => ({ id: "o-" + id, cat: "obstacles", obstacle: id, name: s.name, color: s.color, hint: "клик по ячейке: " + s.hint })),
     { id: "o-none", cat: "obstacles", obstacle: null, name: "Убрать", color: "#c3c7d9", hint: "клик убирает препятствие с ячейки" },
-    ...Object.entries(levelobj.KINDS).map(([k, s]) => ({
+    ...Object.entries(levelobj.KINDS).filter(([, s]) => !s.old).map(([k, s]) => ({
       id: "obj-" + k, cat: s.cat, object: k, name: s.name, color: s.color,
-      hint: levelobj.isTrigger(k) ? `клик ставит триггер к ближайшей ячейке: ${s.hint}` : "клик ставит объект туда, куда нажал; «Выбором» его можно тащить",
+      hint: levelobj.isTrigger(k) ? `клик ставит триггер к ближайшей ячейке: ${s.hint}` : "клик ставит объект туда, куда нажал; в «Правке» его можно тащить",
     })),
-    { id: "erase", mode: "erase", name: "Ластик", color: "#ff3b5c", hint: "клик удаляет объект или ячейку" },
+    { id: "erase", mode: "erase", name: "Удалить", color: "#ff3b5c", hint: "клик удаляет объект или ячейку" },
   ];
   for (const t of TOOLS) t.mode ??= t.object ? "object" : "cell";
   const TOOL = Object.fromEntries(TOOLS.map((t) => [t.id, t]));
+  const ROWS = 3;      // строк в сетке палитры
+  const GRID = 30;     // шаг сетки объектов, в единицах сцены
 
   let opts = null;     // { conn, show, screen, onPlay, me }
   let view = "online"; // вкладка списка: online или mine
@@ -108,7 +116,11 @@ const levels = (() => {
   let sel = 0;         // выбранная ячейка
   let selObj = null;   // выбранный объект (блок, декор, триггер) или null
   let cat = "cells";   // вкладка палитры
-  let tool = "pick";   // инструмент верхней панели
+  let tool = "pick";   // что сейчас делает клик: pick в «Правке», erase в «Удалить», иначе buildTool
+  let buildTool = "a1"; // что выбрано в палитре для режима «Строить»
+  let page = 0;        // страница палитры
+  let swipe = false;   // «Протяжка»: объекты ставятся один за другим, пока ведёшь мышью
+  let snap = true;     // «Сетка»: объекты встают по клеткам GRID×GRID
   let focused = -1;    // к какой ячейке последний раз ехала камера превью
   let zoneMap = new Map(); // участки особых ячеек, см. zones()
 
@@ -332,7 +344,7 @@ const levels = (() => {
   // ---------- Объекты: блоки, декор, триггеры ----------
 
   /** Объект в том виде, в каком его хранит сервер (LevelObject). */
-  const cleanObj = (o) => ({ k: o.k, c: o.c, x: o.x, y: o.y, s: o.s ?? 1, v: o.v ?? null });
+  const cleanObj = (o) => ({ k: o.k, c: o.c, x: o.x, y: o.y, s: o.s ?? 1, v: o.v ?? null, r: o.r || 0 });
   const clampReach = (v) => Math.round(Math.max(-OBJECT_REACH, Math.min(OBJECT_REACH, v)));
 
   /** Ячейки вставили: объекты остаются у своих ячеек. */
@@ -364,12 +376,38 @@ const levels = (() => {
     if (selObj === ob) return;
     selObj = ob;
     renderObj();
+    renderTools(); // «Поворот» и «Копия» работают с выбранным объектом
   }
 
   function eraseObj(ob) {
     change(() => {
       ed.objects.splice(ed.objects.indexOf(ob), 1);
       if (selObj === ob) selObj = null;
+    });
+  }
+
+  /** «Поворот»: выбранный объект на 90° по часовой. */
+  function rotateObj() {
+    if (!selObj || !levelobj.rotatable(selObj.k)) return;
+    const ob = selObj;
+    change(() => { ob.r = ((ob.r || 0) + 90) % 360; });
+  }
+
+  /** Ширина объекта вида k размера s, округлённая до клеток сетки: шаг «Протяжки» и «Копии». */
+  const swipeStep = (k, s = 1) => Math.max(GRID, Math.round((levelobj.KINDS[k].r * s * 1.8) / GRID) * GRID);
+
+  /** «Копия»: такой же объект правее на свою ширину (по сетке — на целые клетки). */
+  function cloneObj() {
+    if (!selObj || locked()) return;
+    if (ed.objects.length >= MAX_OBJECTS) {
+      $("ed-error").textContent = `Не больше ${MAX_OBJECTS} объектов`;
+      return;
+    }
+    const ob = { ...selObj };
+    if (!levelobj.isTrigger(ob.k)) ob.x = clampReach(ob.x + swipeStep(ob.k, ob.s || 1));
+    change(() => {
+      ed.objects.push(ob);
+      selObj = ob;
     });
   }
 
@@ -420,9 +458,10 @@ const levels = (() => {
       const row = el("div", "ed-chips");
       for (const [v, text] of levelobj.OPTIONS[ob.k]) row.appendChild(button("ed-chip", text, () => set(() => { ob.v = v; }), ob.v === v));
       rows.push(row);
-    } else if (ob.k === "text") {
+    } else {
+      // текст и надпись «Бах!»
       const input = el("input", "ed-input");
-      input.maxLength = 40;
+      input.maxLength = ob.k === "text" ? 40 : 8;
       input.value = ob.v || "";
       input.disabled = locked();
       input.addEventListener("input", () => change(() => { ob.v = input.value; }));
@@ -452,41 +491,112 @@ const levels = (() => {
   /** Следующее значение по кругу: карточки слева меняют темп, сложность и дизайн нажатием. */
   const next = (items, value) => items[(items.findIndex((i) => i[0] === value) + 1) % items.length][0];
 
+  // ---------- Палитра снизу: режимы, вкладки, сетка по страницам ----------
+
+  /** Значок инструмента: стрелка, свой SVG или нарисованный объект. */
+  function toolIcon(t) {
+    if (t.object) return levelobj.icon(t.object, 40);
+    const span = document.createElement("span");
+    span.className = "ed-tool-svg";
+    span.innerHTML = t.arrow !== undefined ? arrowIcon(t.arrow) : `<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${ICONS[t.id]}</svg>`;
+    return span;
+  }
+
+  const toolButtons = new Map(); // id → кнопка: значки объектов рисуются один раз
+  const emptySlots = [];
+
   function toolButton(t) {
+    if (toolButtons.has(t.id)) return toolButtons.get(t.id);
     const b = document.createElement("button");
     b.type = "button";
     b.className = "ed-tool";
     b.dataset.tool = t.id;
     b.style.setProperty("--c", t.color);
     b.title = `${t.name}: ${t.hint}`;
-    b.innerHTML = (t.arrow !== undefined ? arrowIcon(t.arrow) : `<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${ICONS[t.id]}</svg>`)
-      + `<span>${t.name}</span>`;
+    b.setAttribute("aria-label", t.name);
+    b.append(toolIcon(t));
     b.addEventListener("click", () => setTool(t.id));
+    toolButtons.set(t.id, b);
     return b;
   }
 
+  /** Выбор в палитре: режим «Строить» с этим инструментом. */
   function setTool(id) {
+    if (locked()) return;
+    buildTool = id;
     tool = id;
     renderTools();
     renderSel();
   }
 
-  /** Вкладка палитры: видны её инструменты, «Выбор» и «Ластик». */
-  function setCat(id) {
-    cat = id;
-    if (TOOL[tool].cat && TOOL[tool].cat !== cat) tool = "pick";
+  /** Режим слева: «Строить», «Правка» или «Удалить». */
+  function setMode(mode) {
+    if (locked() && mode !== "edit") return;
+    tool = mode === "edit" ? "pick" : mode === "delete" ? "erase" : buildTool;
     renderTools();
     renderSel();
   }
 
+  const modeOf = () => (tool === "pick" ? "edit" : tool === "erase" ? "delete" : "build");
+
+  function setCat(id) {
+    cat = id;
+    page = 0;
+    renderTools();
+  }
+
+  const catTools = () => TOOLS.filter((t) => t.cat === cat);
+
+  /** Сколько столбцов влезает в сетку по ширине; строк всегда ROWS. */
+  function columns() {
+    const cell = 50 + 6; // кнопка и промежуток, как в style.css
+    return Math.max(3, Math.floor(($("ed-tools").clientWidth + 6) / cell));
+  }
+
   function renderTools() {
-    for (const b of $("ed-cats").children) b.classList.toggle("on", b.dataset.cat === cat);
-    for (const b of $("ed-tools").children) {
-      const t = TOOL[b.dataset.tool];
-      b.hidden = !!t.cat && t.cat !== cat;
-      b.classList.toggle("on", t.id === tool);
-      b.disabled = locked() && t.id !== "pick";
+    const mode = modeOf();
+    for (const b of $("ed-modes").children) {
+      b.classList.toggle("on", b.dataset.mode === mode);
+      b.disabled = locked() && b.dataset.mode !== "edit";
     }
+    for (const b of $("ed-cats").children) b.classList.toggle("on", b.dataset.cat === cat);
+
+    const cols = columns(), list = catTools(), per = cols * ROWS;
+    $("ed-tools").style.gridTemplateColumns = `repeat(${cols}, 50px)`;
+    const pages = Math.max(1, Math.ceil(list.length / per));
+    page = Math.min(page, pages - 1);
+    const shown = list.slice(page * per, page * per + per).map(toolButton);
+    for (const b of shown) {
+      b.classList.toggle("on", mode === "build" && b.dataset.tool === buildTool);
+      b.disabled = locked();
+    }
+    // пустые клетки добивают страницу до полной сетки, как в GD
+    while (emptySlots.length < per) {
+      const e = document.createElement("i");
+      e.className = "ed-tool empty";
+      emptySlots.push(e);
+    }
+    const all = [...shown, ...emptySlots.slice(0, per - shown.length)];
+    const box = $("ed-tools");
+    if (all.length !== box.children.length || all.some((b, i) => box.children[i] !== b)) box.replaceChildren(...all);
+    $("ed-page-prev").disabled = page === 0;
+    $("ed-page-next").disabled = page >= pages - 1;
+    $("ed-dots").replaceChildren(...Array.from({ length: pages }, (_, i) => {
+      const d = document.createElement("i");
+      if (i === page) d.className = "on";
+      return d;
+    }));
+
+    $("ed-swipe").classList.toggle("on", swipe);
+    $("ed-snap").classList.toggle("on", snap);
+    $("ed-swipe").disabled = $("ed-snap").disabled = locked();
+    $("ed-rotate").disabled = locked() || !selObj || !levelobj.rotatable(selObj.k);
+    $("ed-clone").disabled = locked() || !selObj;
+  }
+
+  function flipPage(d) {
+    page += d;
+    renderTools();
   }
 
   function renderEditor() {
@@ -888,7 +998,16 @@ const levels = (() => {
       else removeSel();
     } else if (e.code === "Escape") {
       pickObj(null);
-      setTool("pick");
+      setMode("edit");
+    } else if (e.code === "KeyB" && !e.ctrlKey && !e.metaKey) {
+      setMode("build");
+    } else if (e.code === "KeyX" && !e.ctrlKey && !e.metaKey) {
+      setMode("delete");
+    } else if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey) {
+      rotateObj();
+    } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyD") {
+      e.preventDefault();
+      cloneObj();
     }
   }
 
@@ -916,7 +1035,6 @@ const levels = (() => {
     });
     $("btn-level-new").addEventListener("click", () => edit(null));
 
-    $("ed-tools").replaceChildren(...TOOLS.map(toolButton));
     $("ed-theme-btn").addEventListener("click", () => change(() => { ed.theme = next(lobby.themes, ed.theme); }));
     $("ed-pace-btn").addEventListener("click", () => change(() => { ed.fast = next(PACES, ed.fast); }));
     $("ed-diff-btn").addEventListener("click", () => change(() => { ed.difficulty = next(DIFFS, ed.difficulty); }));
@@ -930,6 +1048,9 @@ const levels = (() => {
           paints: !locked() && (TOOL[tool].arrow !== undefined || tool === "plain" || TOOL[tool].obstacle !== undefined),
           canAppend: !locked() && ed.cells.length < MAX_CELLS,
           objects: ed.objects, selObj, mode: TOOL[tool].mode, locked: locked(),
+          // «Протяжка» ставит объекты подряд (триггеры — по одному), «Сетка» ровняет их по клеткам
+          swipe: swipe && !levelobj.isTrigger(TOOL[tool].object || "t-"), grid: snap ? GRID : 0,
+          swipeStep: TOOL[tool].object ? swipeStep(TOOL[tool].object) : GRID,
         };
       },
       hit: apply,
@@ -939,15 +1060,36 @@ const levels = (() => {
       eraseObj,
       moved: () => change(() => {}), // объект перетащили: уровень изменился
     });
-    $("ed-cats").replaceChildren(...CATS.map(([id, text]) => {
+    // вкладки — значки, как в GD; название во всплывающей подсказке
+    $("ed-cats").replaceChildren(...CATS.map(([id, text, iconTool]) => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "ed-cat";
       b.dataset.cat = id;
-      b.textContent = text;
+      b.title = text;
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-label", text);
+      const t = TOOL[iconTool];
+      b.style.setProperty("--c", t.color);
+      b.append(t.object ? levelobj.icon(t.object, 28) : toolIcon(t));
       b.addEventListener("click", () => setCat(id));
       return b;
     }));
+    for (const b of $("ed-modes").children) b.addEventListener("click", () => setMode(b.dataset.mode));
+    $("ed-page-prev").addEventListener("click", () => flipPage(-1));
+    $("ed-page-next").addEventListener("click", () => flipPage(1));
+    $("ed-tools").addEventListener("wheel", (e) => {
+      if (Math.abs(e.deltaY) < 4 && Math.abs(e.deltaX) < 4) return;
+      e.preventDefault();
+      const d = Math.sign(e.deltaY || e.deltaX);
+      if (!(d < 0 ? $("ed-page-prev") : $("ed-page-next")).disabled) flipPage(d);
+    }, { passive: false });
+    $("ed-swipe").addEventListener("click", () => { swipe = !swipe; renderTools(); });
+    $("ed-snap").addEventListener("click", () => { snap = !snap; renderTools(); });
+    $("ed-rotate").addEventListener("click", rotateObj);
+    $("ed-clone").addEventListener("click", cloneObj);
+    // ширина сетки меняется с окном: на страницу влезает другое число кнопок
+    new ResizeObserver(() => { if (ed) renderTools(); }).observe($("ed-tools"));
 
     $("ed-name").maxLength = NAME_MAX;
     $("ed-about").maxLength = ABOUT_MAX;

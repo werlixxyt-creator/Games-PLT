@@ -161,6 +161,26 @@ const edview = (() => {
     }
   }
 
+  /** Сетка «Сетки»: тонкие линии между полом и потолком, каждая четвёртая ярче. */
+  function drawGrid(g, left, right) {
+    ctx.lineWidth = 1 / scale;
+    for (const strong of [false, true]) {
+      ctx.strokeStyle = strong ? "rgba(255,255,255,.16)" : "rgba(255,255,255,.07)";
+      ctx.beginPath();
+      for (let x = Math.floor(left / g) * g; x <= right; x += g) {
+        if ((Math.round(x / g) % 4 === 0) !== strong) continue;
+        ctx.moveTo(x, -FLOOR);
+        ctx.lineTo(x, FLOOR);
+      }
+      for (let y = -Math.floor(FLOOR / g) * g; y <= FLOOR; y += g) {
+        if ((Math.round(y / g) % 4 === 0) !== strong) continue;
+        ctx.moveTo(left, y);
+        ctx.lineTo(right, y);
+      }
+      ctx.stroke();
+    }
+  }
+
   function seg(i) {
     ctx.beginPath();
     ctx.moveTo(geo.xs[i], geo.ys[i]);
@@ -456,6 +476,7 @@ const edview = (() => {
     ctx.translate(-camX * scale, h / 2);
     ctx.scale(scale, scale);
     drawBlocks(p, left, right);
+    if (!run && s.grid && s.mode === "object") drawGrid(s.grid, left, right);
     drawPortal(p);
     drawObjects(s, left, right, false);
     // рисуем только видимые участки
@@ -824,11 +845,10 @@ const edview = (() => {
       return;
     }
     if (s.mode === "object") {
-      // новый объект у ближайшей ячейки, там, куда кликнули
-      drag = null;
-      const wx = toWorld(pt.x), wy = (pt.y - h / 2) / scale;
-      const c = anchor(wx), k = keyAt(c);
-      o.place(c, wx - k.x, wy - k.y);
+      // новый объект у ближайшей ячейки, там, куда кликнули; с «Протяжкой» — и дальше, пока ведёшь
+      const p = gridPoint(toWorld(pt.x), (pt.y - h / 2) / scale, s.grid);
+      placeAt(p);
+      drag = s.swipe ? { kind: "swipe", last: p } : null;
       return;
     }
     if (hit !== null && s.paints) {
@@ -839,13 +859,39 @@ const edview = (() => {
     drag = { kind: "pan", x: pt.x, camX, moved: false, hit };
   }
 
+  /** Точка мира, выровненная по сетке шага grid (0 — без сетки). */
+  function gridPoint(wx, wy, grid) {
+    return grid ? { x: Math.round(wx / grid) * grid, y: Math.round(wy / grid) * grid } : { x: wx, y: wy };
+  }
+
+  function placeAt(p) {
+    const c = anchor(p.x), k = keyAt(c);
+    o.place(c, p.x - k.x, p.y - k.y);
+  }
+
+  /** «Протяжка»: объекты встают вплотную друг к другу — шаг равен размеру объекта, по главной оси движения. */
+  function swipeTo(pt) {
+    const s = o.get();
+    const step = s.swipeStep || 60;
+    const wx = toWorld(pt.x), wy = (pt.y - h / 2) / scale;
+    for (let guard = 0; guard < 40; guard++) {
+      const dx = wx - drag.last.x, dy = wy - drag.last.y;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < step) return;
+      const p = Math.abs(dx) >= Math.abs(dy)
+        ? { x: drag.last.x + Math.sign(dx) * step, y: drag.last.y }
+        : { x: drag.last.x, y: drag.last.y + Math.sign(dy) * step };
+      drag.last = p;
+      placeAt(p);
+    }
+  }
+
   /** Перетаскивание объекта: он переходит к ближайшей ячейке, триггер встаёт прямо над её стрелкой. */
   function moveObject(pt) {
     if (Math.abs(pt.x - drag.x) + Math.abs(pt.y - drag.y) > 4) drag.moved = true;
     if (!drag.moved) return;
     const from = keyAt(drag.oc);
-    const wx = from.x + drag.ox + (pt.x - drag.x) / scale;
-    const wy = from.y + drag.oy + (pt.y - drag.y) / scale;
+    const g = gridPoint(from.x + drag.ox + (pt.x - drag.x) / scale, from.y + drag.oy + (pt.y - drag.y) / scale, o.get().grid);
+    const wx = g.x, wy = g.y;
     const c = anchor(wx), k = keyAt(c);
     drag.ob.c = c;
     drag.ob.x = levelobj.isTrigger(drag.ob.k) ? 0 : Math.round(wx - k.x);
@@ -865,6 +911,8 @@ const edview = (() => {
     }
     if (drag.kind === "map") {
       jumpMap(pt.x);
+    } else if (drag.kind === "swipe") {
+      swipeTo(pt);
     } else if (drag.kind === "move") {
       moveObject(pt);
     } else if (drag.kind === "paint") {

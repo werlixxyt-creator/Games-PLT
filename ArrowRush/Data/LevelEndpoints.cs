@@ -268,6 +268,7 @@ public static class LevelEndpoints
                 return "Объект слишком далеко от своей ячейки";
             if (!double.IsFinite(o.S) || o.S < 0.25 || o.S > 4) return "Размер объекта от 0.25 до 4";
             if (o.V is { Length: > 40 }) return "Текст объекта не длиннее 40 символов";
+            if (o.R is not (0 or 90 or 180 or 270)) return "Объект поворачивается только на 90°";
         }
         return null;
     }

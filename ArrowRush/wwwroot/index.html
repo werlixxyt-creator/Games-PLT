@@ -244,18 +244,10 @@
 
     <!-- РЕДАКТОР УРОВНЕЙ (levels.js) -->
     <section id="screen-editor" class="screen">
-      <!-- сверху палитра инструментов: что делает клик по ячейке на превью (кнопки строит levels.js) -->
-      <header class="ed-top">
+      <aside class="ed-left">
         <button id="btn-editor-back" class="ed-round" type="button" title="К уровням" aria-label="К уровням">
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#back"/></svg>
         </button>
-        <div class="ed-palette">
-          <div id="ed-cats" class="ed-cats" role="tablist" aria-label="Вкладки палитры"></div>
-          <div id="ed-tools" class="ed-tools" role="toolbar" aria-label="Инструменты"></div>
-        </div>
-      </header>
-
-      <aside class="ed-left">
         <button id="ed-theme-btn" class="ed-card" type="button" title="Дизайн уровня: нажми, чтобы сменить">
           <i id="ed-theme-swatch" class="ed-swatch"></i><span>Дизайн</span><b id="ed-theme-name"></b>
         </button>
@@ -345,6 +337,30 @@
           <b>+10</b><span>Случайных</span>
         </button>
       </aside>
+
+      <!-- снизу палитра: режим слева, вкладки и объекты по страницам в центре, действия с объектом справа (кнопки строит levels.js) -->
+      <footer class="ed-bottom">
+        <div id="ed-modes" class="ed-modes" role="radiogroup" aria-label="Режим">
+          <button type="button" class="ed-mode" data-mode="build" title="Строить: клик ставит выбранное (B)">Строить</button>
+          <button type="button" class="ed-mode" data-mode="edit" title="Правка: выбрать ячейку или объект и тащить его (Esc)">Правка</button>
+          <button type="button" class="ed-mode" data-mode="delete" title="Удалить: клик удаляет объект или ячейку (X)">Удалить</button>
+        </div>
+        <div class="ed-palette">
+          <div id="ed-cats" class="ed-cats" role="tablist" aria-label="Вкладки палитры"></div>
+          <div class="ed-grid">
+            <button id="ed-page-prev" class="ed-page" type="button" aria-label="Предыдущая страница">◀</button>
+            <div id="ed-tools" class="ed-tools" role="toolbar" aria-label="Объекты"></div>
+            <button id="ed-page-next" class="ed-page" type="button" aria-label="Следующая страница">▶</button>
+          </div>
+          <div id="ed-dots" class="ed-dots" aria-hidden="true"></div>
+        </div>
+        <div class="ed-acts">
+          <button id="ed-swipe" class="ed-act" type="button" title="Протяжка: ведёшь мышью — объекты ставятся один за другим">Протяжка</button>
+          <button id="ed-rotate" class="ed-act" type="button" title="Повернуть выбранный объект на 90° (R)">Поворот</button>
+          <button id="ed-clone" class="ed-act" type="button" title="Копия выбранного объекта рядом (Ctrl+D)">Копия</button>
+          <button id="ed-snap" class="ed-act" type="button" title="Сетка: объекты встают по клеткам 30×30">Сетка</button>
+        </div>
+      </footer>
     </section>
 
     <!-- СТАТИСТИКА -->

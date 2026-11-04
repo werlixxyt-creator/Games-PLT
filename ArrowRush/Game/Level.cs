@@ -113,9 +113,9 @@ public sealed record EditorCell(int A, double F, string? S = null, string? O = n
 /// <summary>
 /// Блок, декорация или триггер из редактора (виды — <see cref="LevelGenerator.EditorObjects"/>). На игру сервер их не тратит:
 /// рисует и запускает их клиент. C — номер ячейки, к которой объект привязан, X и Y — сдвиг от её стрелки,
-/// S — размер, V — цвет, текст или сила триггера.
+/// S — размер, V — цвет, текст или сила триггера, R — поворот в градусах (0, 90, 180 или 270).
 /// </summary>
-public sealed record LevelObject(string K, int C, double X, double Y, double S = 1, string? V = null);
+public sealed record LevelObject(string K, int C, double X, double Y, double S = 1, string? V = null, int R = 0);
 
 public static class LevelGenerator
 {
@@ -259,8 +259,20 @@ public static class LevelGenerator
     /// <summary>Виды объектов редактора: блоки, декор и триггеры (t-…). Как они выглядят и что делают — levelobj.js.</summary>
     public static readonly HashSet<string> EditorObjects =
     [
-        "block", "half", "ramp", "pillar",
-        "text", "star", "cloud", "ring", "crystal", "lamp",
+        // блоки
+        "block", "b-gem", "b-inset", "b-grid", "b-panel", "b-brick", "b-stone", "b-metal", "b-crate",
+        "b-hazard", "b-tech", "b-dark", "b-frame", "b-checker", "b-studs",
+        // формы и склоны
+        "half", "small", "slab", "pillar", "plank", "step", "cross",
+        "ramp", "ramp2", "ramp-half", "wedge", "curve",
+        // стекло
+        "g-block", "g-half", "g-pane", "g-ramp", "g-tile", "g-crack", "g-shards",
+        // эффекты
+        "fx-boom", "fx-bang", "fx-spark", "fx-fire", "fx-smoke", "fx-bolt", "fx-debris", "fx-confetti", "fx-beam",
+        // декор (cloud и ring остались от прошлых версий: в палитре их нет, но старые уровни их рисуют)
+        "text", "star", "crystal", "lamp", "d-gear", "d-arrow", "d-sign", "d-flag", "d-chain", "d-pipe", "d-grass", "d-heart", "d-moon",
+        "cloud", "ring",
+        // триггеры
         "t-color", "t-flash", "t-shake", "t-zoom", "t-tilt",
     ];
 
