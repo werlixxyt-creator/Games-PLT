@@ -113,9 +113,11 @@ public sealed record EditorCell(int A, double F, string? S = null, string? O = n
 /// <summary>
 /// Блок, декорация или триггер из редактора (виды — <see cref="LevelGenerator.EditorObjects"/>). На игру сервер их не тратит:
 /// рисует и запускает их клиент. C — номер ячейки, к которой объект привязан, X и Y — сдвиг от её стрелки,
-/// S — размер, V — цвет, текст или сила триггера, R — поворот в градусах (0, 90, 180 или 270).
+/// S — размер, V — цвет, текст или сила триггера, R — поворот в градусах, W и H — растяжение по ширине и высоте,
+/// Fx и Fy — отражение, A — непрозрачность, Z — слой (0 — за дорогой, 1 — перед ней), G — сила свечения.
 /// </summary>
-public sealed record LevelObject(string K, int C, double X, double Y, double S = 1, string? V = null, int R = 0);
+public sealed record LevelObject(string K, int C, double X, double Y, double S = 1, string? V = null, double R = 0,
+    double W = 1, double H = 1, bool Fx = false, bool Fy = false, double A = 1, int Z = 0, double G = 0);
 
 public static class LevelGenerator
 {

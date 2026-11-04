@@ -374,10 +374,11 @@ const edview = (() => {
     ctx.restore();
   }
 
-  /** Объекты уровня: блоки и декор за дорогой, триггеры — значками поверх, с пунктиром вниз к своей ячейке. */
-  function drawObjects(s, left, right, triggers) {
+  /** Объекты уровня: блоки и декор своего слоя (0 — за дорогой, 1 — перед ней), триггеры — значками поверх, с пунктиром вниз к своей ячейке. */
+  function drawObjects(s, left, right, triggers, layer = 0) {
     for (const ob of s.objects) {
       if (levelobj.isTrigger(ob.k) !== triggers || ob.c >= s.cells.length) continue;
+      if (!triggers && (ob.z || 0) !== layer) continue;
       const k = keyAt(ob.c), x = k.x + ob.x, y = k.y + ob.y, r = levelobj.radius(ob);
       if (x < left - r * 2 || x > right + r * 2) continue;
       if (triggers) {
@@ -487,11 +488,13 @@ const edview = (() => {
     if (to > from) drawRoad(s, from, to);
     if (run) {
       for (let i = to - 1; i >= Math.max(from, run.i); i--) drawRunKey(s, i);
+      drawObjects(s, left, right, false, 1);
       drawRunHero(s);
     } else {
       drawHero(s);
       for (let i = from; i < to; i++) if (i !== s.sel) drawKey(s, i);
       if (s.sel >= from && s.sel < to) drawKey(s, s.sel);
+      drawObjects(s, left, right, false, 1);
       drawGhost(s);
       drawObjects(s, left, right, true);
     }

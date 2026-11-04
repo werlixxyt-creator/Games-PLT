@@ -985,9 +985,10 @@ const course = (() => {
     trig.tiltNow += (turn - trig.tiltNow) * k;
   }
 
-  /** Блоки и декор уровня из редактора: стоят у стрелки своей ячейки, сдвинутые на x, y. */
-  function drawDecor(left, right) {
+  /** Блоки и декор уровня из редактора: стоят у стрелки своей ячейки, сдвинутые на x, y. layer: 0 — за дорогой, 1 — перед ней. */
+  function drawDecor(left, right, layer = 0) {
     for (const o of decor) {
+      if ((o.z || 0) !== layer) continue;
       const pts = map.segs[o.c];
       if (!pts) continue;
       const p = pts[pts.length - 1];
@@ -2834,6 +2835,7 @@ const course = (() => {
       }
       drawStrikes();
     }
+    drawDecor(left, right, 1); // объекты слоя «перед дорогой»: поверх ячеек, но под персонажем
     drawRings(dt);
     drawPops(dt);
     drawMates(o.mates, dt);

@@ -166,6 +166,11 @@ public static class LevelEndpoints
             Y = Math.Round(o.Y, 1),
             S = Math.Round(o.S, 2),
             V = string.IsNullOrWhiteSpace(o.V) ? null : o.V.Trim(),
+            R = Math.Round(o.R, 1),
+            W = Math.Round(o.W, 2),
+            H = Math.Round(o.H, 2),
+            A = Math.Round(o.A, 2),
+            G = Math.Round(o.G, 2),
         }), JsonSerializerOptions.Web);
         level.CellCount = body.Cells!.Count;
         level.UpdatedAt = now;
@@ -268,7 +273,12 @@ public static class LevelEndpoints
                 return "Объект слишком далеко от своей ячейки";
             if (!double.IsFinite(o.S) || o.S < 0.25 || o.S > 4) return "Размер объекта от 0.25 до 4";
             if (o.V is { Length: > 40 }) return "Текст объекта не длиннее 40 символов";
-            if (o.R is not (0 or 90 or 180 or 270)) return "Объект поворачивается только на 90°";
+            if (!double.IsFinite(o.R) || Math.Abs(o.R) > 360) return "Поворот объекта от −360° до 360°";
+            if (!double.IsFinite(o.W) || !double.IsFinite(o.H) || o.W < 0.25 || o.W > 4 || o.H < 0.25 || o.H > 4)
+                return "Растяжение объекта от 0.25 до 4";
+            if (!double.IsFinite(o.A) || o.A < 0.1 || o.A > 1) return "Непрозрачность объекта от 0.1 до 1";
+            if (!double.IsFinite(o.G) || o.G < 0 || o.G > 1) return "Свечение объекта от 0 до 1";
+            if (o.Z is not (0 or 1)) return "Слой объекта: 0 или 1";
         }
         return null;
     }

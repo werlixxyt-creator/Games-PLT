@@ -111,7 +111,7 @@ const levelobj = (() => {
   const isTrigger = (k) => k.startsWith("t-");
   /** У каких видов значение — цвет. У текста значение — сам текст, у остальных триггеров — число. */
   const colored = (k) => !OPTIONS[k] && !TEXTS.has(k);
-  const radius = (o) => KINDS[o.k].r * (isTrigger(o.k) ? 1 : o.s || 1);
+  const radius = (o) => KINDS[o.k].r * (isTrigger(o.k) ? 1 : (o.s || 1) * Math.max(o.w || 1, o.h || 1));
   const colorOf = (o) => (colored(o.k) && /^#[0-9a-f]{6}$/i.test(o.v || "") ? o.v : KINDS[o.k].color);
 
   function hexRgb(hex) {
@@ -755,17 +755,28 @@ const levelobj = (() => {
     },
   };
 
-  /** Можно ли повернуть: у текста, триггеров и круглых вещей поворот не нужен. */
-  const rotatable = (k) => !isTrigger(k) && !TEXTS.has(k) && !["lamp", "cloud", "ring", "fx-smoke", "fx-confetti", "fx-spark"].includes(k);
+  /** Внешний вид настраивается у всего, кроме триггеров: у них только значение. */
+  const rotatable = (k) => !isTrigger(k);
 
-  /** Блок или декорация. */
+  /** Настройки вида по умолчанию: старые уровни их не хранят. */
+  const LOOK = { s: 1, r: 0, w: 1, h: 1, fx: false, fy: false, a: 1, z: 0, g: 0 };
+
+  /** Блок или декорация: поворот, растяжение и отражение вокруг центра, затем прозрачность и свечение. */
   function draw(c, o, t) {
     const fn = DRAW[o.k];
     if (!fn) return;
+    const s = o.s || 1, color = colorOf(o);
     c.save();
-    c.scale(o.s || 1, o.s || 1);
-    if (o.r && rotatable(o.k)) c.rotate((o.r * Math.PI) / 180);
-    fn(c, colorOf(o), t, o);
+    if (o.g > 0) {
+      // свечение — тень цвета объекта; shadowBlur считается в пикселях экрана, поэтому переводим из единиц сцены
+      const m = c.getTransform();
+      c.shadowColor = color;
+      c.shadowBlur = o.g * 40 * s * (Math.hypot(m.a, m.b) || 1);
+    }
+    if (o.r) c.rotate((o.r * Math.PI) / 180);
+    c.scale(s * (o.w || 1) * (o.fx ? -1 : 1), s * (o.h || 1) * (o.fy ? -1 : 1));
+    if (o.a != null && o.a < 1) c.globalAlpha *= Math.max(0.1, o.a);
+    fn(c, color, t, o);
     c.restore();
   }
 
@@ -907,11 +918,11 @@ const levelobj = (() => {
   /** Новый объект вида k: цвет, значение и размер по умолчанию. */
   function create(k, c, x, y) {
     const kind = KINDS[k];
-    return { k, c, x: Math.round(x), y: Math.round(y), s: 1, v: kind.v ?? (colored(k) ? kind.color : null), r: 0 };
+    return { k, c, x: Math.round(x), y: Math.round(y), ...LOOK, v: kind.v ?? (colored(k) ? kind.color : null) };
   }
 
   return {
-    KINDS, CATS, COLORS, OPTIONS, SPIKE, isTrigger, colored, rotatable, radius, hexRgb, palette,
+    KINDS, CATS, COLORS, OPTIONS, SPIKE, LOOK, isTrigger, colored, rotatable, radius, hexRgb, palette,
     draw, drawTrigger, icon, create, spikes, wall,
   };
 })();

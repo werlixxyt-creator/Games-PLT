@@ -344,7 +344,10 @@ const levels = (() => {
   // ---------- Объекты: блоки, декор, триггеры ----------
 
   /** Объект в том виде, в каком его хранит сервер (LevelObject). */
-  const cleanObj = (o) => ({ k: o.k, c: o.c, x: o.x, y: o.y, s: o.s ?? 1, v: o.v ?? null, r: o.r || 0 });
+  const cleanObj = (o) => ({
+    k: o.k, c: o.c, x: o.x, y: o.y, v: o.v ?? null,
+    s: o.s ?? 1, r: o.r || 0, w: o.w ?? 1, h: o.h ?? 1, fx: !!o.fx, fy: !!o.fy, a: o.a ?? 1, z: o.z ? 1 : 0, g: o.g || 0,
+  });
   const clampReach = (v) => Math.round(Math.max(-OBJECT_REACH, Math.min(OBJECT_REACH, v)));
 
   /** Ячейки вставили: объекты остаются у своих ячеек. */
@@ -386,11 +389,12 @@ const levels = (() => {
     });
   }
 
-  /** «Поворот»: выбранный объект на 90° по часовой. */
+  /** «Поворот»: выбранный объект на 90° по часовой (точный угол — ползунком в панели). */
   function rotateObj() {
     if (!selObj || !levelobj.rotatable(selObj.k)) return;
     const ob = selObj;
-    change(() => { ob.r = ((ob.r || 0) + 90) % 360; });
+    change(() => { ob.r = wrapAngle(Math.round((ob.r || 0) / 90) * 90 + 90); });
+    renderObj(true);
   }
 
   /** Ширина объекта вида k размера s, округлённая до клеток сетки: шаг «Протяжки» и «Копии». */
@@ -411,12 +415,37 @@ const levels = (() => {
     });
   }
 
-  /** Свойства выбранного объекта: цвет, сила триггера, текст, размер. Панель собирается заново при каждом изменении. */
-  function renderObj() {
+  // Настройки вида: [свойство, подпись, мин, макс, шаг, как показать]. Двойной клик по подписи — вернуть по умолчанию.
+  const LOOK_SLIDERS = [
+    ["s", "Размер", 0.25, 4, 0.05, (v) => `×${v.toFixed(2)}`],
+    ["w", "Ширина", 0.25, 4, 0.05, (v) => `×${v.toFixed(2)}`],
+    ["h", "Высота", 0.25, 4, 0.05, (v) => `×${v.toFixed(2)}`],
+    ["r", "Поворот", -180, 180, 1, (v) => `${Math.round(v)}°`],
+    ["a", "Прозрачность", 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`],
+    ["g", "Свечение", 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`],
+  ];
+  const LOOK_KEYS = ["s", "w", "h", "r", "a", "g", "fx", "fy", "z"];
+  let styleClip = null; // «Копировать стиль»: вид и цвет, которые вставит «Вставить стиль»
+  let objShown = null;  // какой объект сейчас в панели: панель не пересобирается, пока его правят
+
+  /** Поворот в пределах −180…180. */
+  const wrapAngle = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
+
+  /**
+   * Свойства выбранного объекта: цвет (палитра), значение, текст, вид (размер, растяжение, поворот, прозрачность, свечение),
+   * отражение, слой, точное положение и стиль. Панель собирается, только когда выбран другой объект или force:
+   * пока тянешь ползунок или цвет, она живёт сама и только меняет объект.
+   */
+  function renderObj(force = false) {
     const box = $("ed-obj");
     if (selObj && !ed.objects.includes(selObj)) selObj = null;
     box.hidden = !selObj;
-    if (!selObj || box.contains(document.activeElement) && document.activeElement.matches("input")) return; // не сбивать ввод текста
+    if (!selObj) {
+      objShown = null;
+      return;
+    }
+    if (selObj === objShown && !force) return;
+    objShown = selObj;
     const ob = selObj, kind = levelobj.KINDS[ob.k], trigger = levelobj.isTrigger(ob.k);
     const el = (tag, cls, text) => {
       const e = document.createElement(tag);
@@ -431,7 +460,9 @@ const levels = (() => {
       b.addEventListener("click", fn);
       return b;
     };
+    /** Правка, после которой панель остаётся как есть. */
     const set = (fn) => change(fn);
+    const section = (title) => el("div", "ed-obj-sec", title);
 
     const head = el("div", "ed-obj-head");
     const close = button("ed-code-x", "×", () => pickObj(null));
@@ -442,40 +473,122 @@ const levels = (() => {
     if (trigger) rows.push(el("p", "ed-obj-hint", `Срабатывает, когда игрок проходит ячейку ${ob.c + 1}: ${kind.hint}`));
 
     if (levelobj.colored(ob.k)) {
-      const row = el("div", "ed-obj-colors");
-      const colors = ob.k === "t-color" ? [...levelobj.COLORS, null] : levelobj.COLORS;
-      for (const c of colors) {
-        const b = button("ed-swatch-btn", "", () => set(() => { ob.v = c; }), ob.v === c);
-        if (c) b.style.background = c;
-        else {
-          b.classList.add("reset");
-          b.title = "Цвет дизайна уровня";
-        }
-        row.appendChild(b);
-      }
-      rows.push(row);
+      rows.push(section("Цвет"));
+      const picker = colorpick.create({
+        value: ob.v,
+        none: ob.k === "t-color" ? "Цвет дизайна" : null,
+        onInput: (v) => set(() => { ob.v = v; }),
+      });
+      if (locked()) picker.el.classList.add("off");
+      rows.push(picker.el);
     } else if (levelobj.OPTIONS[ob.k]) {
       const row = el("div", "ed-chips");
-      for (const [v, text] of levelobj.OPTIONS[ob.k]) row.appendChild(button("ed-chip", text, () => set(() => { ob.v = v; }), ob.v === v));
+      const chips = levelobj.OPTIONS[ob.k].map(([v, text]) => button("ed-chip", text, () => {
+        set(() => { ob.v = v; });
+        chips.forEach((c, i) => c.classList.toggle("on", levelobj.OPTIONS[ob.k][i][0] === v));
+      }, ob.v === v));
+      row.append(...chips);
       rows.push(row);
     } else {
       // текст и надпись «Бах!»
+      rows.push(section("Текст"));
       const input = el("input", "ed-input");
       input.maxLength = ob.k === "text" ? 40 : 8;
       input.value = ob.v || "";
       input.disabled = locked();
-      input.addEventListener("input", () => change(() => { ob.v = input.value; }));
+      input.addEventListener("input", () => set(() => { ob.v = input.value; }));
       rows.push(input);
     }
 
     if (!trigger) {
-      const row = el("div", "ed-obj-size");
-      const step = (d) => set(() => { ob.s = Math.round(Math.max(0.25, Math.min(4, (ob.s || 1) + d)) * 4) / 4; });
-      row.append(el("span", null, "Размер"), button("ed-chip", "−", () => step(-0.25)), el("b", null, `×${ob.s || 1}`), button("ed-chip", "+", () => step(0.25)));
-      rows.push(row);
+      rows.push(section("Вид"));
+      for (const [key, name, min, max, step, show] of LOOK_SLIDERS) {
+        const row = el("label", "ed-obj-slider");
+        const title = el("span", null, name);
+        title.title = "Двойной клик — по умолчанию";
+        const range = el("input");
+        Object.assign(range, { type: "range", min, max, step, disabled: locked() });
+        const out = el("b");
+        const sync = () => {
+          const v = ob[key] ?? levelobj.LOOK[key];
+          range.value = v;
+          out.textContent = show(+v);
+        };
+        range.addEventListener("input", () => {
+          set(() => { ob[key] = +range.value; });
+          out.textContent = show(+range.value);
+        });
+        title.addEventListener("dblclick", (e) => {
+          e.preventDefault();
+          if (locked()) return;
+          set(() => { ob[key] = levelobj.LOOK[key]; });
+          sync();
+        });
+        sync();
+        row.append(title, range, out);
+        rows.push(row);
+      }
+
+      const toggles = el("div", "ed-obj-toggles");
+      const toggle = (key, text, hint) => {
+        const b = button("ed-chip", text, () => {
+          set(() => { ob[key] = !ob[key]; });
+          b.classList.toggle("on", !!ob[key]);
+        }, !!ob[key]);
+        b.title = hint;
+        return b;
+      };
+      toggles.append(toggle("fx", "⇋ Отразить", "Отразить по горизонтали"), toggle("fy", "⇵ Отразить", "Отразить по вертикали"));
+      rows.push(toggles);
+
+      const layer = el("div", "ed-obj-toggles");
+      const layers = [[0, "За дорогой"], [1, "Перед дорогой"]].map(([z, text]) => button("ed-chip", text, () => {
+        set(() => { ob.z = z; });
+        layers.forEach((b, i) => b.classList.toggle("on", i === z));
+      }, (ob.z || 0) === z));
+      layer.append(el("span", null, "Слой"), ...layers);
+      rows.push(layer);
+
+      rows.push(section("Положение от стрелки ячейки"));
+      const pos = el("div", "ed-obj-pos");
+      for (const key of ["x", "y"]) {
+        const input = el("input", "ed-input");
+        Object.assign(input, { type: "number", step: GRID, min: -OBJECT_REACH, max: OBJECT_REACH, value: Math.round(ob[key]), disabled: locked() });
+        input.addEventListener("input", () => {
+          if (input.value === "" || !Number.isFinite(+input.value)) return;
+          set(() => { ob[key] = clampReach(+input.value); });
+        });
+        const label = el("label", null, key.toUpperCase());
+        label.append(input);
+        pos.append(label);
+      }
+      rows.push(pos);
+
+      const style = el("div", "ed-obj-toggles");
+      style.append(
+        button("ed-chip", "Копировать стиль", () => {
+          styleClip = Object.fromEntries(LOOK_KEYS.map((k) => [k, ob[k] ?? levelobj.LOOK[k]]));
+          if (levelobj.colored(ob.k)) styleClip.v = ob.v;
+          renderObj(true);
+        }),
+        button("ed-chip", "Вставить стиль", () => {
+          const clip = { ...styleClip };
+          if (!levelobj.colored(ob.k)) delete clip.v;
+          set(() => Object.assign(ob, clip));
+          renderObj(true);
+        }),
+        button("ed-chip", "Сбросить вид", () => {
+          set(() => Object.assign(ob, levelobj.LOOK));
+          renderObj(true);
+        }),
+      );
+      style.children[1].disabled = locked() || !styleClip;
+      rows.push(style);
     }
     rows.push(button("btn ghost small", "Удалить объект", () => eraseObj(ob)));
+    const scroll = box.scrollTop;
     box.replaceChildren(...rows);
+    box.scrollTop = scroll;
   }
 
   const locked = () => ed.published;
@@ -1058,7 +1171,10 @@ const levels = (() => {
       place: placeObj,
       pickObj,
       eraseObj,
-      moved: () => change(() => {}), // объект перетащили: уровень изменился
+      moved: () => {
+        change(() => {}); // объект перетащили: уровень изменился
+        renderObj(true);  // и в панели новое положение и ячейка
+      },
     });
     // вкладки — значки, как в GD; название во всплывающей подсказке
     $("ed-cats").replaceChildren(...CATS.map(([id, text, iconTool]) => {
