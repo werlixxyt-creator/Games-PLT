@@ -2817,6 +2817,7 @@ const course = (() => {
 
   return {
     start, follow, frame, hit, devour, laser, brick, filled, chart, swam, event, pulse, point, paintHero, eventInfo: EVENTS,
+    themes: Object.fromEntries(THEME_IDS.map((id, i) => [id, THEMES[i]])), // палитры космоса по имени: превью редактора
     style: () => (map ? map.styleId : null), // стиль уровня текущего матча: "violet", "lighthouse"…
   };
 })();

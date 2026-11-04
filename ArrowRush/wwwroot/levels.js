@@ -23,16 +23,44 @@ const levels = (() => {
     storm: { name: "Шторм", color: ev("storm"), span: 6, hint: "Следующие 6 ячеек в темноте: дальние видно только при молнии" },
     flip: { name: "Переворот", color: ev("flip"), span: 6, hint: "Следующие 6 ячеек мир вверх ногами, стрелки те же" },
     rainbow: { name: "Радуга", color: ev("rainbow"), span: 6, hint: "Каждая вторая из следующих 6 ячеек — каменная стена: 10 нажатий любой стрелкой" },
-    rast: { name: "Раст", color: ev("rast"), span: 0, hint: "Добавляет 40 ячеек из двух стрелок, сзади догоняет чёрная дыра" },
-    cloud: { name: "Кловд", color: ev("cloud"), span: 0, hint: "Добавляет 8 летящих стрелок: гусеница уклоняется, ↑ — потолок, ↓ — пол" },
+    rast: { name: "Раст", color: ev("rast"), span: 0, tag: "+40", hint: "Добавляет 40 ячеек из двух стрелок, сзади догоняет чёрная дыра" },
+    cloud: { name: "Кловд", color: ev("cloud"), span: 0, tag: "+8", hint: "Добавляет 8 летящих стрелок: гусеница уклоняется, ↑ — потолок, ↓ — пол" },
   };
 
-  let opts = null;     // { conn, show, screen, onPlay }
+  // значки инструментов (24×24): стрелки берутся из #arrow, остальное здесь
+  const ICONS = {
+    pick: '<path d="M9 3.5a1.5 1.5 0 0 1 3 0V10h.5V8.5a1.5 1.5 0 0 1 3 0V10h.5V9.5a1.5 1.5 0 0 1 3 0V15c0 3.9-2.6 6.5-6.3 6.5-2.4 0-4-1-5.4-3L4 13.6a1.5 1.5 0 0 1 2.4-1.8L9 14.6z"/>',
+    plain: '<path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18zm0 3.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 1 1 0-11z"/>',
+    chart: '<path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3l-6.1 3.3 1.4-6.8-5.1-4.7 6.9-.8z"/>',
+    swam: '<path d="M12 4.5a5 5 0 0 0-5 5H5.5C3.5 9.5 2 10.8 2 12.3S3.5 15 5.5 15h13c2 0 3.5-1.2 3.5-2.7s-1.5-2.8-3.5-2.8H17a5 5 0 0 0-5-5zM7.5 16.5 5.5 21h2.3l1.8-4.5zm9 0 1.8 4.5h2.2l-2-4.5z"/>',
+    over: '<use href="#flame"/>',
+    storm: '<use href="#bolt"/>',
+    flip: '<use href="#mirror"/>',
+    rainbow: '<path fill-rule="evenodd" d="M1.5 19a10.5 10.5 0 0 1 21 0h-3.5a7 7 0 0 0-14 0zM7 19a5 5 0 0 1 10 0h-2a3 3 0 0 0-6 0z"/>',
+    rast: '<path fill-rule="evenodd" d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 1 0 0-19zm0 5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 1 1 0-9z"/>',
+    cloud: '<path d="M2.5 16a3 3 0 1 0 6 0 3 3 0 1 0-6 0zM7.5 13.5a3.3 3.3 0 1 0 6.6 0 3.3 3.3 0 1 0-6.6 0zM13 10.5a4 4 0 1 0 8 0 4 4 0 1 0-8 0z"/>',
+    erase: '<path d="M14.6 3.2a1.6 1.6 0 0 1 2.2 0l4 4a1.6 1.6 0 0 1 0 2.2L12 18.2H6.8l-3.6-3.6a1.6 1.6 0 0 1 0-2.2zM4 20h16v2H4z"/>',
+  };
+  const ARROW_NAMES = ["Влево", "Вверх", "Вправо", "Вниз"];
+  // инструменты верхней панели: что делает клик по ячейке на превью
+  const TOOLS = [
+    { id: "pick", name: "Выбор", color: "var(--muted-room)", hint: "клик выбирает ячейку, протяжка листает уровень" },
+    ...[0, 1, 2, 3].map((a) => ({ id: "a" + a, arrow: a, name: ARROW_NAMES[a], color: `var(--a${a})`, hint: "клик или протяжка по ячейкам ставит эту стрелку, «+» в конце добавляет ячейку" })),
+    { id: "plain", name: "Обычная", color: "#c3c7d9", hint: "клик убирает особую ячейку" },
+    ...Object.entries(SPECIALS).map(([id, s]) => ({ id, special: true, name: s.name, color: s.color, hint: s.hint })),
+    { id: "erase", name: "Ластик", color: "#ff3b5c", hint: "клик удаляет ячейку" },
+  ];
+  const TOOL = Object.fromEntries(TOOLS.map((t) => [t.id, t]));
+
+  let opts = null;     // { conn, show, screen, onPlay, me }
   let view = "online"; // вкладка списка: online или mine
   let sort = "new";
   let searchTimer = 0;
   let ed = null;       // открытый уровень: { id, name, about, fast, difficulty, theme, cells, verified, published, dirty }
   let sel = 0;         // выбранная ячейка
+  let tool = "pick";   // инструмент верхней панели
+  let focused = -1;    // к какой ячейке последний раз ехала камера превью
+  let zoneMap = new Map(); // участки особых ячеек, см. zones()
 
   async function call(method, path, body) {
     const res = await fetch("/api/levels" + path, {
@@ -213,6 +241,8 @@ const levels = (() => {
     }
     sel = 0;
     opts.show("editor");
+    edview.reset();
+    focused = sel;
     renderEditor();
     if (!id) $("ed-name").focus();
   }
@@ -253,36 +283,54 @@ const levels = (() => {
     renderEditor();
   }
 
-  function chips(id, items, value, set) {
-    $(id).replaceChildren(...items.map(([key, text, swatch]) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "ed-chip" + (key === value ? " on" : "");
-      b.disabled = locked();
-      if (swatch) {
-        const dot = document.createElement("i");
-        dot.style.background = swatch;
-        b.appendChild(dot);
-      }
-      b.append(text);
-      b.addEventListener("click", () => change(() => set(key)));
-      return b;
-    }));
+  /** Следующее значение по кругу: карточки слева меняют темп, сложность и дизайн нажатием. */
+  const next = (items, value) => items[(items.findIndex((i) => i[0] === value) + 1) % items.length][0];
+
+  function toolButton(t) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ed-tool";
+    b.dataset.tool = t.id;
+    b.style.setProperty("--c", t.color);
+    b.title = `${t.name}: ${t.hint}`;
+    b.innerHTML = (t.arrow !== undefined ? arrowIcon(t.arrow) : `<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${ICONS[t.id]}</svg>`)
+      + `<span>${t.name}</span>`;
+    b.addEventListener("click", () => setTool(t.id));
+    return b;
+  }
+
+  function setTool(id) {
+    tool = id;
+    renderTools();
+    renderSel();
+  }
+
+  function renderTools() {
+    for (const b of $("ed-tools").children) {
+      b.classList.toggle("on", b.dataset.tool === tool);
+      b.disabled = locked() && b.dataset.tool !== "pick";
+    }
   }
 
   function renderEditor() {
+    if (locked()) tool = "pick";
+    zoneMap = zones();
     if (document.activeElement !== $("ed-name")) $("ed-name").value = ed.name;
     if (document.activeElement !== $("ed-about")) $("ed-about").value = ed.about || "";
     $("ed-name").disabled = $("ed-about").disabled = locked();
-    chips("ed-pace", PACES, ed.fast, (fast) => { ed.fast = fast; });
-    chips("ed-diff", DIFFS, ed.difficulty, (difficulty) => { ed.difficulty = difficulty; });
-    chips("ed-theme", lobby.themes, ed.theme, (theme) => { ed.theme = theme; });
-    renderStrip();
-    renderInspector();
+    const [, themeName, swatch] = themeOf(ed.theme);
+    $("ed-theme-swatch").style.background = swatch;
+    $("ed-theme-name").textContent = themeName;
+    $("ed-pace-name").textContent = label(PACES, ed.fast);
+    $("ed-diff-name").textContent = label(DIFFS, ed.difficulty);
+    $("ed-theme-btn").disabled = $("ed-pace-btn").disabled = $("ed-diff-btn").disabled = locked();
+    renderTools();
+    renderSel();
+    edview.show();
 
     const issue = problem();
     $("ed-error").textContent = locked() ? "" : issue || "";
-    $("ed-count").textContent = `${ed.cells.length} ячеек`;
+    $("ed-count").textContent = `${ed.cells.length} / ${MAX_CELLS}`;
     $("ed-status").textContent = ed.published
       ? "Опубликован — менять нельзя, но можно сделать копию"
       : ed.dirty ? "Есть несохранённые изменения"
@@ -297,66 +345,55 @@ const levels = (() => {
     $("ed-publish").title = ed.verified ? "" : "Сначала пройди уровень сам — кнопка «Тест»";
   }
 
-  function renderStrip() {
-    const z = zones();
-    const strip = $("ed-strip");
-    strip.replaceChildren(...ed.cells.map((c, i) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "ed-cell" + (i === sel ? " sel" : "");
-      b.style.setProperty("--c", `var(--a${c.a})`);
-      const zone = z.get(i);
-      if (zone) {
-        b.classList.add("in-zone");
-        b.style.setProperty("--z", SPECIALS[zone.kind].color);
-        b.title = `Участок «${SPECIALS[zone.kind].name}» с ячейки ${zone.from + 1}`;
-      }
-      const fill = ed.fast ? 1 : (c.f - MIN_FILL) / (MAX_FILL - MIN_FILL);
-      b.innerHTML = `<span class="ed-num">${i + 1}</span>${arrowIcon(c.a)}`
-        + (ed.fast ? "" : `<span class="ed-bar"><i style="height:${Math.round(15 + fill * 85)}%"></i></span>`);
-      if (c.s) {
-        const tag = document.createElement("span");
-        tag.className = "ed-tag";
-        tag.style.background = SPECIALS[c.s].color;
-        tag.textContent = SPECIALS[c.s].name;
-        b.appendChild(tag);
-      }
-      b.addEventListener("click", () => select(i));
-      return b;
-    }));
-    const cur = strip.children[sel];
-    if (cur) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }
-
   function select(i) {
     sel = Math.max(0, Math.min(ed.cells.length - 1, i));
-    renderStrip();
-    renderInspector();
+    renderSel();
   }
 
-  function renderInspector() {
+  /** Всё, что зависит от выбранной ячейки: подпись, заполнение, подсказка. Превью само читает sel каждый кадр. */
+  function renderSel() {
     const c = ed.cells[sel];
-    $("ed-sel").textContent = `Ячейка ${sel + 1}`;
-    $("ed-arrows").replaceChildren(...[0, 1, 2, 3].map((a) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "ed-arrow" + (c.a === a ? " on" : "");
-      b.style.setProperty("--c", `var(--a${a})`);
-      b.innerHTML = arrowIcon(a);
-      b.disabled = locked();
-      b.addEventListener("click", () => change(() => { c.a = a; }));
-      return b;
-    }));
+    $("ed-sel").textContent = `Ячейка ${sel + 1} из ${ed.cells.length} · ${ARROW_NAMES[c.a].toLowerCase()}`;
     $("ed-fill-row").hidden = ed.fast;
     $("ed-fill").value = c.f;
     $("ed-fill").disabled = locked();
     $("ed-fill-val").textContent = `${c.f.toFixed(2)} с`;
-    chips("ed-specials", [["", "Нет"], ...Object.entries(SPECIALS).map(([k, s]) => [k, s.name, s.color])], c.s || "", (s) => { c.s = s || null; });
-    const zone = zones().get(sel);
-    $("ed-hint").textContent = c.s
+    const zone = zoneMap.get(sel);
+    const about = c.s
       ? SPECIALS[c.s].hint
       : zone ? `Эта ячейка в участке «${SPECIALS[zone.kind].name}» с ячейки ${zone.from + 1}` : "Обычная ячейка: держи стрелку, пока ползунок не заполнится";
+    $("ed-hint").textContent = tool === "pick" || locked() ? about : `${TOOL[tool].name}: ${TOOL[tool].hint}`;
     for (const id of ["ed-add", "ed-dup", "ed-del", "ed-left", "ed-right", "ed-random"]) $(id).disabled = locked();
+    // камера едет только к новой выбранной ячейке: иначе смена инструмента или ввод названия возвращали бы её назад
+    if (sel !== focused) edview.focus(sel);
+    focused = sel;
+  }
+
+  /** Клик по ячейке на превью: выбранный инструмент применяется к ней. */
+  function apply(i) {
+    const c = ed.cells[i];
+    if (!c) return;
+    if (tool === "pick" || locked()) return select(i);
+    sel = i;
+    if (tool === "erase") return removeSel();
+    const t = TOOL[tool];
+    const want = t.arrow !== undefined ? { a: t.arrow } : t.special ? { s: c.s === tool ? null : tool } : { s: null };
+    if (Object.entries(want).every(([k, v]) => c[k] === v)) return select(i);
+    change(() => Object.assign(c, want));
+  }
+
+  /** «+» в конце превью: новая ячейка со стрелкой или особой ячейкой выбранного инструмента. */
+  function append() {
+    if (locked() || ed.cells.length >= MAX_CELLS) return;
+    const t = TOOL[tool];
+    const last = ed.cells[ed.cells.length - 1];
+    const cell = { ...randomCells(1, ed.cells)[0], f: last ? last.f : 1 };
+    if (t.arrow !== undefined) cell.a = t.arrow;
+    if (t.special) cell.s = tool;
+    change(() => {
+      ed.cells.push(cell);
+      sel = ed.cells.length - 1;
+    });
   }
 
   /** Новая ячейка после выбранной: стрелка случайная, заполнение как у соседки. */
@@ -452,6 +489,8 @@ const levels = (() => {
     } else if ((e.code === "Delete" || e.code === "Backspace") && !locked()) {
       e.preventDefault();
       removeSel();
+    } else if (e.code === "Escape") {
+      setTool("pick");
     }
   }
 
@@ -478,6 +517,24 @@ const levels = (() => {
       searchTimer = setTimeout(load, 300);
     });
     $("btn-level-new").addEventListener("click", () => edit(null));
+
+    $("ed-tools").replaceChildren(...TOOLS.map(toolButton));
+    $("ed-theme-btn").addEventListener("click", () => change(() => { ed.theme = next(lobby.themes, ed.theme); }));
+    $("ed-pace-btn").addEventListener("click", () => change(() => { ed.fast = next(PACES, ed.fast); }));
+    $("ed-diff-btn").addEventListener("click", () => change(() => { ed.difficulty = next(DIFFS, ed.difficulty); }));
+    edview.init($("ed-canvas"), {
+      get: () => {
+        const equipped = (opts.me() || {}).equipped || {};
+        return {
+          cells: ed.cells, sel, fast: ed.fast, theme: ed.theme, zones: zoneMap, specials: SPECIALS,
+          skin: equipped.slider || "classic", hero: equipped.hero || "circle",
+          paints: !locked() && (TOOL[tool].arrow !== undefined || tool === "plain"), // протяжка красит ячейки, а не листает
+          canAppend: !locked() && ed.cells.length < MAX_CELLS,
+        };
+      },
+      hit: apply,
+      append,
+    });
 
     $("ed-name").maxLength = NAME_MAX;
     $("ed-about").maxLength = ABOUT_MAX;
@@ -519,7 +576,7 @@ const levels = (() => {
   function returnTo(where) {
     if (where === "editor" && ed) {
       opts.show("editor");
-      renderEditor();
+      renderEditor(); // заодно снова запускает превью
       changed(); // прохождение могло засчитаться, пока шли итоги
     } else {
       open();

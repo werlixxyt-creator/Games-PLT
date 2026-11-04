@@ -244,55 +244,79 @@
 
     <!-- РЕДАКТОР УРОВНЕЙ (levels.js) -->
     <section id="screen-editor" class="screen">
-      <div class="topbar start ed-top">
-        <button id="btn-editor-back" class="btn ghost small">← К уровням</button>
-        <span id="ed-status" class="ed-status"></span>
-      </div>
-      <div class="ed-panel glass">
-        <div class="ed-head">
+      <!-- сверху палитра инструментов: что делает клик по ячейке на превью (кнопки строит levels.js) -->
+      <header class="ed-top">
+        <button id="btn-editor-back" class="ed-round" type="button" title="К уровням" aria-label="К уровням">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#back"/></svg>
+        </button>
+        <div id="ed-tools" class="ed-tools" role="toolbar" aria-label="Инструменты"></div>
+      </header>
+
+      <aside class="ed-left">
+        <button id="ed-theme-btn" class="ed-card" type="button" title="Дизайн уровня: нажми, чтобы сменить">
+          <i id="ed-theme-swatch" class="ed-swatch"></i><span>Дизайн</span><b id="ed-theme-name"></b>
+        </button>
+        <button id="ed-pace-btn" class="ed-card" type="button" title="Темп: нажми, чтобы сменить">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#bolt"/></svg><span>Темп</span><b id="ed-pace-name"></b>
+        </button>
+        <button id="ed-diff-btn" class="ed-card" type="button" title="Сложность: нажми, чтобы сменить">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#target"/></svg><span>Сложность</span><b id="ed-diff-name"></b>
+        </button>
+        <div id="ed-fill-row" class="ed-card ed-timer" title="Сколько секунд заполняется выбранная ячейка">
+          <span>⏱ Заполнение</span><b id="ed-fill-val"></b><input id="ed-fill" type="range" step="0.05" aria-label="Заполнение, секунды">
+        </div>
+        <div class="ed-card ed-count" title="Ячеек в уровне">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#flag"/></svg><b id="ed-count"></b>
+        </div>
+        <button id="ed-test" class="ed-play" type="button" title="Пройти уровень самому: так он становится готовым к публикации">
+          <i class="ed-clap" aria-hidden="true"></i>
+          <span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#play"/></svg>Тест</span>
+        </button>
+      </aside>
+
+      <div class="ed-stage">
+        <canvas id="ed-canvas" aria-label="Превью уровня"></canvas>
+        <div class="ed-plate">
           <input id="ed-name" class="ed-input ed-name" autocomplete="off" spellcheck="false" placeholder="Название уровня">
           <input id="ed-about" class="ed-input" autocomplete="off" placeholder="Описание (необязательно)">
+          <span id="ed-status" class="ed-status"></span>
         </div>
-        <div class="ed-settings">
-          <div class="ed-group"><span>Темп</span><div id="ed-pace" class="ed-chips"></div></div>
-          <div class="ed-group"><span>Сложность</span><div id="ed-diff" class="ed-chips"></div></div>
-          <div class="ed-group"><span>Дизайн</span><div id="ed-theme" class="ed-chips"></div></div>
+        <div class="ed-info">
+          <b id="ed-sel"></b>
+          <p id="ed-hint" class="ed-hint"></p>
+          <p class="ed-keys">Стрелки или WASD — поставить стрелку и перейти дальше · Shift + ← → — выбрать ячейку · Delete — удалить · Esc — выбор · Ctrl+S — сохранить</p>
+          <div id="ed-error" class="ed-error" role="alert"></div>
         </div>
       </div>
 
-      <div class="ed-strip-wrap glass">
-        <div class="ed-strip-head"><b>Ячейки</b><span id="ed-count" class="muted"></span></div>
-        <div id="ed-strip" class="ed-strip"></div>
-      </div>
-
-      <div class="ed-panel glass ed-inspector">
-        <div class="ed-group"><span id="ed-sel">Ячейка</span><div id="ed-arrows" class="ed-arrows"></div></div>
-        <div id="ed-fill-row" class="ed-group">
-          <span>Заполнение</span>
-          <div class="ed-fill"><input id="ed-fill" type="range" step="0.05"><b id="ed-fill-val"></b></div>
-        </div>
-        <div class="ed-group"><span>Особая ячейка</span><div id="ed-specials" class="ed-chips"></div></div>
-        <p id="ed-hint" class="ed-hint"></p>
-        <div class="ed-tools">
-          <button id="ed-add" class="btn ghost small" type="button">+ После</button>
-          <button id="ed-dup" class="btn ghost small" type="button">Копия</button>
-          <button id="ed-del" class="btn ghost small" type="button">Удалить</button>
-          <button id="ed-left" class="btn ghost small" type="button" aria-label="Сдвинуть влево">◀</button>
-          <button id="ed-right" class="btn ghost small" type="button" aria-label="Сдвинуть вправо">▶</button>
-          <button id="ed-random" class="btn ghost small" type="button">+10 случайных</button>
-        </div>
-      </div>
-      <p class="muted small keys-hint">Стрелки или WASD — поставить стрелку и перейти дальше · Shift + ← → — выбрать ячейку · Delete — удалить · Ctrl+S — сохранить</p>
-
-      <div id="ed-error" class="conn bad" role="alert"></div>
-      <div class="ed-actions">
-        <button id="ed-save" class="btn ghost" type="button">Сохранить</button>
-        <button id="ed-test" class="btn ghost" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#play"/></svg>Тест
+      <aside class="ed-right">
+        <button id="ed-save" class="ed-side" type="button" title="Сохранить (Ctrl+S)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h13l4 4v14H3V3zm3 1.5V9h9V4.5zM12 12a3.5 3.5 0 1 0 0 7 3.5 3.5 0 1 0 0-7z" fill="currentColor" fill-rule="evenodd"/></svg><span>Сохранить</span>
         </button>
-        <button id="ed-publish" class="btn primary" type="button">Опубликовать</button>
-        <button id="ed-copy" class="btn primary" type="button" hidden>Сделать копию</button>
-      </div>
+        <button id="ed-publish" class="ed-side primary" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5c4 2.6 5.6 6.8 5 11.5l2.8 3.3-1.3 4.2-3.6-2.4H9.1l-3.6 2.4-1.3-4.2L7 13C6.4 8.3 8 4.1 12 1.5zM12 7a2 2 0 1 0 0 4 2 2 0 1 0 0-4z" fill="currentColor" fill-rule="evenodd"/></svg><span>Опубликовать</span>
+        </button>
+        <button id="ed-copy" class="ed-side primary" type="button" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ed-copy-icon"/></svg><span>Копия уровня</span>
+        </button>
+        <i class="ed-sep"></i>
+        <button id="ed-add" class="ed-side" type="button" title="Новая ячейка после выбранной">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7z" fill="currentColor"/></svg><span>После</span>
+        </button>
+        <button id="ed-dup" class="ed-side" type="button" title="Копия выбранной ячейки">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ed-copy-icon"/></svg><span>Копия</span>
+        </button>
+        <button id="ed-del" class="ed-side" type="button" title="Удалить выбранную ячейку (Delete)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6l1 2h5v3H3V4h5zM5 8.5h14L18 22H6z" fill="currentColor"/></svg><span>Удалить</span>
+        </button>
+        <div class="ed-pair">
+          <button id="ed-left" class="ed-side" type="button" title="Сдвинуть ячейку влево" aria-label="Сдвинуть влево">◀</button>
+          <button id="ed-right" class="ed-side" type="button" title="Сдвинуть ячейку вправо" aria-label="Сдвинуть вправо">▶</button>
+        </div>
+        <button id="ed-random" class="ed-side" type="button" title="Добавить в конец 10 случайных ячеек">
+          <b>+10</b><span>Случайных</span>
+        </button>
+      </aside>
     </section>
 
     <!-- СТАТИСТИКА -->
@@ -725,6 +749,9 @@
     <symbol id="lock" viewBox="0 0 24 24">
       <path fill-rule="evenodd" d="M7 10 V7.5 A5 5 0 0 1 17 7.5 V10 H19 V22 H5 V10 Z M9.5 10 H14.5 V7.5 A2.5 2.5 0 0 0 9.5 7.5 Z" fill="currentColor"/>
     </symbol>
+    <symbol id="ed-copy-icon" viewBox="0 0 24 24">
+      <path d="M8 2h13v13h-4v-3h1V5h-7v1H8zM3 8h13v14H3z" fill="currentColor"/>
+    </symbol>
     <symbol id="flame" viewBox="0 0 24 24">
       <path d="M12 1.5 C13 6 18.5 8.5 18.5 14.5 A6.5 6.5 0 0 1 5.5 14.5 C5.5 11.5 7.5 9.5 8.5 8.5 C8.7 10.5 9.7 11.7 11 12 C11 8.5 10 5 12 1.5 Z" fill="currentColor"/>
     </symbol>
@@ -742,6 +769,7 @@
   <script src="social.js?v=2"></script>
   <script src="rewards.js?v=2"></script>
   <script src="lobby.js?v=2"></script>
+  <script src="edview.js?v=2"></script>
   <script src="levels.js?v=2"></script>
   <script src="app.js?v=2"></script>
   <script src="fullscreen.js?v=2"></script>

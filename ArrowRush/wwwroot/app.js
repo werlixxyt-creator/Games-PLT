@@ -673,7 +673,7 @@ $("btn-stats-back").addEventListener("click", () => show("menu"));
 
 social.init({ api, historyItem, me: () => profile, refresh: refreshProfile });
 lobby.init({ conn, show, screen: () => screen, onChange: () => social.loadFriends() });
-levels.init({ conn, show, screen: () => screen, onPlay: (l) => { lastLevel = l; } });
+levels.init({ conn, show, screen: () => screen, me: () => profile, onPlay: (l) => { lastLevel = l; } });
 $("btn-levels").addEventListener("click", () => levels.open());
 $("btn-levels-back").addEventListener("click", () => show("modes"));
 rewards.init({
