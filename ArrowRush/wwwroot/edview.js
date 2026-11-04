@@ -195,7 +195,7 @@ const edview = (() => {
 
     ctx.setLineDash(cells.dash(s.skin));
     for (let i = from; i < to; i++) {
-      ctx.globalAlpha = i === s.sel ? 0.95 : i === hover ? 0.7 : 0.42;
+      ctx.globalAlpha = run ? (i < run.i ? 0.95 : 0.42) : i === s.sel ? 0.95 : i === hover ? 0.7 : 0.42;
       ctx.strokeStyle = COLORS[s.cells[i].a];
       ctx.lineWidth = width - 6;
       seg(i);
@@ -301,15 +301,15 @@ const edview = (() => {
     ctx.restore();
   }
 
-  function drawHero(s) {
+  function drawHero(s, x = 0, y = 0) {
     if (s.hero !== heroId) {
       heroId = s.hero;
       heroImg = document.createElement("canvas");
       heroImg.width = heroImg.height = 168;
       course.paintHero(heroImg, heroId);
     }
-    const y = reduce ? 0 : Math.sin(time * 3) * 5;
-    ctx.drawImage(heroImg, -42, y - 42, 84, 84);
+    y += reduce ? 0 : Math.sin(time * 3) * 5;
+    ctx.drawImage(heroImg, x - 42, y - 42, 84, 84);
   }
 
   function drawGhost(s) {
@@ -410,9 +410,10 @@ const edview = (() => {
         ctx.fillRect(x1 - 3, m.y - 2, 4, m.h + 4);
       }
     });
-    if (s.cells[s.sel]) {
+    const mark = run ? heroPos().x : s.cells[s.sel] ? geo.xs[s.sel + 1] : null;
+    if (mark !== null) {
       ctx.fillStyle = "#fff";
-      ctx.fillRect(at(geo.xs[s.sel + 1]) - 2, m.y - 4, 4, m.h + 8);
+      ctx.fillRect(at(mark) - 2, m.y - 4, 4, m.h + 8);
     }
     const v0 = Math.max(m.x, at(camX)), v1 = Math.min(m.x + m.w, at(camX + viewW()));
     ctx.strokeStyle = "#fff";
@@ -428,13 +429,17 @@ const edview = (() => {
     last = now;
     time += dt;
 
-    const s = o.get();
+    let s = o.get();
     geo = layout(s.cells, s.fast);
-    if (pendingFocus !== null) {
+    if (run) {
+      s = { ...s, sel: -1 };
+      hover = null;
+      runFrame(dt);
+    } else if (pendingFocus !== null) {
       focusNow(pendingFocus);
       pendingFocus = null;
     }
-    if (camTarget !== null) {
+    if (!run && camTarget !== null) {
       camX += (camTarget - camX) * (1 - Math.exp(-dt * (reduce ? 60 : 10)));
       if (Math.abs(camTarget - camX) < 0.5) {
         camX = camTarget;
@@ -459,14 +464,287 @@ const edview = (() => {
     let to = from;
     while (to < s.cells.length && geo.xs[to] < right + 120) to++;
     if (to > from) drawRoad(s, from, to);
-    drawHero(s);
-    for (let i = from; i < to; i++) if (i !== s.sel) drawKey(s, i);
-    if (s.sel >= from && s.sel < to) drawKey(s, s.sel);
-    drawGhost(s);
-    drawObjects(s, left, right, true);
+    if (run) {
+      for (let i = to - 1; i >= Math.max(from, run.i); i--) drawRunKey(s, i);
+      drawRunHero(s);
+    } else {
+      drawHero(s);
+      for (let i = from; i < to; i++) if (i !== s.sel) drawKey(s, i);
+      if (s.sel >= from && s.sel < to) drawKey(s, s.sel);
+      drawGhost(s);
+      drawObjects(s, left, right, true);
+    }
     ctx.restore();
 
     drawMap(s);
+    if (run) drawHud(s);
+  }
+
+  // ---------- Быстрый тест ----------
+  // Уровень проходится прямо в превью, как в GD: с выбранной ячейки, без сервера и без выхода из редактора.
+  // Правила те же, что в Match.cs (их числа передаёт levels.js), но прохождение не засчитывается для публикации.
+  // «Раст», «Кловд» и триггеры здесь не запускаются — их проверяет полный «Тест».
+
+  // run: { cells, from, fast, rules, i, k, held, t, startT, entered, stunUntil, jumpAt, hits, wallSeconds,
+  //        attempt, shown, done, failAt, msg, saved }
+  let run = null;
+
+  const JUMP_HEIGHT = 120;
+
+  function play(level) {
+    run = {
+      cells: level.cells, from: level.from, fast: level.fast, rules: level.rules,
+      held: 0, t: 0, attempt: 0, msg: null, saved: camX, onEnd: level.onEnd,
+    };
+    restart();
+    hover = null;
+    drag = null;
+    canvas.style.cursor = "default";
+    if (geo) camX = heroPos().x - viewW() * 0.35;
+    camTarget = null;
+    show();
+  }
+
+  function stop() {
+    if (!run) return;
+    camX = run.saved;
+    run = null;
+    canvas.style.cursor = "grab";
+  }
+
+  /** Попытка с начала: туда же, откуда запускали. */
+  function restart() {
+    Object.assign(run, {
+      i: run.from, k: 0, startT: run.t, entered: run.t, stunUntil: -Infinity, jumpAt: -Infinity,
+      hits: 0, wallSeconds: 0, done: null, failAt: null, shown: run.from, attempt: run.attempt + 1,
+    });
+  }
+
+  function say(text, color = "#fff") {
+    run.msg = { text, color, at: run.t };
+  }
+
+  const cur = () => run.cells[run.i];
+  const live = () => run.done === null && run.failAt === null;
+  const wallLives = () => run.rules.wallLives - Math.floor(run.wallSeconds / run.rules.wallLife);
+
+  function advance() {
+    const note = cur().note;
+    if (note) say(`${note} — только в полном «Тесте»`, "#ffd54a");
+    run.i++;
+    run.k = 0;
+    run.entered = run.t;
+    run.hits = 0;
+    run.wallSeconds = 0;
+    if (run.i >= run.cells.length) {
+      run.done = run.t;
+      say(`Пройдено за ${(run.t - run.startT).toFixed(2)} с`, COLORS[1]);
+    }
+  }
+
+  function fail(text) {
+    run.failAt = run.t;
+    say(text, "#ff3b5c");
+  }
+
+  /** НЛО: удар возвращает к началу участка, как Match.Crash. */
+  function crash() {
+    run.jumpAt = -Infinity;
+    run.k = 0;
+    while (run.i > 0 && run.cells[run.i - 1].ufo) run.i--;
+    say("Удар!", "#ff3b5c");
+  }
+
+  function stepRun(dt) {
+    run.t += dt;
+    if (run.failAt !== null) {
+      if (run.t - run.failAt > 0.8) {
+        restart();
+        run.shown = run.from;
+      }
+      return;
+    }
+    if (run.done !== null) {
+      if (run.t - run.done > 2.4) end();
+      return;
+    }
+    const c = cur(), R = run.rules;
+    if (c.ufo) {
+      run.k += dt / c.f;
+      if (run.k < 1) return;
+      const jump = (run.t - run.jumpAt) / R.jump;
+      if (jump >= R.clearFrom && jump <= R.clearTo) advance();
+      else crash();
+      return;
+    }
+    if (c.wall) {
+      if (c.zone !== "rainbow") return;
+      run.wallSeconds += dt;
+      if (wallLives() <= 0) fail("Лазеры добили — заново");
+      return;
+    }
+    if (c.spike) {
+      if (run.held) return;
+      run.k += dt / c.f;
+      if (run.k >= 1) advance();
+      return;
+    }
+    if (run.fast) return;
+    const target = 1 << c.a;
+    if (!run.held) run.k -= R.idle * dt;
+    else if (run.held & ~target) run.k -= R.wrong * dt;
+    else run.k += dt / c.f;
+    run.k = Math.max(0, run.k);
+    if (run.k >= 1) advance();
+  }
+
+  /** Стрелку нажали: новые нажатия разбираются, как в Match.SetHeld. */
+  function press(a) {
+    if (!run) return;
+    const bit = 1 << a;
+    const fresh = !(run.held & bit);
+    run.held |= bit;
+    if (!fresh || !live()) return;
+    const c = cur(), R = run.rules;
+    if (c.ufo) {
+      if (run.t - run.jumpAt >= R.jump) run.jumpAt = run.t;
+    } else if (c.wall) {
+      run.hits++;
+      run.k = run.hits / R.wallHits;
+      if (run.hits >= R.wallHits) advance();
+    } else if (c.spike) {
+      if (run.t - run.entered < R.spikeGrace) return;
+      run.k = 0;
+      say("Шипы!", "#ff3b5c");
+    } else if (run.fast && run.t >= run.stunUntil) {
+      if (a === c.a) advance();
+      else run.stunUntil = run.t + R.stun;
+    }
+  }
+
+  function release(a) {
+    if (run) run.held &= ~(1 << a);
+  }
+
+  function releaseAll() {
+    if (run) run.held = 0;
+  }
+
+  /** Тест кончился сам (уровень пройден): редактор возвращает свои кнопки. */
+  function end() {
+    const cb = run.onEnd;
+    stop();
+    if (cb) cb();
+  }
+
+  /** Где персонаж: на участке i он летит от точки i к стрелке i; после финиша — к порталу. */
+  function heroPos() {
+    const n = geo.xs.length - 1;
+    const f = run.shown;
+    if (f >= n) return { x: geo.end + Math.min(1, f - n) * PORTAL_AT, y: geo.ys[n] };
+    const i = Math.max(0, Math.floor(f)), k = f - i;
+    return { x: geo.xs[i] + (geo.xs[i + 1] - geo.xs[i]) * k, y: geo.ys[i] + (geo.ys[i + 1] - geo.ys[i]) * k };
+  }
+
+  function runFrame(dt) {
+    stepRun(dt);
+    if (!run) return;
+    const target = run.done !== null ? run.cells.length + 1 : run.i + Math.min(1, run.k);
+    run.shown += (target - run.shown) * (1 - Math.exp(-dt * (reduce ? 60 : 16)));
+    const want = heroPos().x - viewW() * 0.35;
+    camX += (want - camX) * (1 - Math.exp(-dt * (reduce ? 60 : 7)));
+  }
+
+  function drawRunKey(s, i) {
+    const c = run.cells[i];
+    const now = i === run.i && live();
+    const r = (s.fast ? KEY_R_FAST : KEY_R) * (now ? 1.15 : 1);
+    const k = now ? Math.min(1, run.k) : 0;
+    ctx.save();
+    ctx.translate(geo.xs[i + 1], geo.ys[i + 1] + (reduce ? 0 : Math.sin(time * 2.4 + i * 1.3) * 3));
+
+    if (c.wall) {
+      levelobj.wall(ctx, r);
+      if (now) {
+        outlinedText(`${run.rules.wallHits - run.hits}`, 0, 8, "#fff", "900 22px Unbounded, sans-serif");
+        const lives = c.zone === "rainbow" ? ` · ♥ ${wallLives()}` : "";
+        outlinedText(`ЖМИ ЛЮБУЮ${lives}`, 0, r * 2.2 + 26, "#d8d2e6", "900 15px Unbounded, sans-serif");
+      }
+    } else if (c.spike || c.ufo) {
+      cells.draw(ctx, { skin: s.skin, r, color: levelobj.SPIKE, k, t: time });
+      levelobj.spikes(ctx, r);
+      if (now) outlinedText(c.ufo ? "ПРЫГАЙ" : "НЕ ЖМИ", 0, r + 38, levelobj.SPIKE, "900 16px Unbounded, sans-serif");
+    } else {
+      // обман открывает настоящую стрелку, только когда до неё дошли
+      const a = c.fake && !now ? (c.a + 2) % 4 : c.a;
+      const wrong = now && (run.fast ? run.t < run.stunUntil : (run.held & ~(1 << c.a)) !== 0);
+      cells.draw(ctx, { skin: s.skin, r, color: COLORS[a], k, t: time, wrong });
+      cells.arrow(ctx, r, a, now);
+    }
+
+    const sp = s.cells[i] && s.cells[i].s && s.specials[s.cells[i].s];
+    if (sp) {
+      ctx.strokeStyle = sp.color;
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.arc(0, 0, r + 9, 0, Math.PI * 2);
+      ctx.stroke();
+      outlinedText(sp.name.toUpperCase(), 0, -r - 18, sp.color, "900 15px Unbounded, sans-serif");
+    }
+    ctx.restore();
+  }
+
+  function drawRunHero(s) {
+    const p = heroPos();
+    let y = p.y;
+    const ufo = run.i < run.cells.length && run.cells[run.i].ufo;
+    const jump = (run.t - run.jumpAt) / run.rules.jump;
+    if (ufo && jump >= 0 && jump <= 1) y -= Math.sin(jump * Math.PI) * JUMP_HEIGHT;
+    if (ufo) {
+      // НЛО под персонажем
+      ctx.fillStyle = "rgba(57,230,255,.85)";
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y + 50, 62, 16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    if (run.failAt !== null) ctx.globalAlpha = Math.floor(run.t * 12) % 2 ? 0.25 : 1;
+    drawHero(s, p.x, y);
+    ctx.globalAlpha = 1;
+  }
+
+  /** Плашка теста сверху и большие надписи по центру — в пикселях экрана. */
+  function drawHud() {
+    const n = run.cells.length, total = n - run.from;
+    const passed = Math.min(run.i, n) - run.from;
+    const secs = (run.done ?? run.failAt ?? run.t) - run.startT;
+    const bw = Math.min(460, w - 24), bx = (w - bw) / 2, by = 12;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(16,12,34,.72)";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, 70, 14);
+    ctx.fill();
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 14px Unbounded, sans-serif";
+    ctx.fillText(`БЫСТРЫЙ ТЕСТ · попытка ${run.attempt} · ${secs.toFixed(1)} с`, w / 2, by + 22);
+    ctx.fillStyle = "rgba(255,255,255,.15)";
+    ctx.fillRect(bx + 14, by + 32, bw - 28, 8);
+    ctx.fillStyle = COLORS[1];
+    ctx.fillRect(bx + 14, by + 32, (bw - 28) * (total ? passed / total : 1), 8);
+    ctx.fillStyle = "rgba(255,255,255,.75)";
+    ctx.font = "800 12px Nunito, sans-serif";
+    ctx.fillText(`с ячейки ${run.from + 1} · ${passed}/${total} · Esc — в редактор · для публикации нужен полный «Тест»`, w / 2, by + 58);
+
+    const m = run.msg;
+    if (m && run.t - m.at < 1.6) {
+      ctx.globalAlpha = Math.min(1, (1.6 - (run.t - m.at)) * 2.5);
+      outlinedText(m.text, w / 2, h * 0.3, m.color, `900 ${m.text.length > 20 ? 22 : 34}px Unbounded, sans-serif`);
+    }
+    ctx.restore();
   }
 
   // ---------- Мышь и касания ----------
@@ -522,7 +800,7 @@ const edview = (() => {
   }
 
   function onDown(e) {
-    if (!geo || e.button > 0) return;
+    if (!geo || e.button > 0 || run) return; // в тесте превью не правится
     const pt = local(e);
     canvas.setPointerCapture(e.pointerId);
     if (inMap(pt)) {
@@ -576,6 +854,7 @@ const edview = (() => {
   }
 
   function onMove(e) {
+    if (run) return;
     const pt = local(e);
     if (!drag) {
       const s = o.get();
@@ -617,6 +896,7 @@ const edview = (() => {
 
   function onWheel(e) {
     e.preventDefault();
+    if (run) return; // в тесте камера едет за персонажем
     const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
     camX += (d * (e.deltaMode === 1 ? 30 : 1)) / scale;
     camTarget = null;
@@ -663,5 +943,5 @@ const edview = (() => {
     canvas.addEventListener("wheel", onWheel, { passive: false });
   }
 
-  return { init, show, reset, focus };
+  return { init, show, reset, focus, play, stop, press, release, releaseAll, playing: () => !!run };
 })();

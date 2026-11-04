@@ -1402,7 +1402,8 @@ h3 {
   #screen-game .opponents { bottom: calc(198px + env(safe-area-inset-bottom)); }
 
   /* кнопки видны только во время игры: в матче и в «Своём треке» */
-  body[data-screen="game"] .touchpad, body[data-screen="rhythm"] .touchpad { display: grid; }
+  body[data-screen="game"] .touchpad, body[data-screen="rhythm"] .touchpad,
+  body[data-screen="editor"][data-edtest] .touchpad { display: grid; }
 
   .touchpad {
     display: none;
@@ -2433,6 +2434,30 @@ button.ed-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
 .ed-play > span { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px 6px 14px; }
 .ed-play svg { width: 20px; height: 20px; }
 .ed-play:disabled { opacity: .5; cursor: default; }
+/* быстрый тест: прямо в превью, над кнопкой полного «Теста» */
+.ed-quick {
+  flex: none;
+  margin-top: auto;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 6px;
+  font: 900 13px var(--font-display);
+  color: var(--outline);
+  background: var(--a1);
+  border: 3px solid var(--outline);
+  border-radius: 14px;
+  box-shadow: 0 4px 0 var(--outline);
+  cursor: pointer;
+  transition: transform .12s, box-shadow .12s, filter .2s;
+}
+.ed-quick svg { flex: none; width: 18px; height: 18px; }
+.ed-quick:hover { filter: brightness(1.1); transform: translateY(-2px); }
+.ed-quick:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--outline); }
+.ed-quick.on { color: #fff; background: var(--bad); }
+.ed-quick + .ed-play { margin-top: 0; }
+/* пока идёт быстрый тест, редактор замирает: работают превью и «Стоп» */
+#screen-editor.testing :is(.ed-top, .ed-right, .ed-left > :not(#ed-quick)) { opacity: .35; pointer-events: none; }
+#screen-editor.testing :is(.ed-plate, .ed-info, .ed-obj, .ed-code) { display: none; }
+#screen-editor.testing #ed-canvas { cursor: default; }
 
 .ed-side {
   flex: none;

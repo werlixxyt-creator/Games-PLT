@@ -63,6 +63,17 @@ const levels = (() => {
   };
   const ARROW_NAMES = ["Влево", "Вверх", "Вправо", "Вниз"];
 
+  // быстрый тест в превью считает как матч: числа из GameRules.cs и Difficulties
+  const QUICK = {
+    spikeFast: 0.6, spikeGrace: 0.3, wallHits: 10, wallLives: 10, wallLife: 0.9, overdrive: 0.6,
+    swamIntro: 1.8, swamCell: 0.9, jump: 0.75, clearFrom: 0.12, clearTo: 0.88,
+  };
+  const QUICK_DIFF = {
+    easy: { idle: 0.2, wrong: 0.7, stun: 0.35 },
+    normal: { idle: 0.35, wrong: 1.2, stun: 0.5 },
+    hard: { idle: 0.55, wrong: 1.7, stun: 0.7 },
+  };
+
   // вкладки палитры, как в GD; «Выбор» и «Ластик» есть на каждой
   const CATS = [["cells", "Ячейки"], ["obstacles", "Препятствия"], ["blocks", "Блоки"], ["deco", "Декор"], ["triggers", "Триггеры"]];
   // препятствия на ячейке, как LevelGenerator.EditorObstacles
@@ -266,6 +277,7 @@ const levels = (() => {
   }
 
   async function edit(id) {
+    quickTest(false);
     $("ed-error").textContent = "";
     if (id) {
       try {
@@ -631,6 +643,70 @@ const levels = (() => {
     play(ed.id, false, "editor", $("ed-error"));
   }
 
+  // ---------- Быстрый тест ----------
+  // Прямо в превью, как в GD: с выбранной ячейки, без сохранения и сервера. Для публикации не засчитывается.
+
+  let quick = false;
+
+  /** Ячейки, как их соберёт сервер (LevelGenerator.FromEditor), без «Раста» и «Кловда»: те только помечены. */
+  function playable() {
+    const out = ed.cells.map((c) => ({
+      a: c.a,
+      f: c.o === "spike" ? (ed.fast ? QUICK.spikeFast : c.f) : ed.fast ? 0 : c.f,
+      wall: c.o === "wall", spike: c.o === "spike", fake: c.o === "fake",
+      note: c.s === "rast" || c.s === "cloud" ? SPECIALS[c.s].name : null,
+    }));
+    ed.cells.forEach((c, i) => {
+      if (!c.s) return;
+      for (let k = 1; k <= SPECIALS[c.s].span && i + k < out.length; k++) {
+        const p = out[i + k];
+        p.zone = c.s;
+        if (c.s === "chart") p.a = c.a;
+        else if (c.s === "over") p.f = Math.round(p.f * QUICK.overdrive * 100) / 100;
+        else if (c.s === "swam") Object.assign(p, { ufo: true, f: k === 1 ? QUICK.swamIntro : QUICK.swamCell });
+        else if (c.s === "rainbow" && k % 2 === 0) p.wall = true;
+      }
+    });
+    return out;
+  }
+
+  function quickTest(on = !quick) {
+    if (on === quick) return;
+    quick = on;
+    if (on) {
+      pickObj(null);
+      toggleCode(false);
+      if (document.activeElement) document.activeElement.blur(); // стрелки идут в тест, а не в поле ввода
+      edview.play({
+        cells: playable(), from: sel, fast: ed.fast,
+        rules: { ...QUICK, ...(QUICK_DIFF[ed.difficulty] || QUICK_DIFF.normal) },
+        onEnd: () => quickTest(false),
+      });
+    } else {
+      edview.stop();
+    }
+    document.body.toggleAttribute("data-edtest", on);
+    $("screen-editor").classList.toggle("testing", on);
+    renderQuick();
+  }
+
+  function renderQuick() {
+    const b = $("ed-quick");
+    b.classList.toggle("on", quick);
+    b.innerHTML = quick
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg><span>Стоп</span>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#play"/></svg><span>Быстрый тест</span>';
+  }
+
+  /** Экранные стрелки на телефоне (app.js). */
+  function press(a) {
+    if (quick) edview.press(a);
+  }
+
+  function release(a) {
+    if (quick) edview.release(a);
+  }
+
   async function publish() {
     if (!confirm("После публикации уровень увидят все, а менять его будет нельзя. Опубликовать?")) return;
     try {
@@ -768,13 +844,28 @@ const levels = (() => {
   }
 
   function back() {
+    quickTest(false);
     if (ed && ed.dirty && !ed.published && !confirm("Выйти без сохранения? Изменения пропадут.")) return;
     open();
   }
 
   /** Быстрая расстановка: стрелка ставится в выбранную ячейку и курсор идёт дальше, в конце добавляется новая. */
   function onKey(e) {
-    if (opts.screen() !== "editor" || !ed || e.target.matches("input, textarea, select")) return;
+    if (opts.screen() !== "editor" || !ed) return;
+    if (quick) {
+      // в тесте клавиши играют: стрелки — в уровень, Esc и Enter — назад в редактор
+      if (e.code === "Escape" || e.code === "Enter") quickTest(false);
+      else if (KEYS[e.code] !== undefined) edview.press(KEYS[e.code]);
+      else return;
+      e.preventDefault();
+      return;
+    }
+    if (e.target.matches("input, textarea, select")) return;
+    if (e.code === "Enter" && !e.repeat && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault(); // иначе Enter ещё и нажмёт кнопку в фокусе
+      quickTest(true);
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && e.code === "KeyS") {
       e.preventDefault();
       if (!locked()) save();
@@ -880,6 +971,12 @@ const levels = (() => {
     $("btn-editor-back").addEventListener("click", back);
     initCode();
     addEventListener("keydown", onKey);
+    $("ed-quick").addEventListener("click", () => quickTest());
+    renderQuick();
+    addEventListener("keyup", (e) => {
+      if (quick && KEYS[e.code] !== undefined) edview.release(KEYS[e.code]);
+    });
+    addEventListener("blur", () => edview.releaseAll()); // ушёл в другое окно — всё отпущено
   }
 
   /** Сервер сообщил, что уровень пройден автором: обновляем открытый список или редактор. */
@@ -906,5 +1003,5 @@ const levels = (() => {
     }
   }
 
-  return { init, open, play, changed, returnTo };
+  return { init, open, play, changed, returnTo, press, release };
 })();

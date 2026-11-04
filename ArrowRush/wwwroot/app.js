@@ -1925,12 +1925,14 @@ for (const key of document.querySelectorAll("#touchpad [data-arrow]")) {
     if (navigator.vibrate) navigator.vibrate(8);
     if (screen === "game") pressArrow(a);
     else if (screen === "rhythm") rhythm.press(a);
+    else if (screen === "editor") levels.press(a); // быстрый тест в редакторе
   });
   const up = () => {
     if (!key.classList.contains("down")) return;
     key.classList.remove("down");
     releaseArrow(a);
     rhythm.release(a);
+    levels.release(a);
   };
   key.addEventListener("pointerup", up);
   key.addEventListener("pointercancel", up);
