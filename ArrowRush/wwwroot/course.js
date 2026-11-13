@@ -37,8 +37,7 @@ const course = (() => {
   const PISTON_DOWN = 0.25;  // столько секунд поршень опускается; вместе с PISTON_HOLD — GameRules.PistonGrabSeconds
   const PISTON_HOLD = 0.75;  // столько персонаж внутри
   const PISTON_UP = 0.5;     // столько поршень уходит обратно
-  const PISTON_SPEED = 420;  // единиц в секунду между трубами
-  const PISTON_GAP = 72;     // половина просвета трубы на экране; сервер прощает чуть больше (GameRules.PistonGapHalf)
+  const SAUCER_HALF = 22;    // половина высоты тарелки: край трубы рисуется дальше хитбокса на столько — удар, когда тарелка коснулась
   const PIPE_TILE = 58;      // шаг ячеек в трубе
 
   // ивенты: подпись особой ячейки, цвет и палитра, в которую уходит космос (овердрайв)
@@ -133,6 +132,11 @@ const course = (() => {
   let press = null;     // поршень работает: { start, x, y — где он отпустил персонажа, closed, opened }
   let lastReached = 0;  // на какой ячейке игрок был в прошлом кадре: поршень опускается, когда он вошёл в его участок
   let lastFly = 0, flapped = 0; // высота НЛО в прошлом кадре и вспышка взмаха, затухает
+  // трубы видны только после превращения: до него участок выглядит обычным уровнем.
+  // pipesFrom — первая ячейка участка, где персонаж уже НЛО, pipesAt — когда он им стал
+  let pipesFrom = -1, pipesAt = 0;
+  let pistonSpeed = 420, pistonGap = 107; // скорость вдоль пути и половина нарисованного просвета (от сервера)
+  let heroNow = null;   // где персонаж в этом кадре: в него бьёт удар
 
   /** Повторяемый генератор случайных чисел: один и тот же матч — одна и та же траектория. */
   function rng(seed) {
@@ -173,7 +177,7 @@ const course = (() => {
   const cloudShown = (i) => opts.level[i]?.zone === "cloud" && reached > opts.level[i].chartAt;
 
   /** Труба поршня, который уже опустился: вместо ячейки — столбы из ячеек с просветом. */
-  const pipeShown = (i) => opts.level[i]?.zone === "piston" && reached >= opts.level[i].pistonFrom;
+  const pipeShown = (i) => opts.level[i]?.zone === "piston" && opts.level[i].pistonFrom === pipesFrom && reached >= pipesFrom;
 
   /** На этом участке нет дороги. */
   const noRoad = (i) => ufoShown(i) || cloudShown(i) || pipeShown(i);
@@ -275,7 +279,7 @@ const course = (() => {
         for (; i < level.length && straightKind(level[i]) === straight; i++) {
           const step = straight === "ufo" ? level[i].fill * UFO_SPEED
             : straight === "cloud" ? level[i].fill * CLOUD_SPEED
-            : straight === "piston" ? level[i].fill * PISTON_SPEED : RAST_STEP;
+            : straight === "piston" ? level[i].fill * pistonSpeed : RAST_STEP;
           segs.push([[x, y], [x + step, y]]);
           x += step;
         }
@@ -1124,7 +1128,7 @@ const course = (() => {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(lean);
-    ctx.scale(size * 1.3 * (1 + squash), size * 1.3 * (1 - squash));
+    ctx.scale(size * 0.85 * (1 + squash), size * 0.85 * (1 - squash)); // по размеру хитбокса (GameRules.PistonReach, PistonGapHalf)
     ctx.lineJoin = "round";
 
     // свет снизу: в начале подскока вспыхивает
@@ -1191,7 +1195,7 @@ const course = (() => {
     ctx.save();
     ctx.globalAlpha = Math.min(1, appear * 1.6);
     for (const side of [-1, 1]) {
-      const edge = gapY + side * (PISTON_GAP + slide), far = camY + side * reach;
+      const edge = gapY + side * (pistonGap + slide), far = camY + side * reach;
       const len = (far - edge) * side;
       if (len <= 0) continue;
       // тёмный короб трубы
@@ -2579,9 +2583,13 @@ const course = (() => {
       cell.pistonFrom = o.level[i - 1]?.zone === "piston" ? o.level[i - 1].pistonFrom : i;
       cell.chartAt = cell.pistonFrom - 1;
     });
+    pistonSpeed = o.piston?.speed ?? 420;
+    pistonGap = (o.piston?.gap ?? 92) - 7 + SAUCER_HALF; // как строгий хитбокс клиента в app.js плюс полтарелки
     map = build(o.level, o.fast, o.seed, o.theme);
     press = null;
     lastReached = 0;
+    pipesFrom = -1;
+    heroNow = null;
     s = 0;
     parts = [];
     pops = [];
@@ -2632,6 +2640,8 @@ const course = (() => {
     eaten = 0;
     press = null;
     lastReached = Math.floor(pos); // у нового игрока поршень уже был — сцену не повторяем
+    pipesFrom = opts.level[lastReached]?.zone === "piston" ? opts.level[lastReached].pistonFrom : -1;
+    pipesAt = time - 1;
     flash = Math.max(flash, 0.4);
   }
 
@@ -2641,9 +2651,10 @@ const course = (() => {
     punch = Math.max(punch, 0.5);
     kick(0.06);
     flashOf(0.3, [255, 40, 70]);
-    const p = at(s);
+    const p = heroNow || at(s); // НЛО поршня летит выше или ниже пути: бьёт там, где оно
     pixels(p.x, p.y, 16, "#ff3b5c");
     ring(p.x, p.y, 200, "#ff3b5c");
+    if (pipeShown(Math.floor(s))) pixels(p.x, p.y, 24, "#8ff4ff", 1.4); // тарелка разлетается
   }
 
   /** Дыра догнала игрока: он сжимается в точку. */
@@ -2968,8 +2979,12 @@ const course = (() => {
     // конвейерный поршень: игрок вошёл в его участок (впервые или после удара) — поршень опускается и забирает персонажа
     const entered = opts.level[reached];
     if (reached !== lastReached && entered?.zone === "piston" && entered.pistonFrom === reached) {
-      if (reduce) flashOf(0.5, [150, 245, 255]);
-      else press = { start: time, x: 0, y: 0, closed: false, opened: false };
+      pipesFrom = -1; // пока персонаж не стал НЛО, участок выглядит обычным уровнем
+      if (reduce) {
+        flashOf(0.5, [150, 245, 255]);
+        pipesFrom = reached;
+        pipesAt = time;
+      } else press = { start: time, from: reached, x: 0, y: 0, closed: false, opened: false };
     }
     lastReached = reached;
     const pt = press ? time - press.start : -1;
@@ -2990,6 +3005,8 @@ const course = (() => {
       press.opened = true;
       press.x = me.x;
       press.y = me.y;
+      pipesFrom = press.from; // ячейки впереди превращаются в трубы
+      pipesAt = time;
       flashOf(0.7, [150, 245, 255]);
       shake = Math.max(shake, 0.7);
       punch = 1;
@@ -3015,6 +3032,7 @@ const course = (() => {
     const pathY = me.y, drop = dropAt(s);
     me.y += drop - jumpLift(o.air);
     if (pipeShown(Math.floor(s))) me.y = pathY - (o.fly || 0); // НЛО поршня: высоту над путём считает сервер
+    heroNow = { x: me.x, y: me.y };
     // взмах: НЛО резко пошло вверх — тарелка сжимается, из-под неё бьёт свет
     const fly = saucer ? o.fly || 0 : 0;
     const lean = dt > 0 ? clamp(-(fly - lastFly) / dt / 1600, -0.35, 0.35) : 0; // вверх — носом вверх
@@ -3149,8 +3167,14 @@ const course = (() => {
           continue;
         }
         if (pipeShown(i)) {
-          // труба вырастает сверху и снизу, когда до неё остаётся меньше двух ячеек
-          drawPipe(i, clamp((2.3 - (i + 1 - s)) / 0.8, 0, 1));
+          // в миг превращения ячейки одна за другой становятся трубами: ячейка тает, труба въезжает сверху и снизу
+          const a = clamp((time - pipesAt - (i - pipesFrom) * 0.12) / 0.35, 0, 1);
+          if (a < 1 && i >= cur) {
+            ctx.globalAlpha = 1 - a;
+            drawKey(i, false, 0, false);
+            ctx.globalAlpha = 1;
+          }
+          drawPipe(i, a);
           continue;
         }
         const wall = i >= cur ? wallK(i) : 0;
@@ -3205,7 +3229,9 @@ const course = (() => {
       const pose = drop > 1 || air
         ? { spin: air ? Math.min(1, o.air / opts.jump) * Math.PI * 2 : Math.sin(time * 7) * 0.12, sx: 1 + squash, sy: 1 - squash }
         : undefined;
-      if (saucer) drawSaucer(me.x + jitter, me.y + jitter, gone, lean, flapped);
+      if (saucer) {
+        if (!o.dead) drawSaucer(me.x + jitter, me.y + jitter, gone, lean, flapped); // разбилась о трубу — не рисуем, пока участок не начнётся заново
+      }
       else if (!crawling && !grabbed) drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
     }
     if (press) drawPiston(me.x, me.y);

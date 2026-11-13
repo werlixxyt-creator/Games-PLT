@@ -111,7 +111,8 @@ let skinSlot = "slider"; // открытая вкладка на экране с
 function newPrediction() {
   return {
     idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false, jumpAt: -Infinity, lane: 1, laneAt: -Infinity, hops: 0,
-    fly: { y: 0, v: 0, idx: -1, at: 0 }, // поршень: свой полёт НЛО, считается здесь же, как на сервере
+    // поршень: свой полёт НЛО, считается здесь же, как на сервере; dead — разбилась о трубу, cleared — трубу позади не проверять
+    fly: { y: 0, v: 0, idx: -1, at: 0, dead: false, deadAt: 0, cleared: -1 },
   };
 }
 
@@ -1265,6 +1266,7 @@ function startMatch(d) {
     thunder: () => music.sting("thunder"),
     laser: () => music.sting("laser"),
     clank: (kind) => music.sting(kind), // звуки поршня
+    piston: d.piston, // скорость и хитбокс НЛО: по ним стоят трубы
     trailOf: trailOf(me.skin),
   });
   music.level(course.style()); // на этот дизайн уровня может стоять свой трек
@@ -1584,14 +1586,29 @@ function stepFly(idx, pos, now) {
     f.y = f.v = 0;
     return 0;
   }
+  // разбилась: ждём, пока сервер вернёт к началу участка; если он не согласился с ударом — летим дальше
+  if (f.dead && now - f.deadAt < FLY_CONFIRM) return f.y;
+  f.dead = false;
   f.v -= phys.gravity * dt;
   f.y += f.v * dt;
   if (Math.abs(f.y) > phys.limit) {
     f.y = Math.max(-phys.limit, Math.min(phys.limit, f.y));
     f.v = 0;
   }
+  // хитбокс как на сервере (Match.Flutter), только чуть строже: удар виден сразу, без задержки сети
+  const len = level[idx].fill * phys.speed, k = Math.min(1, pos - idx);
+  const outside = (cell) => Math.abs(f.y - (cell.gap || 0)) > phys.gap - 7;
+  const front = (1 - k) * len <= phys.reach + 3 && outside(level[idx]);
+  const back = level[idx - 1]?.zone === "piston" && f.cleared !== idx && k * len <= phys.reach + 3 && outside(level[idx - 1]);
+  if (front || back) {
+    f.dead = true;
+    f.deadAt = now;
+    crashed();
+  }
   return f.y;
 }
+
+const FLY_CONFIRM = 900; // столько ждём, что сервер подтвердит удар НЛО о трубу
 
 /** Высота НЛО соперника или напарника между снимками сервера: летит по той же дуге. */
 function flyOf(p, elapsed) {
@@ -1787,7 +1804,14 @@ function render(now) {
     }
 
     if (isMe) {
-      if (p.crash > track.crash) crashed();
+      if (p.crash > track.crash) {
+        // удар о трубу уже показан по своему предсказанию — сервер его только подтвердил
+        if (pred.fly.dead) pred.fly.dead = false;
+        else crashed();
+        pred.fly.y = pred.fly.v = 0;
+        pred.fly.cleared = p.idx;
+        pred.fly.idx = p.idx;
+      }
       track.crash = p.crash;
       if (p.out && inRast(p) && !track.devoured) {
         track.devoured = true;
@@ -1826,7 +1850,7 @@ function render(now) {
   const myFly = mine ? stepFly(Math.min(Math.floor(myPos), level.length), myPos, now) : 0;
   const view = watched
     ? { pos: watched.idx + watched.p, air: watched.air, hole, hp, lane: watched.lane, fly: flyOf(watched, elapsed), ...handsOf(watched, t) }
-    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp, lane: myLane, fly: myFly };
+    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp, lane: myLane, fly: myFly, dead: pred.fly.dead };
   const pos = Math.min(Math.floor(view.pos), level.length);
   course.frame(now, { ...view, mates, energy: music.energy(), part: music.part(), final: pos / level.length >= MARKS[1][0] && pos < level.length });
 
@@ -1995,7 +2019,7 @@ function predictJump() {
 /** Поршень: взмах НЛО виден сразу, те же правила, что на сервере (Match.Flap). */
 function predictFlap() {
   const mine = match && lastState && lastState.players.find((p) => p.slot === match.you);
-  if (!mine || mine.out || mine.done || !match.piston) return;
+  if (!mine || mine.out || mine.done || !match.piston || pred.fly.dead) return;
   if (match.level[mine.idx]?.zone !== "piston") return;
   const pos = mine.idx + Math.min(1, mine.p + Math.min((performance.now() - stateAt) / 1000, 0.2) / match.level[mine.idx].fill);
   if (pistonGrabbed(mine.idx, pos)) return;

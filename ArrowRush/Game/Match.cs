@@ -58,6 +58,8 @@ public sealed class Player
     /// <summary>Поршень: высота НЛО над путём и скорость вверх, единицы сцены.</summary>
     public double FlyY { get; set; }
     public double FlyV { get; set; }
+    /// <summary>Поршень: на этой ячейке трубу позади не проверяем — игрок врезался и начал с неё заново.</summary>
+    public int PipeCleared { get; set; } = -1;
 
     /// <summary>«Радуга»: какую стену ломает игрок, -1 — никакую.</summary>
     public int WallAt { get; set; } = -1;
@@ -285,6 +287,7 @@ public sealed class Match
 
         if (Punishes) Slip(p);
         else while (Level[p.Index - 1].Ufo || Level[p.Index - 1].Zone is LevelGenerator.Cloud or LevelGenerator.Piston) p.Index--;
+        p.PipeCleared = p.Index;
     }
 
     private bool InPiston(Player p) => Level[p.Index].Zone == LevelGenerator.Piston;
@@ -295,8 +298,9 @@ public sealed class Match
         && p.Progress * Level[p.Index].FillSeconds < GameRules.PistonGrabSeconds;
 
     /// <summary>
-    /// Поршень: НЛО падает, взмахи поднимают его, а к концу ячейки он должен быть в просвете трубы.
-    /// Клиент считает так же (app.js, stepFly), чтобы полёт был плавным.
+    /// Поршень: НЛО падает, взмахи поднимают его. Труба стоит в конце ячейки, и пока НЛО проходит через неё
+    /// (ближе к её оси, чем <see cref="GameRules.PistonReach"/>, до и после), оно должно быть в просвете.
+    /// Клиент считает так же (app.js, stepFly): полёт плавный, а удар виден сразу.
     /// </summary>
     private void Flutter(Player p, double dt)
     {
@@ -317,12 +321,25 @@ public sealed class Match
             }
         }
 
-        p.Progress += dt / Level[p.Index].FillSeconds;
-        if (p.Progress < 1) return;
-
-        if (Math.Abs(p.FlyY - (Level[p.Index].Gap ?? 0)) <= GameRules.PistonGapHalf) Advance(p);
-        else Crash(p);
+        p.Progress = Math.Min(1, p.Progress + dt / Level[p.Index].FillSeconds);
+        var len = Level[p.Index].FillSeconds * GameRules.PistonSpeed;
+        // подлетает к трубе этой ячейки
+        if ((1 - p.Progress) * len <= GameRules.PistonReach && !InGap(p, Level[p.Index]))
+        {
+            Crash(p);
+            return;
+        }
+        // ещё не вылетел из трубы прошлой ячейки; после удара о неё не проверяем — персонаж уже начал заново
+        if (p.Index > 0 && Level[p.Index - 1].Zone == LevelGenerator.Piston && p.PipeCleared != p.Index
+            && p.Progress * len <= GameRules.PistonReach && !InGap(p, Level[p.Index - 1]))
+        {
+            Crash(p);
+            return;
+        }
+        if (p.Progress >= 1) Advance(p);
     }
+
+    private static bool InGap(Player p, Slider pipe) => Math.Abs(p.FlyY - (pipe.Gap ?? 0)) <= GameRules.PistonGapHalf;
 
     /// <summary>Взмах: любая стрелка, пока поршень не держит.</summary>
     private void Flap(Player p)
@@ -339,8 +356,11 @@ public sealed class Match
             bot.BotSeenIndex = bot.Index;
             bot.BotWrong = _rnd.NextDouble() < BotMistakeChance(0.05) ? 1 : 0;
         }
-        var gap = Level[bot.Index].Gap ?? 0;
-        if (bot.BotWrong == 0 && bot.FlyY < gap - 20 && bot.FlyV < 60) Flap(bot);
+        // пока не вылетел из трубы позади, держится её просвета; взмах поднимает на 80, так что машет ниже середины на 40
+        var len = Level[bot.Index].FillSeconds * GameRules.PistonSpeed;
+        var behind = bot.Index > 0 && Level[bot.Index - 1].Zone == LevelGenerator.Piston && bot.Progress * len <= GameRules.PistonReach + 20;
+        var gap = (behind ? Level[bot.Index - 1].Gap : Level[bot.Index].Gap) ?? 0;
+        if (bot.BotWrong == 0 && bot.FlyY < gap - 40 && bot.FlyV < 60) Flap(bot);
     }
 
     private bool InCloud(Player p) => Level[p.Index].Zone == LevelGenerator.Cloud;
@@ -717,7 +737,11 @@ public sealed class Match
         idleDrain = _diff.IdleDrainPerSecond,
         wrongDrain = _diff.WrongDrainPerSecond,
         jump = GameRules.SwamJumpSeconds,
-        piston = new { grab = GameRules.PistonGrabSeconds, gravity = GameRules.PistonGravity, flap = GameRules.PistonFlap, limit = GameRules.PistonLimit },
+        piston = new
+        {
+            grab = GameRules.PistonGrabSeconds, gravity = GameRules.PistonGravity, flap = GameRules.PistonFlap, limit = GameRules.PistonLimit,
+            speed = GameRules.PistonSpeed, gap = GameRules.PistonGapHalf, reach = GameRules.PistonReach,
+        },
         holeStart = GameRules.RastStartGap,
         wallHits = GameRules.WallHits,
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall, lane = s.Lane, spike = s.Spike, fake = s.Fake, gap = s.Gap }),

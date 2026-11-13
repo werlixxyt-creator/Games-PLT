@@ -61,24 +61,31 @@ public static class GameRules
     /// <summary>Сколько уровней из ста получают поршень (один на уровень).</summary>
     public const int PistonChance = 100;
     /// <summary>Сколько труб: по одной на ячейку. Эти ячейки добавляются к уровню.</summary>
-    public const int PistonCells = 4;
+    public const int PistonCells = 3;
     /// <summary>Сколько поршень держит персонажа в начале участка: в это время НЛО стоит, нажатия не считаются.</summary>
     public const double PistonGrabSeconds = 1.0;
     /// <summary>Сколько длится первая ячейка: захват и подлёт к первой трубе.</summary>
-    public const double PistonIntroSeconds = 2.0;
+    public const double PistonIntroSeconds = 1.7;
     /// <summary>Через сколько секунд следующая труба.</summary>
-    public const double PistonCellSeconds = 1.0;
-    /// <summary>Падение НЛО, единиц в секунду за секунду. Единицы — те же, что на сцене (высота экрана 720).</summary>
-    public const double PistonGravity = 1300;
+    public const double PistonCellSeconds = 0.9;
+    /// <summary>Скорость НЛО вдоль пути, единиц в секунду. Единицы — те же, что на сцене (высота экрана 720).</summary>
+    public const double PistonSpeed = 420;
+    /// <summary>Падение НЛО, единиц в секунду за секунду.</summary>
+    public const double PistonGravity = 1000;
     /// <summary>Скорость вверх после взмаха.</summary>
-    public const double PistonFlap = 480;
+    public const double PistonFlap = 400;
     /// <summary>Выше и ниже пути на столько НЛО не улетает: там потолок и пол.</summary>
     public const double PistonLimit = 230;
-    /// <summary>Половина просвета, которую прощает сервер. На сцене он нарисован чуть уже (PISTON_GAP в course.js): задержка сети.</summary>
-    public const double PistonGapHalf = 95;
+    /// <summary>
+    /// Хитбокс: насколько центр НЛО может уйти от центра просвета. На сцене края трубы нарисованы дальше на половину высоты НЛО,
+    /// так что удар засчитывается, когда тарелка касается трубы. Клиент считает удар сразу и чуть строже (на 7), сервер прощает задержку сети.
+    /// </summary>
+    public const double PistonGapHalf = 92;
+    /// <summary>Хитбокс по ходу полёта: удар считается, пока центр НЛО ближе к оси трубы, чем на столько (полтрубы + полтарелки).</summary>
+    public const double PistonReach = 70;
     /// <summary>Насколько центр просвета уходит от пути и насколько он меняется от трубы к трубе.</summary>
-    public const double PistonGapRange = 110;
-    public const double PistonGapStep = 120;
+    public const double PistonGapRange = 90;
+    public const double PistonGapStep = 70;
 
     // Ивент «Кловд»: игрок становится пауком и уклоняется от стрелок, перескакивая между потолком и полом
     /// <summary>Сколько стрелок летит: по одной на ячейку. Эти ячейки добавляются к уровню.</summary>
