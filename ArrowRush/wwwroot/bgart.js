@@ -5,7 +5,8 @@
 // Ничего не хранится между кадрами: положение каждой детали считается из её номера, времени и камеры.
 // view: { w, h, camX — камера в единицах мира, scale — пикселей на единицу, time }; pal: палитра, как у тем course.js.
 const bgart = (() => {
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let reduce = settings.reduce; // «уменьшить движение» в системе или «упрощённые эффекты» в настройках
+  settings.on(() => { reduce = settings.reduce; });
   const TAU = Math.PI * 2;
 
   /** Картинки фона: [id, название]. */

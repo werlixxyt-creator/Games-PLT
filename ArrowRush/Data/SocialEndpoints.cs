@@ -25,6 +25,7 @@ public static class SocialEndpoints
     {
         var api = app.MapGroup("/api/account").RequireAuthorization();
         api.MapGet("/players", Search);
+        api.MapGet("/leaderboard", Leaderboard);
         api.MapGet("/players/{name}", Player);
         api.MapGet("/friends", Friends);
         api.MapPost("/friends/request", SendRequest);
@@ -49,6 +50,35 @@ public static class SocialEndpoints
     /// <summary>Кем другой игрок приходится мне: none, outgoing, incoming или friends.</summary>
     private static string Relation(Friendship? link, string me) =>
         link is null ? "none" : link.Accepted ? "friends" : link.FromId == me ? "outgoing" : "incoming";
+
+    /// <summary>Топ игроков по рейтингу и место того, кто спрашивает (его строка — me, даже если он не в топе).</summary>
+    private static async Task<IResult> Leaderboard(ClaimsPrincipal principal, AppDb db)
+    {
+        var me = Me(principal);
+        var top = await db.Users
+            .OrderByDescending(u => u.Rating).ThenBy(u => u.CreatedAt)
+            .Take(LeaderboardSize)
+            .Select(u => new { u.Id, u.UserName, u.AvatarColor, u.Rating })
+            .ToListAsync();
+        var mine = await db.Users.Where(u => u.Id == me).Select(u => new { u.UserName, u.AvatarColor, u.Rating }).FirstOrDefaultAsync();
+        var place = mine is null ? 0 : await db.Users.CountAsync(u => u.Rating > mine.Rating) + 1;
+
+        return Results.Ok(new
+        {
+            players = top.Select((u, i) => new
+            {
+                place = i + 1,
+                userName = u.UserName,
+                color = AccountEndpoints.AvatarColor(u.AvatarColor),
+                rating = u.Rating,
+                rank = Ranks.Of(u.Rating),
+                me = u.Id == me,
+            }),
+            me = mine is null ? null : new { place, userName = mine.UserName, color = AccountEndpoints.AvatarColor(mine.AvatarColor), rating = mine.Rating, rank = Ranks.Of(mine.Rating) },
+        });
+    }
+
+    private const int LeaderboardSize = 50;
 
     /// <summary>Игроки по началу ника, без учёта регистра; пустой запрос — все по алфавиту. more — в список вошли не все.</summary>
     private static async Task<IResult> Search(string? q, ClaimsPrincipal principal, UserManager<AppUser> users, AppDb db)
@@ -97,6 +127,8 @@ public static class SocialEndpoints
             userName = user.UserName,
             about = user.About,
             color = AccountEndpoints.AvatarColor(user.AvatarColor),
+            rating = user.Rating,
+            rank = Ranks.Of(user.Rating),
             hero = Skins.Equipped(Skins.Hero, user.HeroSkin),
             // SQLite теряет пометку UTC
             joined = DateTime.SpecifyKind(user.CreatedAt, DateTimeKind.Utc),

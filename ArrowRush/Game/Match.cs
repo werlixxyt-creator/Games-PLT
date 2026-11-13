@@ -221,6 +221,12 @@ public sealed class Match
             return;
         }
 
+        if (InWave(p))
+        {
+            Surf(p, dt);
+            return;
+        }
+
         if (InPiston(p))
         {
             Flutter(p, dt);
@@ -307,7 +313,7 @@ public sealed class Match
         }
     }
 
-    private static bool Dodged(Slider s) => s.Ufo || s.Zone is LevelGenerator.Cloud or LevelGenerator.Piston;
+    private static bool Dodged(Slider s) => s.Ufo || s.Zone is LevelGenerator.Cloud or LevelGenerator.Piston or LevelGenerator.Wave;
 
     /// <summary>
     /// Клиент пролетел препятствие ячейки index или врезался в него. tries — сколько ударов он знал: ответ о прошлой попытке не считается.
@@ -374,6 +380,48 @@ public sealed class Match
     }
 
     private bool InPiston(Player p) => Level[p.Index].Zone == LevelGenerator.Piston;
+
+    private bool InWave(Player p) => Level[p.Index].Zone == LevelGenerator.Wave;
+
+    /// <summary>«Волна»: центр коридора и его половина в доле k ячейки index. Как в course.js (waveAt).</summary>
+    private (double Center, double Half) Corridor(int index, double k)
+    {
+        var first = index == 0 || Level[index - 1].Zone != LevelGenerator.Wave;
+        var from = first ? 0 : Level[index - 1].Gap ?? 0;
+        var center = from + ((Level[index].Gap ?? 0) - from) * k;
+        // за порталом коридор широкий и сужается к концу первой ячейки: персонаж успевает понять, куда лететь
+        var half = first ? GameRules.WaveLimit + (GameRules.WaveHalf - GameRules.WaveLimit) * k : GameRules.WaveHalf;
+        return (center, half);
+    }
+
+    /// <summary>«Волна»: зажата любая стрелка — вверх под 45°, отпущена — вниз. Коснулась стены коридора — удар.</summary>
+    private void Surf(Player p, double dt)
+    {
+        if (p.IsBot) BotSurf(p);
+
+        p.FlyV = (p.HeldMask & 0b1111) != 0 ? GameRules.WaveSpeed : -GameRules.WaveSpeed;
+        p.FlyY = Math.Clamp(p.FlyY + p.FlyV * dt, -GameRules.WaveLimit, GameRules.WaveLimit);
+        p.Progress = Math.Min(1, p.Progress + dt / Level[p.Index].FillSeconds);
+
+        var (center, half) = Corridor(p.Index, p.Progress);
+        if (Math.Abs(p.FlyY - center) > half - GameRules.WaveHit && !HitPipe(p, p.Index)) return;
+        if (p.Progress >= 1) Pass(p, null);
+    }
+
+    /// <summary>Бот держит курс на центр коридора чуть впереди; иногда зевает целую ячейку.</summary>
+    private void BotSurf(Player bot)
+    {
+        if (bot.BotSeenIndex != bot.Index)
+        {
+            bot.BotSeenIndex = bot.Index;
+            bot.BotWrong = _rnd.NextDouble() < BotMistakeChance(0.04) ? 1 : 0;
+        }
+        var ahead = bot.Progress + 0.06 / Level[bot.Index].FillSeconds;
+        var aim = ahead <= 1 || bot.Index + 1 >= Level.Length || Level[bot.Index + 1].Zone != LevelGenerator.Wave
+            ? Corridor(bot.Index, Math.Min(1, ahead)).Center
+            : Corridor(bot.Index + 1, (ahead - 1) * Level[bot.Index].FillSeconds / Level[bot.Index + 1].FillSeconds).Center;
+        bot.HeldMask = bot.BotWrong == 0 && bot.FlyY < aim ? 1 : 0;
+    }
 
     /// <summary>Поршень ещё держит персонажа: начало первой трубы участка.</summary>
     private bool Grabbed(Player p) =>
@@ -629,7 +677,7 @@ public sealed class Match
         {
             p.Lane = 1; // паук начинает на полу
         }
-        else if (InPiston(p) && Level[p.Index - 1].Zone != LevelGenerator.Piston)
+        else if ((InPiston(p) && Level[p.Index - 1].Zone != LevelGenerator.Piston) || (InWave(p) && Level[p.Index - 1].Zone != LevelGenerator.Wave))
         {
             p.FlyY = p.FlyV = 0; // поршень берёт персонажа с пути
         }
@@ -693,6 +741,7 @@ public sealed class Match
         else if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Wall) HitWall(p);
         else if (Phase == MatchPhase.Running && p.Active && InCloud(p)) Hop(p, pressed);
         else if (Phase == MatchPhase.Running && p.Active && InPiston(p)) Flap(p);
+        else if (Phase == MatchPhase.Running && p.Active && InWave(p)) { } // волна слушает, что зажато (Surf), а не нажатия
         else if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Spike) Prick(p);
         else if (Fast) Press(p, pressed);
         else if (Punishes && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Slip(p);
@@ -821,6 +870,7 @@ public sealed class Match
         difficulty = Difficulty.ToWire(),
         practice = Practice,
         lobby = LobbyIds.Count > 0,
+        rated = Rated, // рейтинг придёт отдельно, событием rating, когда матч сохранится
         theme = Theme,
         custom = Custom is null ? null : new { id = Custom.Id, name = Custom.Name },
         mirror = _rules.Mirror,
@@ -839,6 +889,7 @@ public sealed class Match
             grab = GameRules.PistonGrabSeconds, gravity = GameRules.PistonGravity, flap = GameRules.PistonFlap, limit = GameRules.PistonLimit,
             speed = GameRules.PistonSpeed, gap = GameRules.PistonGapHalf, reach = GameRules.PistonReach,
         },
+        wave = new { speed = GameRules.WaveSpeed, half = GameRules.WaveHalf, hit = GameRules.WaveHit, limit = GameRules.WaveLimit },
         holeStart = GameRules.RastStartGap,
         wallHits = GameRules.WallHits,
         level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall, lane = s.Lane, spike = s.Spike, fake = s.Fake, gap = s.Gap }),
@@ -894,6 +945,7 @@ public sealed class Match
         fast = Fast,
         practice = Practice,
         lobby = LobbyIds.Count > 0,
+        rated = Rated, // рейтинг придёт отдельно, событием rating, когда матч сохранится
         custom = Custom is null ? null : new { id = Custom.Id, name = Custom.Name },
         teams = Teams,
         reason = EndReason,
@@ -914,6 +966,9 @@ public sealed class Match
             }),
         total = Level.Length,
     };
+
+    /// <summary>Матч меняет рейтинг: не тренировка, не лобби и не уровень из редактора.</summary>
+    public bool Rated => !Practice && LobbyIds.Count == 0 && Custom is null;
 
     /// <summary>Запись для сохранения в базу.</summary>
     public MatchRecord ToRecord() => new()
@@ -937,6 +992,9 @@ public sealed class Match
                 FinishTime = p.FinishTime,
                 Sliders = Math.Min(p.Index, Level.Length),
                 Left = p.Left,
+                RatingDelta = Rated && !p.IsBot && p.UserId is not null
+                    ? Ranks.Raw(i + 1, Players.Count, Teams, Won(p), p.Left, Difficulty)
+                    : null,
             })
             .ToList(),
     };

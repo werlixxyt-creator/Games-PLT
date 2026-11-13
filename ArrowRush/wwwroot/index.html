@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <!-- Летящие стрелки на canvas; занавес закрывает смену экранов. -->
@@ -112,6 +112,7 @@
         <button id="btn-showcase" class="show-hero" type="button" title="Мой профиль">
           <canvas id="showcase-hero" width="252" height="252" aria-hidden="true"></canvas>
           <span id="showcase-name" class="show-name"></span>
+          <span id="showcase-rank" class="show-rank"></span>
         </button>
         <div id="showcase-stats" class="show-stats"></div>
         <div class="show-tip"><b>Совет</b> <span id="menu-tip"></span></div>
@@ -407,9 +408,24 @@
                 <li><b>«Спринт»</b> вдвое короче, <b>«Марафон»</b> в 3 раза длиннее</li>
                 <li><b>Чарт</b>: золотая ячейка, за ней 10 одинаковых стрелок</li>
                 <li><b>«2 на 2» и «5 на 5»</b>: команда побеждает, когда один из её игроков финишировал первым</li>
+                <li><b>Свам</b>: прилетает НЛО — прыгай через пилы любой стрелкой</li>
+                <li><b>Кловд</b>: ты гусеница, ↑ и ↓ уводят от стрелок на другую полку</li>
+                <li><b>Поршень</b>: забирает тебя и делает НЛО — маши стрелками и пролетай в просвет труб</li>
+                <li><b>Волна</b>: за порталом держи стрелку — летишь вверх, отпусти — вниз; не касайся стен</li>
+                <li><b>Раст</b>: жми верные стрелки быстрее, сзади догоняет чёрная дыра</li>
+                <li><b>Радуга</b>: ломай каменные стены, пока лазеры снимают жизни</li>
+                <li><b>Рейтинг</b>: матчи из поиска двигают тебя от Бронзы до Легенды</li>
+                <li>⚙ <b>Настройки</b> — громкость, тряска и хитбоксы</li>
                 <li>Можно играть на <b>WASD</b></li>
               </ul>
             </div>
+          </div>
+
+          <div id="leaders" class="history leaders glass">
+            <h3>Топ игроков <span class="muted small">по рейтингу</span></h3>
+            <p class="muted small leaders-how">Рейтинг дают матчи из поиска: первое место +30, последнее −20, в командах победа +25. Тренировки, лобби и уровни игроков рейтинг не меняют.</p>
+            <ol id="leaders-list" class="res-list"></ol>
+            <ol id="leaders-me" class="res-list leaders-me" hidden></ol>
           </div>
 
           <div id="history" class="history glass" hidden>
@@ -554,6 +570,9 @@
         <button id="btn-music" class="btn ghost small icon-btn music-toggle" type="button" aria-label="Музыка" title="Музыка вкл/выкл">
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#sound"/></svg>
         </button>
+        <button id="btn-settings-game" class="btn ghost small icon-btn" type="button" aria-label="Настройки" title="Настройки">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#gear"/></svg>
+        </button>
         <button id="btn-leave" class="btn ghost small">Выйти</button>
       </header>
 
@@ -602,6 +621,7 @@
       <h2 id="res-title" class="res-title">Победа!</h2>
       <p id="res-sub" class="muted"></p>
       <p id="res-streak" class="streak-banner" hidden></p>
+      <div id="res-rating" class="res-rating" hidden></div>
       <ol id="res-list" class="res-list"></ol>
       <div class="res-buttons">
         <button id="btn-again" class="btn primary">Ещё матч</button>
@@ -612,6 +632,25 @@
   </main>
 
   <!-- правый верхний угол: серия, звук, выход (только в меню), друзья и профиль (social.js) -->
+
+  <!-- НАСТРОЙКИ: хранятся в браузере (settings.js) -->
+  <div id="settings" class="settings-modal" hidden>
+    <div class="settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <h2 id="settings-title">Настройки</h2>
+      <label class="set-row"><span>Громкость</span><input type="range" min="0" max="100" step="5" data-set="volume"><output></output></label>
+      <label class="set-row"><span>Тряска камеры</span><input type="range" min="0" max="100" step="10" data-set="shake"><output></output></label>
+      <label class="set-row"><span>Вспышки</span><input type="range" min="0" max="100" step="10" data-set="flash"><output></output></label>
+      <label class="set-row toggle"><span>Упрощённые эффекты<small>Без тряски, частиц и вспышек — легче для глаз и слабых устройств</small></span><input type="checkbox" data-set="lite"><i></i></label>
+      <label class="set-row toggle"><span>Показывать хитбоксы<small>Зелёный — ты, красный — препятствия. Удар — когда они пересеклись</small></span><input type="checkbox" data-set="hitboxes"><i></i></label>
+      <label class="set-row toggle"><span>Счётчик FPS</span><input type="checkbox" data-set="fps"><i></i></label>
+      <p id="settings-system" class="muted small" hidden>В системе включено «уменьшение движения»: эффекты и так упрощены.</p>
+      <div class="set-buttons">
+        <button id="settings-reset" class="btn ghost" type="button">Сбросить</button>
+        <button id="settings-close" class="btn primary" type="button">Готово</button>
+      </div>
+    </div>
+  </div>
+  <div id="fps" class="fps" hidden></div>
   <div id="top-right" class="top-right">
     <div class="chip">
           <span id="streak-badge" class="streak-badge" title="Серия побед подряд" hidden>
@@ -619,6 +658,9 @@
           </span>
           <button id="btn-menu-music" class="btn ghost small icon-btn music-toggle" type="button" aria-label="Музыка" title="Музыка вкл/выкл">
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#sound"/></svg>
+          </button>
+          <button id="btn-settings" class="btn ghost small icon-btn" type="button" aria-label="Настройки" title="Настройки">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#gear"/></svg>
           </button>
           <button id="btn-logout" class="btn ghost small">Выйти</button>
     </div>
@@ -689,6 +731,7 @@
           <div class="pf-title">
             <div id="pf-name" class="pf-name"></div>
             <div id="pf-joined" class="muted small"></div>
+            <div id="pf-rank" class="pf-rank"></div>
           </div>
           <canvas id="pf-hero" class="pf-hero" width="84" height="84" aria-hidden="true"></canvas>
         </div>
@@ -760,6 +803,9 @@
     <symbol id="sound" viewBox="0 0 24 24">
       <path d="M3 9 H7 L12 4.5 V19.5 L7 15 H3 Z M15 8.5 A5 5 0 0 1 15 15.5 L16.4 16.9 A7 7 0 0 0 16.4 7.1 Z M17.8 5.7 A9 9 0 0 1 17.8 18.3 L19.2 19.7 A11 11 0 0 0 19.2 4.3 Z" fill="currentColor"/>
     </symbol>
+    <symbol id="gear" viewBox="0 0 24 24">
+      <path fill="currentColor" fill-rule="evenodd" d="M10.3 2h3.4l.5 2.6 1.6.7 2.2-1.5 2.4 2.4-1.5 2.2.7 1.6 2.6.5v3.4l-2.6.5-.7 1.6 1.5 2.2-2.4 2.4-2.2-1.5-1.6.7-.5 2.6h-3.4l-.5-2.6-1.6-.7-2.2 1.5-2.4-2.4 1.5-2.2-.7-1.6L2 13.7v-3.4l2.6-.5.7-1.6-1.5-2.2 2.4-2.4 2.2 1.5 1.6-.7zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"/>
+    </symbol>
     <symbol id="mute" viewBox="0 0 24 24">
       <path d="M3 9 H7 L12 4.5 V19.5 L7 15 H3 Z M15.3 8.7 L16.7 7.3 L19 9.6 L21.3 7.3 L22.7 8.7 L20.4 11 L22.7 13.3 L21.3 14.7 L19 12.4 L16.7 14.7 L15.3 13.3 L17.6 11 Z" fill="currentColor"/>
     </symbol>
@@ -811,26 +857,28 @@
   </svg>
 
   <!-- ?v=2 разово сбрасывает файлы, закэшированные до Cache-Control: no-cache (Program.cs); менять при деплое не нужно -->
-  <script src="lib/signalr.min.js?v=2"></script>
-  <script src="fx.js?v=2"></script>
-  <script src="rhythm.js?v=2"></script>
-  <script src="music.js?v=2"></script>
-  <script src="scenes.js?v=2"></script>
-  <script src="cells.js?v=2"></script>
-  <script src="bgart.js?v=2"></script>
-  <script src="easecurve.js?v=2"></script>
-  <script src="levelobj.js?v=2"></script>
-  <script src="trigrun.js?v=2"></script>
-  <script src="course.js?v=2"></script>
-  <script src="victory.js?v=2"></script>
-  <script src="social.js?v=2"></script>
-  <script src="rewards.js?v=2"></script>
-  <script src="lobby.js?v=2"></script>
-  <script src="edview.js?v=2"></script>
-  <script src="colorpick.js?v=2"></script>
-  <script src="levelcode.js?v=2"></script>
-  <script src="levels.js?v=2"></script>
-  <script src="app.js?v=2"></script>
-  <script src="fullscreen.js?v=2"></script>
+  <script src="lib/signalr.min.js?v=3"></script>
+  <script src="settings.js?v=3"></script>
+  <script src="fx.js?v=3"></script>
+  <script src="rhythm.js?v=3"></script>
+  <script src="music.js?v=3"></script>
+  <script src="scenes.js?v=3"></script>
+  <script src="cells.js?v=3"></script>
+  <script src="bgart.js?v=3"></script>
+  <script src="easecurve.js?v=3"></script>
+  <script src="levelobj.js?v=3"></script>
+  <script src="trigrun.js?v=3"></script>
+  <script src="course.js?v=3"></script>
+  <script src="victory.js?v=3"></script>
+  <script src="ranks.js?v=3"></script>
+  <script src="social.js?v=3"></script>
+  <script src="rewards.js?v=3"></script>
+  <script src="lobby.js?v=3"></script>
+  <script src="edview.js?v=3"></script>
+  <script src="colorpick.js?v=3"></script>
+  <script src="levelcode.js?v=3"></script>
+  <script src="levels.js?v=3"></script>
+  <script src="app.js?v=3"></script>
+  <script src="fullscreen.js?v=3"></script>
 </body>
 </html>

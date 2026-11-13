@@ -6,7 +6,8 @@
 // В отличие от fx.js здесь есть свечение: частицы складываются режимом "lighter" на тёмном фоне.
 // Рисует только пока идёт сцена. При «уменьшить движение» — спокойная надпись без эффектов.
 const victory = (() => {
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let reduce = settings.reduce; // «уменьшить движение» в системе или «упрощённые эффекты» в настройках
+  settings.on(() => { reduce = settings.reduce; });
   const css = getComputedStyle(document.documentElement);
   const COLORS = [0, 1, 2, 3].map((i) => css.getPropertyValue("--a" + i).trim());
   const OUTLINE = css.getPropertyValue("--outline").trim() || "#1d1340";

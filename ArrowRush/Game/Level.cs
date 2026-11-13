@@ -173,7 +173,45 @@ public static class LevelGenerator
             sliders[i] = new Slider(arrow, Math.Round(seconds, 2));
         }
 
-        return AddPiston(AddSpecials(sliders, fast, rnd), rnd);
+        return AddWave(AddPiston(AddSpecials(sliders, fast, rnd), rnd), rnd);
+    }
+
+    /// <summary>«Волна»: тоже без особой ячейки — на пути встаёт портал, см. <see cref="AddWave"/>.</summary>
+    public const string Wave = "wave";
+
+    /// <summary>
+    /// «Волна»: после случайной обычной ячейки добавляется коридор. Gap ячейки — центр коридора в её конце, над путём;
+    /// между концами ячеек он идёт по прямой. Последняя ячейка возвращает коридор на путь. Повороты чередуются — зигзаг, как в GD.
+    /// </summary>
+    private static Slider[] AddWave(Slider[] sliders, Random rnd)
+    {
+        if (rnd.Next(100) >= GameRules.WaveChance || sliders.Length < 6) return sliders;
+
+        bool Free(int at) => at + 1 < sliders.Length
+            && sliders[at] is { Event: null, Zone: null, Chart: false, Swam: false, Ufo: false, Was: null, Wall: false }
+            && sliders[at + 1] is { Zone: null, Ufo: false, Was: null, Wall: false };
+        var spots = Enumerable.Range(sliders.Length / 5, sliders.Length * 3 / 5).Where(Free).ToList();
+        if (spots.Count == 0) return sliders;
+        var at = spots[rnd.Next(spots.Count)];
+
+        var zone = new List<Slider>();
+        double center = 0;
+        var dir = rnd.Next(2) == 0 ? -1 : 1;
+        for (var i = 0; i < GameRules.WaveCells; i++)
+        {
+            if (i == 0) center = 0; // за порталом коридор сначала прямой
+            else if (i == GameRules.WaveCells - 1) center = 0; // и в конце выходит обратно на путь
+            else
+            {
+                var step = GameRules.WaveStepMin + rnd.NextDouble() * (GameRules.WaveStepMax - GameRules.WaveStepMin);
+                if (Math.Abs(center + dir * step) > GameRules.WaveRange) dir = -dir;
+                center = Math.Clamp(center + dir * step, -GameRules.WaveRange, GameRules.WaveRange);
+                if (rnd.Next(3) > 0) dir = -dir; // чаще зигзаг, иногда два поворота в одну сторону
+            }
+            zone.Add(new Slider((Arrow)rnd.Next(4), i == 0 ? GameRules.WaveIntroSeconds : GameRules.WaveCellSeconds,
+                Zone: Wave, Gap: Math.Round(center)));
+        }
+        return [.. sliders.Take(at + 1), .. zone, .. sliders.Skip(at + 1)];
     }
 
     /// <summary>Ивент «Конвейерный поршень»: особой ячейки у него нет, он начинается внезапно, см. <see cref="AddPiston"/>.</summary>

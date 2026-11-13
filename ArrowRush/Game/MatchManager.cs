@@ -297,12 +297,24 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
         {
             using var scope = scopes.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDb>();
+            // рейтинг: очки за место поправляем по рейтингу игрока (ниже старта потери мягче) и сразу прибавляем
+            var ratings = new List<(string User, int Delta, int Rating)>();
+            foreach (var p in records.SelectMany(r => r.Participants).Where(p => p is { RatingDelta: not null, UserId: not null }))
+            {
+                var user = await db.Users.FindAsync(p.UserId);
+                if (user is null) continue;
+                p.RatingDelta = Ranks.Apply(p.RatingDelta!.Value, user.Rating);
+                user.Rating += p.RatingDelta.Value;
+                ratings.Add((user.Id, p.RatingDelta.Value, user.Rating));
+            }
             db.Matches.AddRange(records);
             await db.SaveChangesAsync();
 
             // клиент уже мог перечитать профиль: матч сохраняется позже, чем приходят итоги
             var users = records.SelectMany(r => r.Participants).Select(p => p.UserId).OfType<string>().Distinct().ToList();
             await hub.Clients.Users(users).SendAsync("stats");
+            foreach (var (user, delta, rating) in ratings)
+                await hub.Clients.User(user).SendAsync("rating", new { delta, rating, rank = Ranks.Of(rating) });
         }
         catch (Exception e)
         {

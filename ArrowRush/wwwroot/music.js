@@ -27,6 +27,11 @@ const music = (() => {
 
   const VOLUME = 0.45;
   const LOOKAHEAD = 0.12; // на сколько секунд вперёд планируем ноты
+  /** Громкость с учётом настройки игрока (settings.js). */
+  const loud = () => VOLUME * settings.get("volume");
+  settings.on((key) => {
+    if (key === "volume" && master && !muted) master.gain.setTargetAtTime(loud(), ctx.currentTime, 0.05);
+  });
 
   // минорные последовательности аккордов (ступени от тоники) — звучат напористо
   const PROGRESSIONS = [
@@ -66,7 +71,7 @@ const music = (() => {
     if (!ctx) {
       ctx = new AudioContext();
       master = ctx.createGain();
-      master.gain.value = muted ? 0 : VOLUME;
+      master.gain.value = muted ? 0 : loud();
       // трек матча плотный — компрессор не даёт ему перегружать выход
       const limiter = ctx.createDynamicsCompressor();
       limiter.threshold.value = -9;
@@ -789,7 +794,7 @@ const music = (() => {
   function setMuted(m) {
     muted = m;
     try { localStorage.setItem("arrowrush.music", m ? "off" : "on"); } catch { /* ничего */ }
-    if (master) master.gain.setTargetAtTime(m ? 0 : VOLUME, ctx.currentTime, 0.05);
+    if (master) master.gain.setTargetAtTime(m ? 0 : loud(), ctx.currentTime, 0.05);
   }
 
   // ---------- Музыка меню ----------

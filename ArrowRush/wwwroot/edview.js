@@ -5,7 +5,8 @@
 // Что делать с ячейкой под курсором, решает levels.js: сюда приходят только клики, протяжка и прокрутка.
 // Блоки, декор и триггеры (levelobj.js) стоят у стрелки своей ячейки; инструментом «Выбор» их таскают, ластиком удаляют.
 const edview = (() => {
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let reduce = settings.reduce; // «уменьшить движение» в системе или «упрощённые эффекты» в настройках
+  settings.on(() => { reduce = settings.reduce; });
   const css = getComputedStyle(document.documentElement);
   const COLORS = [0, 1, 2, 3].map((i) => css.getPropertyValue("--a" + i).trim());
   const OUTLINE = css.getPropertyValue("--outline").trim() || "#1d1340";

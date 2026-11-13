@@ -4,7 +4,8 @@
 // Без свечения: всё рисуется обычным смешиванием, яркость дают сами цвета.
 // Без зависимостей, всё на двух <canvas>. При «уменьшить движение» в системе — почти всё выключено.
 const fx = (() => {
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let reduce = settings.reduce; // «уменьшить движение» в системе или «упрощённые эффекты» в настройках
+  settings.on(() => { reduce = settings.reduce; });
   const css = getComputedStyle(document.documentElement);
   const COLORS = [0, 1, 2, 3].map((i) => css.getPropertyValue("--a" + i).trim());
   const DRIFT = "#fff"; // стрелки фона — полупрозрачные белые

@@ -90,6 +90,27 @@ public static class GameRules
     public const double PistonGapRange = 90;
     public const double PistonGapStep = 70;
 
+    // «Волна», как в GD: персонаж проходит портал и становится стрелкой-волной. Зажата любая стрелка — летит вверх под 45°,
+    // отпущена — вниз. Лететь надо по коридору из ячеек, не касаясь стен
+    /// <summary>Сколько уровней из ста получают «Волну» (одну на уровень).</summary>
+    public const int WaveChance = 75;
+    /// <summary>Сколько ячеек коридора. Эти ячейки добавляются к уровню.</summary>
+    public const int WaveCells = 7;
+    /// <summary>Первая ячейка: портал и коридор, пока ещё прямой.</summary>
+    public const double WaveIntroSeconds = 0.9;
+    public const double WaveCellSeconds = 0.42;
+    /// <summary>Скорость вдоль пути и вверх-вниз, единиц в секунду: равны — значит, летит под 45°.</summary>
+    public const double WaveSpeed = 480;
+    /// <summary>Половина ширины коридора и радиус хитбокса волны (course.js: HIT_WAVE).</summary>
+    public const double WaveHalf = 105;
+    public const double WaveHit = 12;
+    /// <summary>Насколько коридор уходит от пути и насколько поворачивает за ячейку (не круче 45°: длина ячейки ~200).</summary>
+    public const double WaveRange = 130;
+    /// <summary>Выше и ниже пути на столько волна не улетает. На первой ячейке коридор сужается от этой ширины до <see cref="WaveHalf"/>.</summary>
+    public const double WaveLimit = 240;
+    public const double WaveStepMin = 60;
+    public const double WaveStepMax = 150;
+
     /// <summary>
     /// Пилы НЛО, стрелки «Кловда», трубы поршня: удар считает клиент — по тому, что видит игрок, без задержки сети.
     /// Сервер ждёт его ответ о препятствии столько секунд, потом решает сам.

@@ -4,7 +4,8 @@
 // Цвет обводки и стрелки зависит только от направления, скин меняет всё остальное.
 // fill(c, r, k, color, t) рисует заполнение k (0..1) внутри фигуры радиуса r, обрезка уже включена.
 const cells = (() => {
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let reduce = settings.reduce; // «уменьшить движение» в системе или «упрощённые эффекты» в настройках
+  settings.on(() => { reduce = settings.reduce; });
   const css = getComputedStyle(document.documentElement);
   const COLORS = [0, 1, 2, 3].map((i) => css.getPropertyValue("--a" + i).trim());
   const OUTLINE = css.getPropertyValue("--outline").trim() || "#1d1340";

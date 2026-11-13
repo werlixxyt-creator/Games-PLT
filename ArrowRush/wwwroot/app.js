@@ -42,6 +42,10 @@ const SKIN_TRAIL = { classic: "#b9c4ff", neon: "#39ffd0", candy: "#ff9ad5", pixe
 const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search", "rewards", "lobby", "levels", "editor"]);
 // советы под витриной в меню
 const TIPS = [
+  "«Волна»: держи стрелку — летишь вверх под 45°, отпусти — вниз. Короткие нажатия держат её ровно.",
+  "Рейтинг растёт за места в матчах из поиска. Тренировки и лобби его не трогают.",
+  "Не понимаешь, обо что разбился? Включи хитбоксы в ⚙ Настройках.",
+  "Через пилы НЛО прыгай заранее: лучше всего — примерно за треть секунды до пилы.",
   "В «Зеркале» держи стрелку, противоположную нарисованной.",
   "За золотой ячейкой идут 10 одинаковых стрелок.",
   "В быстром темпе для двух одинаковых стрелок отпусти клавишу и нажми снова.",
@@ -592,6 +596,95 @@ function renderShowcase() {
 }
 $("btn-showcase").addEventListener("click", () => social.open(profile.userName));
 
+
+// ---------- Рейтинг ----------
+
+/** Значок ранга в меню, под ником. */
+function renderRank() {
+  if (!profile || profile.rating == null) return;
+  $("showcase-rank").replaceChildren(ranks.badge(profile.rating));
+}
+
+/** Топ игроков на экране статистики: место, ник, ранг; своя строка — внизу, если не попал в топ. */
+async function loadLeaders() {
+  const list = $("leaders-list");
+  try {
+    const r = await api("GET", "leaderboard");
+    if (!r.ok) return;
+    list.innerHTML = "";
+    r.data.players.forEach((p, i) => list.appendChild(leaderRow(p, i)));
+    const me = r.data.me;
+    $("leaders-me").hidden = !me || r.data.players.some((p) => p.me);
+    if (me) $("leaders-me").replaceChildren(leaderRow({ ...me, me: true }, 0));
+  } catch { /* покажем в следующий раз */ }
+}
+
+function leaderRow(p, i) {
+  const li = document.createElement("li");
+  li.style.setProperty("--i", i);
+  li.classList.add("p" + p.place);
+  if (p.me) li.classList.add("me");
+  const place = document.createElement("span");
+  place.className = "res-place";
+  place.textContent = p.place;
+  const name = document.createElement("span");
+  name.className = "res-name";
+  const n = document.createElement("button");
+  n.className = "n player-link";
+  n.textContent = p.userName;
+  n.addEventListener("click", () => social.open(p.userName));
+  name.append(n);
+  li.append(place, name, ranks.badge(p.rating, { compact: true }));
+  return li;
+}
+
+/**
+ * Рейтинг за только что сыгранный матч: сервер присылает его, когда сохранит матч.
+ * В итогах — сколько дали и ранг; новый ранг — вывеска и салют.
+ */
+function ratingChanged(d) {
+  if (!profile) return;
+  const before = profile.rating ?? d.rating - d.delta;
+  profile.rating = d.rating;
+  renderRank();
+  const box = $("res-rating");
+  if (box.dataset.wait !== "1") {
+    lastRating = { ...d, before, at: performance.now() }; // итоги ещё не показаны: покажем, когда откроются
+    return;
+  }
+  showRating(d, before);
+}
+
+let lastRating = null; // рейтинг, пришедший раньше итогов матча
+
+function showRating(d, before) {
+  const box = $("res-rating");
+  box.dataset.wait = "0";
+  const up = ranks.of(d.rating).from > ranks.of(before).from;
+  const down = ranks.of(d.rating).from < ranks.of(before).from;
+  const sign = d.delta > 0 ? "+" : d.delta < 0 ? "−" : "±";
+  const delta = document.createElement("span");
+  delta.className = "res-delta " + (d.delta > 0 ? "up" : d.delta < 0 ? "down" : "");
+  delta.textContent = `${sign}${Math.abs(d.delta)}`;
+  const next = ranks.next(d.rating);
+  const toNext = document.createElement("span");
+  toNext.className = "muted small";
+  toNext.textContent = next ? `до ранга «${next.name}» — ${next.from - d.rating}` : "высший ранг";
+  box.replaceChildren(ranks.badge(d.rating), delta, toNext);
+  box.classList.toggle("promoted", up);
+  if (up) {
+    const promo = document.createElement("b");
+    promo.className = "res-promo";
+    promo.textContent = "Новый ранг!";
+    box.prepend(promo);
+    const [x, y] = fx.anchor(box);
+    fx.ring(x, y, ranks.of(d.rating).color, 260, 6);
+    fx.burst(x, y, ranks.of(d.rating).color, 40, 1.4);
+    music.sting("pistonUp");
+  }
+  box.classList.toggle("demoted", down);
+}
+conn.on("rating", ratingChanged);
 function renderStreak() {
   const n = profile.streak.current;
   const badge = $("streak-badge");
@@ -607,6 +700,7 @@ function applyProfile(p) {
   social.loadFriends();
   rewards.load();
   renderShowcase();
+  renderRank();
   renderStats();
   renderStreak();
   const open = p.skins.filter((s) => s.unlocked).length;
@@ -676,6 +770,7 @@ $("btn-stats").addEventListener("click", () => {
   show("stats");
   renderStats();
   refreshProfile(); // только что сыгранный матч мог записаться уже после возврата в меню
+  loadLeaders();
 });
 $("btn-stats-back").addEventListener("click", () => show("menu"));
 
@@ -1238,6 +1333,7 @@ function startMatch(d) {
     stun: d.stun,
     jump: d.jump,
     piston: d.piston, // { grab, gravity, flap, limit } — физика НЛО после поршня
+    wave: d.wave, // { speed, half, hit, limit } — «Волна»
     holeStart: d.holeStart,
     wallHits: d.wallHits,
     tracks: new Map(),
@@ -1271,6 +1367,7 @@ function startMatch(d) {
     laser: () => music.sting("laser"),
     clank: (kind) => music.sting(kind), // звуки поршня
     piston: d.piston, // скорость и хитбокс НЛО: по ним стоят трубы
+    wave: d.wave, // скорость и ширина коридора «Волны»
     judge: judged, // свой персонаж пролетел препятствие или врезался в него
     trailOf: trailOf(me.skin),
   });
@@ -1379,6 +1476,17 @@ function showResults(r) {
   banner.className = `streak-banner streak-${profile ? profile.equipped.streak : "flame"}`;
   banner.textContent = `Серия побед: ${streak}`;
 
+  // рейтинг: сервер пришлёт его, когда сохранит матч (событие rating)
+  const rating = $("res-rating");
+  rating.hidden = !(r.rated && me);
+  rating.className = "res-rating";
+  rating.dataset.wait = rating.hidden ? "0" : "1";
+  rating.textContent = "Считаем рейтинг…";
+  if (!rating.hidden && lastRating && performance.now() - lastRating.at < 15000) {
+    showRating(lastRating, lastRating.before);
+    lastRating = null;
+  }
+
   const list = $("res-list");
   list.innerHTML = "";
   r.results.forEach((x, i) => {
@@ -1442,6 +1550,7 @@ function trackMine(track, idx, wrong, level) {
         if (level[i].chart) chartPassed(i);
         if (level[i].swam) swamPassed(i);
         if (level[i].event) eventPassed(i);
+        if (level[i + 1]?.zone === "wave" && level[i].zone !== "wave") showBanner("ВОЛНА! Держи стрелку — вверх, отпусти — вниз", "#46f0c8");
       }
       markPassed(prev, idx, level.length);
     }
@@ -1559,7 +1668,7 @@ function celebrate(track, from, to, level) {
   const speed = match.press;
   for (let i = from; i < Math.min(to, level.length); i++) {
     const [x, y] = course.point(i);
-    if (!level[i].ufo && level[i].zone !== "cloud" && level[i].zone !== "piston") fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
+    if (!level[i].ufo && level[i].zone !== "cloud" && level[i].zone !== "piston" && level[i].zone !== "wave") fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
     if (level[i].wall) music.sting("wallBroken");
     if (level[i].zone === "cloud") music.sting("dodge");
     course.filled(i);
@@ -1590,7 +1699,9 @@ function showCombo() {
   if (combo % 10 === 0) playStreakFx(profile ? profile.equipped.streak : "flame", el, 0.5);
 }
 
-const held_by_server = (cell) => !!cell && (cell.ufo || cell.wall || cell.spike || cell.zone === "cloud" || cell.zone === "piston");
+const held_by_server = (cell) => !!cell && (cell.ufo || cell.wall || cell.spike || dodgeZone(cell));
+/** Участок с препятствиями: персонаж летит сам, удары считает course.js (judge). */
+const dodgeZone = (cell) => !!cell && (cell.ufo || cell.zone === "cloud" || cell.zone === "piston" || cell.zone === "wave");
 
 /** Поршень ещё держит персонажа: начало первой трубы участка (как Match.Grabbed на сервере). pos — номер ячейки + доля. */
 function pistonGrabbed(idx, pos) {
@@ -1600,32 +1711,44 @@ function pistonGrabbed(idx, pos) {
 
 /** Свой полёт НЛО после поршня: те же правила, что на сервере (Match.Flutter). Возвращает высоту над путём. */
 function stepFly(idx, pos, now) {
-  const f = pred.fly, phys = match.piston;
+  const f = pred.fly;
   const dt = Math.min((now - f.at) / 1000, 0.05);
   f.at = now;
   const level = match.level;
+  const zone = level[idx]?.zone;
+  const flying = zone === "piston" || zone === "wave";
   // вне участка, в начале участка и после отката вниз — на пути
-  if (level[idx]?.zone !== "piston" || idx < f.idx || (idx !== f.idx && level[idx - 1]?.zone !== "piston")) f.y = f.v = 0;
+  if (!flying || idx < f.idx || (idx !== f.idx && level[idx - 1]?.zone !== zone)) f.y = f.v = 0;
   f.idx = idx;
-  if (level[idx]?.zone !== "piston" || pistonGrabbed(idx, pos)) {
+  if (!flying || (zone === "piston" && pistonGrabbed(idx, pos))) {
     f.y = f.v = 0;
     return 0;
   }
   // разбилась: стоит, пока сервер не вернёт к началу участка
   if (pred.dead) return f.y;
+  if (zone === "wave") {
+    // «Волна»: зажата стрелка — вверх под 45°, отпущена — вниз (как Match.Surf)
+    const w = match.wave;
+    f.v = held ? w.speed : -w.speed;
+    f.y = Math.max(-w.limit, Math.min(w.limit, f.y + f.v * dt));
+    return f.y;
+  }
+  const phys = match.piston;
   f.v -= phys.gravity * dt;
   f.y += f.v * dt;
   if (Math.abs(f.y) > phys.limit) {
     f.y = Math.max(-phys.limit, Math.min(phys.limit, f.y));
     f.v = 0;
   }
-  // о трубы бьётся course.js: по тому, что нарисовано
+  // о трубы и стены бьётся course.js: по тому, что нарисовано
   return f.y;
 }
 
-/** Высота НЛО соперника или напарника между снимками сервера: летит по той же дуге. */
+/** Высота НЛО или волны соперника и напарника между снимками сервера: летит по той же дуге. */
 function flyOf(p, elapsed) {
-  if (match.level[p.idx]?.zone !== "piston" || !match.piston) return 0;
+  const zone = match.level[p.idx]?.zone;
+  if (zone === "wave" && match.wave) return Math.max(-match.wave.limit, Math.min(match.wave.limit, p.fy + p.fv * elapsed));
+  if (zone !== "piston" || !match.piston) return 0;
   const y = p.fy + p.fv * elapsed - match.piston.gravity * elapsed * elapsed / 2;
   return Math.max(-match.piston.limit, Math.min(match.piston.limit, y));
 }
@@ -1800,10 +1923,10 @@ function render(now) {
 
     // на НЛО прогресс сам идёт к ячейке, а стрелки не бывают неправильными.
     // За конец ячейки не упираемся: сервер вот-вот перейдёт на следующую, персонаж летит дальше без остановки
-    if (idx === p.idx && (level[idx]?.ufo || level[idx]?.zone === "cloud" || level[idx]?.zone === "piston")) {
+    if (idx === p.idx && dodgeZone(level[idx])) {
       progress = p.p + elapsed / level[idx].fill;
       const next = level[idx + 1];
-      const flowing = next && (next.ufo || next.zone === "cloud" || next.zone === "piston");
+      const flowing = dodgeZone(next);
       if (progress > 1) progress = flowing ? Math.min(1.3, 1 + (progress - 1) * level[idx].fill / next.fill) : 1;
       wrong = holding = false;
     }
@@ -1881,7 +2004,7 @@ function render(now) {
 
   // музыка идёт за тем, что сейчас на экране
   const cell = level[pos];
-  music.mood(cell ? (cell.ufo || cell.zone === "piston" ? "swam" : cell.zone) : null);
+  music.mood(cell ? (cell.ufo || cell.zone === "piston" ? "swam" : cell.zone === "wave" ? "over" : cell.zone) : null);
   music.progress(pos / level.length);
 
   // подсказки для меня
@@ -2113,3 +2236,81 @@ window.addEventListener("blur", () => {
 });
 
 boot();
+
+// ---------- Настройки ----------
+
+/** Окно настроек: ползунки и переключатели сразу меняют settings, а он — игру. */
+function openSettings() {
+  for (const input of document.querySelectorAll("#settings [data-set]")) {
+    const v = settings.get(input.dataset.set);
+    if (input.type === "checkbox") input.checked = v;
+    else input.value = Math.round(v * 100);
+    showSettingValue(input);
+  }
+  $("settings-system").hidden = !settings.systemReduce;
+  $("settings").hidden = false;
+  $("settings-close").focus();
+}
+
+function closeSettings() {
+  $("settings").hidden = true;
+}
+
+function showSettingValue(input) {
+  const out = input.parentElement.querySelector("output");
+  if (out) out.textContent = input.value + "%";
+}
+
+for (const input of document.querySelectorAll("#settings [data-set]")) {
+  input.addEventListener("input", () => {
+    settings.set(input.dataset.set, input.type === "checkbox" ? input.checked : input.value / 100);
+    showSettingValue(input);
+  });
+  // стрелки на ползунке не должны управлять персонажем
+  input.addEventListener("keydown", (e) => e.stopPropagation());
+}
+$("btn-settings").addEventListener("click", openSettings);
+$("btn-settings-game").addEventListener("click", openSettings);
+$("settings-close").addEventListener("click", closeSettings);
+$("settings-reset").addEventListener("click", () => {
+  settings.reset();
+  openSettings();
+});
+$("settings").addEventListener("click", (e) => {
+  if (e.target === $("settings")) closeSettings();
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("settings").hidden) {
+    e.stopImmediatePropagation();
+    closeSettings();
+  }
+}, true);
+
+// счётчик кадров: считает, только пока включён
+{
+  let frames = 0, from = 0, running = false;
+  const tick = (now) => {
+    if (!settings.get("fps")) {
+      running = false;
+      $("fps").hidden = true;
+      return;
+    }
+    frames++;
+    if (now - from >= 500) {
+      $("fps").textContent = `${Math.round((frames * 1000) / (now - from))} FPS`;
+      frames = 0;
+      from = now;
+    }
+    requestAnimationFrame(tick);
+  };
+  const start = () => {
+    if (running || !settings.get("fps")) return;
+    running = true;
+    $("fps").hidden = false;
+    from = performance.now();
+    frames = 0;
+    requestAnimationFrame(tick);
+  };
+  settings.on(start);
+  start();
+}

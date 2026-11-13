@@ -21,6 +21,9 @@ public sealed class AppUser : IdentityUser
     public string? About { get; set; }
     /// <summary>Цвет аватара из <see cref="AccountEndpoints.AvatarColors"/>, null — первый из них.</summary>
     public string? AvatarColor { get; set; }
+
+    /// <summary>Рейтинг (см. <see cref="ArrowRush.Game.Ranks"/>): растёт за места в рейтинговых матчах, падает за последние.</summary>
+    public int Rating { get; set; } = ArrowRush.Game.Ranks.Start;
 }
 
 /// <summary>Заявка в друзья от From к To; принятая заявка — это дружба. На пару игроков одна запись.</summary>
@@ -123,6 +126,8 @@ public sealed class MatchParticipant
     public double? FinishTime { get; set; }
     public int Sliders { get; set; }
     public bool Left { get; set; }
+    /// <summary>Сколько рейтинга дал матч, null — матч без рейтинга (тренировка, лобби, уровень из редактора, бот).</summary>
+    public int? RatingDelta { get; set; }
 }
 
 public sealed class AppDb(DbContextOptions<AppDb> options)

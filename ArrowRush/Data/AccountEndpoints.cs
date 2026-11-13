@@ -131,6 +131,8 @@ public static class AccountEndpoints
             userName = user.UserName,
             about = user.About,
             color = AvatarColor(user.AvatarColor),
+            rating = user.Rating,
+            rank = Ranks.Of(user.Rating),
             avatarColors = AvatarColors,
             // входящие заявки в друзья — значок на кнопке «Друзья»
             incoming = await db.Friendships.CountAsync(f => f.ToId == userId && !f.Accepted),

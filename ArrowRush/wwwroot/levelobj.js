@@ -5,7 +5,8 @@
 // На игру блоки и декор не влияют. Триггер срабатывает, когда игрок проходит свою ячейку: цвет, зум и наклон
 // держатся до следующего такого же триггера, вспышка и тряска — разовые. Список видов есть и на сервере (LevelGenerator.EditorObjects).
 const levelobj = (() => {
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let reduce = settings.reduce; // «уменьшить движение» в системе или «упрощённые эффекты» в настройках
+  settings.on(() => { reduce = settings.reduce; });
   const OUTLINE = "#1d1340";
   const TAU = Math.PI * 2;
 

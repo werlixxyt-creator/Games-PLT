@@ -9,7 +9,8 @@
 // Участки пути идут секциями с разной формой пути; между ними — портал.
 // Персонаж при этом не меняется, а цвет стрелки зависит только от её направления.
 const course = (() => {
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let reduce = settings.reduce; // «уменьшить движение» в системе или «упрощённые эффекты» в настройках
+  settings.on(() => { reduce = settings.reduce; });
   const css = getComputedStyle(document.documentElement);
   const COLORS = [0, 1, 2, 3].map((i) => css.getPropertyValue("--a" + i).trim());
   const OUTLINE = css.getPropertyValue("--outline").trim() || "#1d1340";
@@ -45,6 +46,9 @@ const course = (() => {
   const HIT_SAUCER_W = 32;   // тарелка: полуширина, выше и ниже центра (GameRules.PistonSaucerUp, PistonSaucerDown)
   const HIT_SAUCER_UP = 22;
   const HIT_SAUCER_DOWN = 11;
+  const HIT_WAVE = 12;       // волна: радиус (GameRules.WaveHit)
+  const WAVE_TILE = 56;      // шаг ячеек в стенах коридора «Волны»
+  const WAVE_COLOR = "#46f0c8";
   const PIPE_TILE = 58;      // шаг ячеек в трубе
 
   // ивенты: подпись особой ячейки, цвет и палитра, в которую уходит космос (овердрайв)
@@ -143,6 +147,11 @@ const course = (() => {
   // pipesFrom — первая ячейка участка, где персонаж уже НЛО, pipesAt — когда он им стал
   let pipesFrom = -1, pipesAt = 0;
   let pistonSpeed = 520, pistonGap = 100; // скорость вдоль пути и половина просвета (от сервера)
+  let waveSpeed = 480, waveHalf = 105, waveLimit = 240; // «Волна»: скорость, половина коридора, его ширина у портала (от сервера)
+  let waveOpen = -9;    // когда открылся коридор «Волны»: стены въезжают с краёв экрана
+  let waveTrail = [];   // след волны: точки мира { x, y, t }
+  let waveDir = 1;      // куда летит волна: 1 — вверх, -1 — вниз
+  let lastWaveFly = 0;  // высота волны в прошлом кадре
   let heroNow = null;   // где персонаж в этом кадре: в него бьёт удар
   const judged = new Map(); // свои препятствия: "armed" — персонаж подошёл к нему, "done" — ответ уже дан
   let judgeTries = -1;      // для какой попытки участка (сколько было ударов)
@@ -189,7 +198,10 @@ const course = (() => {
   const pipeShown = (i) => opts.level[i]?.zone === "piston" && opts.level[i].pistonFrom === pipesFrom && reached >= pipesFrom;
 
   /** На этом участке нет дороги. */
-  const noRoad = (i) => ufoShown(i) || cloudShown(i) || pipeShown(i);
+  /** «Волна» началась: персонаж прошёл её портал, вместо ячеек — коридор. */
+  const waveShown = (i) => opts.level[i]?.zone === "wave" && reached >= opts.level[i].waveFrom;
+
+  const noRoad = (i) => ufoShown(i) || cloudShown(i) || pipeShown(i) || waveShown(i);
 
   /** Стена уже есть на уровне, 0..1: она вырастает там, куда прилетел лазер. Игрок у стены видит её сразу. */
   function wallK(i) {
@@ -226,6 +238,216 @@ const course = (() => {
   /** Как далеко въехала труба i, 0..1: в миг превращения ячейки становятся трубами одна за другой. */
   const pipeAppear = (i) => clamp((time - pipesAt - (i - pipesFrom) * 0.12) / 0.35, 0, 1);
 
+  /** Как далеко въехали стены «Волны»: столько единиц ещё добавлено к половине коридора. */
+  const waveSlide = () => (1 - clamp((time - waveOpen) / 0.4, 0, 1)) ** 2 * 460;
+
+  /**
+   * Коридор «Волны» в доле k ячейки i: центр над путём и половина ширины (как Match.Corridor).
+   * Между концами ячеек центр идёт по прямой; за порталом коридор широкий и сужается к концу первой ячейки.
+   */
+  function corridor(i, k) {
+    const first = opts.level[i - 1]?.zone !== "wave";
+    const from = first ? 0 : opts.level[i - 1].gap || 0;
+    const center = from + ((opts.level[i].gap || 0) - from) * k;
+    const half = first ? waveLimit + (waveHalf - waveLimit) * k : waveHalf;
+    return { center, half: half + waveSlide() };
+  }
+
+  /** Волна в ячейке i: пока она её пролетает, хитбокс не должен касаться стен; долетела до конца — пролетела. */
+  function judgeWave(i, me) {
+    if (s < i) {
+      judged.set(i, "armed");
+      return;
+    }
+    if (judged.get(i) !== "armed") return;
+    let hit = false;
+    if (s < i + 1 && waveShown(i)) {
+      const c = corridor(i, s - i), py = map.segs[i][0][1];
+      hit = Math.abs(py - me.y - c.center) > c.half - HIT_WAVE;
+    }
+    if (hit || s >= i + 1) {
+      judged.set(i, "done");
+      opts.judge(i, !hit);
+    }
+  }
+
+
+  /** Настройка «Показать хитбоксы»: то, по чему judge считает удар — персонаж зелёным, препятствия красным. */
+  function drawHitboxes(o, me) {
+    const cur = Math.floor(s);
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.shadowBlur = 0;
+    // тонкую линию не видно на фоне пилы и трубы: тёмная обводка, яркая линия и полупрозрачная заливка
+    const paint = (path, color) => {
+      ctx.fillStyle = color + "40";
+      ctx.fill(path);
+      ctx.setLineDash([]);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 8;
+      ctx.stroke(path);
+      ctx.setLineDash([12, 8]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4.5;
+      ctx.stroke(path);
+    };
+    const circle = (x, y, r, color) => {
+      const p = new Path2D();
+      p.arc(x, y, r, 0, Math.PI * 2);
+      paint(p, color);
+    };
+    const box = (x0, y0, x1, y1, color) => {
+      const p = new Path2D();
+      p.rect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+      paint(p, color);
+    };
+    const HERO = "#3dff7a", BAD = "#ffe14d";
+    for (let i = Math.max(0, cur - 1); i <= cur + 2 && i < opts.level.length; i++) {
+      const cell = opts.level[i], pts = map.segs[i], p = pts[pts.length - 1];
+      if (ufoShown(i)) {
+        const m = morph(i);
+        circle(p[0], p[1] + OBSTACLE_LOW * (1 - (1 - m) ** 3), HIT_SAW * (0.6 + 0.4 * m), BAD);
+      } else if (cloudShown(i)) {
+        const y = p[1] + (cell.lane === 0 ? -1 : 1) * CLOUD_LANE;
+        box(p[0] - HIT_DART, y - 20, p[0] + HIT_DART, y + 20, BAD);
+      } else if (pipeShown(i)) {
+        const gapY = p[1] - (cell.gap || 0), half = pistonGap + (1 - pipeAppear(i)) ** 2 * 460;
+        box(p[0] - HIT_PIPE, gapY - half, p[0] + HIT_PIPE, camY - VIEW_H, BAD);
+        box(p[0] - HIT_PIPE, gapY + half, p[0] + HIT_PIPE, camY + VIEW_H, BAD);
+      } else if (waveShown(i)) {
+        // граница, за которую не должен заходить центр волны
+        for (const side of [-1, 1]) {
+          const line = new Path2D();
+          for (const k of [0, 1]) {
+            const c = corridor(i, k), a = pts[0];
+            const x = a[0] + (p[0] - a[0]) * k, y = a[1] - c.center + side * (c.half - HIT_WAVE);
+            k ? line.lineTo(x, y) : line.moveTo(x, y);
+          }
+          ctx.setLineDash([12, 8]);
+          ctx.strokeStyle = BAD;
+          ctx.lineWidth = 4.5;
+          ctx.stroke(line);
+        }
+      }
+    }
+    const here = opts.level[cur];
+    if (pipeShown(cur)) box(me.x - HIT_SAUCER_W, me.y - HIT_SAUCER_UP, me.x + HIT_SAUCER_W, me.y + HIT_SAUCER_DOWN, HERO);
+    else if (waveShown(cur)) circle(me.x, me.y, HIT_WAVE, HERO);
+    else if (ufoShown(cur) || ufoShown(cur - 1)) circle(me.x, me.y, HIT_HERO, HERO);
+    else if (here?.zone === "cloud") circle(me.x, me.y, 14, HERO);
+    ctx.restore();
+  }
+  /** Коридор «Волны» на ячейках [from, to): тёмные стены сверху и снизу, по их краю — ячейки и неоновая кромка. */
+  function drawWave(from, to) {
+    for (let i = from; i < to;) {
+      if (!waveShown(i)) {
+        i++;
+        continue;
+      }
+      const run = [];
+      for (; i < to && waveShown(i); i++) run.push(i);
+      for (const side of [-1, 1]) drawWaveWall(run, side);
+    }
+  }
+
+  /** Стена коридора: side -1 — верхняя, 1 — нижняя. */
+  function drawWaveWall(run, side) {
+    const edge = []; // точки края: [x, y, номер ячейки]
+    for (const i of run) {
+      const seg = map.segs[i], a = seg[0], b = seg[seg.length - 1];
+      for (const k of [0, 1]) {
+        const c = corridor(i, k);
+        edge.push([a[0] + (b[0] - a[0]) * k, a[1] - c.center + side * c.half, i]);
+      }
+    }
+    const far = camY + side * VIEW_H * 0.9;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(edge[0][0], far);
+    for (const [x, y] of edge) ctx.lineTo(x, y);
+    ctx.lineTo(edge[edge.length - 1][0], far);
+    ctx.closePath();
+    ctx.fillStyle = OUTLINE;
+    ctx.fill();
+    // кромка: широкое свечение и тонкая белая линия
+    ctx.beginPath();
+    edge.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = rgba(palette.glow, 0.55);
+    ctx.lineWidth = 12;
+    ctx.stroke();
+    ctx.strokeStyle = WAVE_COLOR;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    // в стене вдоль края — ячейки цвета своей стрелки, они «дышат» в такт
+    for (let k = 0; k + 1 < edge.length; k += 2) {
+      const [x0, y0, i] = edge[k], [x1, y1] = edge[k + 1];
+      const len = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(len / WAVE_TILE));
+      for (let t = 0; t < n; t++) {
+        const u = (t + 0.5) / n;
+        ctx.save();
+        ctx.translate(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u + side * 26);
+        const pop = 0.75 + beat * 0.15;
+        ctx.scale(pop, pop);
+        cells.draw(ctx, { skin: opts.cell, r: 19, color: COLORS[opts.level[i].arrow], t: time + t * 0.4, hidden: false, k: 0, wrong: false });
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  /** След волны: зигзаг, который тает за полсекунды. */
+  function drawWaveTrail() {
+    if (waveTrail.length < 2) return;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (let k = 1; k < waveTrail.length; k++) {
+      const a = waveTrail[k - 1], b = waveTrail[k];
+      const life = clamp(1 - (time - b.t) / 0.5, 0, 1);
+      if (life <= 0) continue;
+      ctx.strokeStyle = rgba([70, 240, 200], life * 0.85);
+      ctx.lineWidth = 4 + life * 12;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Сама волна: стрелка-дротик в цвет персонажа, смотрит под 45° туда, куда летит. */
+  function drawWaveHero(x, y, size) {
+    const hero = HEROES[opts.hero] || HEROES.circle;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-waveDir * Math.PI / 4);
+    ctx.scale(size, size);
+    ctx.globalCompositeOperation = "lighter";
+    const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 40);
+    glow.addColorStop(0, "rgba(70,240,200,.7)");
+    glow.addColorStop(1, "rgba(70,240,200,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(-40, -40, 80, 80);
+    ctx.globalCompositeOperation = "source-over";
+    const dart = new Path2D("M24 0 L-14 -15 L-6 0 L-14 15 Z");
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 8;
+    ctx.stroke(dart);
+    ctx.fillStyle = hero.color;
+    ctx.fill(dart);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3.5;
+    ctx.stroke(dart);
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(6, -3, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   /**
    * Удары своего персонажа — по тому, что нарисовано в этом кадре: пила НЛО, стрелка «Кловда», труба поршня.
    * Препятствие стоит в конце своей ячейки. Пока персонаж проходит его по ширине, хитбоксы не должны пересечься;
@@ -239,9 +461,13 @@ const course = (() => {
     }
     if (o.dead) return;
     const cur = Math.floor(s);
-    for (let i = cur - 1; i <= cur; i++) {
+    for (let i = cur - 1; i <= cur + 1; i++) {
       const cell = opts.level[i];
       if (!cell || judged.get(i) === "done") continue;
+      if (cell.zone === "wave") {
+        judgeWave(i, me);
+        continue;
+      }
       const kind = ufoShown(i) ? "ufo" : cloudShown(i) ? "cloud" : pipeShown(i) ? "pipe" : null;
       if (!kind) continue;
       const pts = map.segs[i], p = pts[pts.length - 1];
@@ -265,7 +491,7 @@ const course = (() => {
         }
       }
       // участок кончился: персонаж может встать на следующей ячейке прямо у препятствия — середину прошёл, значит пролетел
-      const last = !opts.level[i + 1] || !(opts.level[i + 1].ufo || opts.level[i + 1].zone === "cloud" || opts.level[i + 1].zone === "piston");
+      const last = !opts.level[i + 1] || !(opts.level[i + 1].ufo || opts.level[i + 1].zone === "cloud" || opts.level[i + 1].zone === "piston" || opts.level[i + 1].zone === "wave");
       if (hit || dx > w || (last && s >= i + 1 && dx >= 0)) {
         judged.set(i, "done");
         opts.judge(i, !hit);
@@ -330,7 +556,7 @@ const course = (() => {
     const colors = scene ? scenes.palettes[scene] : THEMES[style];
 
     for (let i = 0; i < level.length;) {
-      const straightKind = (c) => (c.ufo ? "ufo" : c.zone === "rast" || c.zone === "cloud" || c.zone === "piston" ? c.zone : null);
+      const straightKind = (c) => (c.ufo ? "ufo" : c.zone === "rast" || c.zone === "cloud" || c.zone === "piston" || c.zone === "wave" ? c.zone : null);
       const straight = straightKind(level[i]);
       if (straight) {
         // НЛО, «Раст», «Кловд» и трубы поршня: ячейки стоят по прямой, иначе не рассчитать прыжок и полёт
@@ -338,7 +564,8 @@ const course = (() => {
         for (; i < level.length && straightKind(level[i]) === straight; i++) {
           const step = straight === "ufo" ? level[i].fill * UFO_SPEED
             : straight === "cloud" ? level[i].fill * CLOUD_SPEED
-            : straight === "piston" ? level[i].fill * pistonSpeed : RAST_STEP;
+            : straight === "piston" ? level[i].fill * pistonSpeed
+            : straight === "wave" ? level[i].fill * waveSpeed : RAST_STEP;
           segs.push([[x, y], [x + step, y]]);
           x += step;
         }
@@ -1445,7 +1672,7 @@ const course = (() => {
       }
 
       if (drop > 1) drawUfo(opts.ufo, p.x, p.y + UFO_DROP + UFO_UNDER, 0.6 * drop / UFO_DROP);
-      p.y += drop - jumpLift(m.air) - (opts.level[Math.floor(pos)]?.zone === "piston" ? m.fly || 0 : 0);
+      p.y += drop - jumpLift(m.air) - (opts.level[Math.floor(pos)]?.zone === "piston" || opts.level[Math.floor(pos)]?.zone === "wave" ? m.fly || 0 : 0);
 
       const x = clamp(p.x, edgeL, edgeR);
       const inside = x === p.x;
@@ -2600,14 +2827,15 @@ const course = (() => {
 
   /** Перенос мира на экран: персонаж слева, камера мягко идёт за стенами коридора. */
   function applyCamera() {
-    const sx = reduce ? 0 : (Math.random() - 0.5) * shake * 18;
-    const sy = reduce ? 0 : (Math.random() - 0.5) * shake * 18;
-    const zoom = reduce ? 1 : 1 + beat * 0.022 + punch * 0.09 - zones.over * 0.07 + danger * 0.03 + Math.sin(time * 1.1) * 0.006;
+    const k = settings.get("shake"); // сила тряски из настроек
+    const sx = reduce ? 0 : (Math.random() - 0.5) * shake * 18 * k;
+    const sy = reduce ? 0 : (Math.random() - 0.5) * shake * 18 * k;
+    const zoom = reduce ? 1 : 1 + beat * 0.022 + punch * 0.09 * k - zones.over * 0.07 + danger * 0.03 + Math.sin(time * 1.1) * 0.006;
     // камера дышит: медленно покачивается и пружинит от ударов
     const sway = Math.sin(time * 0.6) * 0.012 + Math.sin(time * 0.23) * 0.008;
     ctx.translate(cssW * heroAt() + sx, cssH / 2 + sy);
     // зум, наклон и сдвиг из триггеров уровня работают и при reduce: это задумка автора, а не тряска
-    ctx.rotate((reduce ? 0 : tilt + roll + sway) + tv.tilt);
+    ctx.rotate((reduce ? 0 : tilt + roll * k + sway) + tv.tilt);
     ctx.scale(scale * zoom * tv.zoom, scale * zoom * tv.zoom * flipY());
     ctx.translate(-camX - tv.ox, -camY - tv.oy);
   }
@@ -2644,6 +2872,15 @@ const course = (() => {
     });
     pistonSpeed = o.piston?.speed ?? 420;
     pistonGap = o.piston?.gap ?? 100; // край трубы рисуется ровно там, где он бьёт
+    // «Волна»: с какой ячейки начинается её участок
+    o.level.forEach((cell, i) => {
+      if (cell.zone === "wave") cell.waveFrom = o.level[i - 1]?.zone === "wave" ? o.level[i - 1].waveFrom : i;
+    });
+    waveSpeed = o.wave?.speed ?? 480;
+    waveHalf = o.wave?.half ?? 105;
+    waveLimit = o.wave?.limit ?? 240;
+    waveOpen = -9;
+    waveTrail = [];
     map = build(o.level, o.fast, o.seed, o.theme);
     press = null;
     lastReached = 0;
@@ -2702,6 +2939,8 @@ const course = (() => {
     judged.clear();
     press = null;
     lastReached = Math.floor(pos); // у нового игрока поршень уже был — сцену не повторяем
+    waveOpen = time - 1; // и коридор «Волны» уже открыт
+    waveTrail = [];
     pipesFrom = opts.level[lastReached]?.zone === "piston" ? opts.level[lastReached].pistonFrom : -1;
     pipesAt = time - 1;
     flash = Math.max(flash, 0.4);
@@ -2717,6 +2956,10 @@ const course = (() => {
     pixels(p.x, p.y, 16, "#ff3b5c");
     ring(p.x, p.y, 200, "#ff3b5c");
     if (pipeShown(Math.floor(s))) pixels(p.x, p.y, 24, "#8ff4ff", 1.4); // тарелка разлетается
+    if (waveShown(Math.floor(s))) {
+      pixels(p.x, p.y, 30, WAVE_COLOR, 1.5); // волна разбилась о стену
+      waveTrail = [];
+    }
   }
 
   /** Дыра догнала игрока: он сжимается в точку. */
@@ -2886,6 +3129,7 @@ const course = (() => {
   /** Ячейка заполнена: она лопается в стиле скина, разлетаются пиксели. */
   function filled(i) {
     if (ufoCell(i)) return; // препятствие перепрыгнули, а не заполнили: оно остаётся позади
+    if (opts.level[i].zone === "wave") return; // ячейки коридора не лопаются: их пролетают
     if (opts.level[i].zone === "piston") {
       // пролетел трубу: в просвете расходится кольцо
       const pts = map.segs[i], p = pts[pts.length - 1], y = p[1] - (opts.level[i].gap || 0);
@@ -3040,6 +3284,19 @@ const course = (() => {
     const me = at(s);
     // конвейерный поршень: игрок вошёл в его участок (впервые или после удара) — поршень опускается и забирает персонажа
     const entered = opts.level[reached];
+    // «Волна»: персонаж влетел в её портал — стены коридора въезжают, персонаж становится волной
+    if (reached !== lastReached && entered?.zone === "wave" && entered.waveFrom === reached) {
+      waveOpen = reduce ? time - 1 : time;
+      waveTrail = [];
+      flashOf(0.6, [70, 240, 200]);
+      shake = Math.max(shake, 0.6);
+      punch = 1;
+      kick(0.08);
+      ring(me.x, me.y, 380, WAVE_COLOR);
+      ring(me.x, me.y, 200, "#fff");
+      pixels(me.x, me.y, 36, WAVE_COLOR, 1.5);
+      if (opts.clank) opts.clank("pistonUp");
+    }
     if (reached !== lastReached && entered?.zone === "piston" && entered.pistonFrom === reached) {
       pipesFrom = -1; // пока персонаж не стал НЛО, участок выглядит обычным уровнем
       if (reduce) {
@@ -3093,8 +3350,17 @@ const course = (() => {
     // камера смотрит на путь: НЛО и прыжки её не качают
     const pathY = me.y, drop = dropAt(s);
     me.y += drop - jumpLift(o.air);
-    if (pipeShown(Math.floor(s))) me.y = pathY - (o.fly || 0); // НЛО поршня: высоту над путём считает сервер
+    const waving = waveShown(Math.floor(s));
+    if (waving) {
+      // направление по тому, куда сдвинулась волна; след — точки мира, тают за полсекунды
+      const fly = o.fly || 0;
+      if (Math.abs(fly - lastWaveFly) > 0.5) waveDir = fly > lastWaveFly ? 1 : -1;
+      lastWaveFly = fly;
+    } else lastWaveFly = 0;
+    waveTrail = waveTrail.filter((p) => time - p.t < 0.5);
+    if (pipeShown(Math.floor(s)) || waving) me.y = pathY - (o.fly || 0); // НЛО поршня и волна: высота над путём
     heroNow = { x: me.x, y: me.y };
+    if (waving && !o.dead) waveTrail.push({ x: me.x, y: me.y, t: time });
     // взмах: НЛО резко пошло вверх — тарелка сжимается, из-под неё бьёт свет
     const fly = saucer ? o.fly || 0 : 0;
     const lean = dt > 0 ? clamp(-(fly - lastFly) / dt / 1600, -0.35, 0.35) : 0; // вверх — носом вверх
@@ -3226,7 +3492,9 @@ const course = (() => {
       drawRoad(right);
       const last = visibleRange(right);
       // пройденные препятствия остаются позади, пока не уедут за экран
+      drawWave(Math.max(0, cur - 3), last);
       for (let i = last - 1; i >= Math.max(0, cur - 3); i--) {
+        if (waveShown(i)) continue; // коридор «Волны» уже нарисован целиком
         if (cloudShown(i)) {
           drawDart(i, pathY);
           continue;
@@ -3260,6 +3528,7 @@ const course = (() => {
     drawRings(dt);
     drawPops(dt);
     drawMates(o.mates, dt);
+    drawWaveTrail();
     drawChunks(dt);
     drawParts(dt);
     drawRide(me.x, pathY + UFO_DROP + UFO_UNDER, drop);
@@ -3297,9 +3566,13 @@ const course = (() => {
       if (saucer) {
         if (!o.dead) drawSaucer(me.x + jitter, me.y + jitter, gone, lean, flapped); // разбилась о трубу — не рисуем, пока участок не начнётся заново
       }
+      else if (waving) {
+        if (!o.dead) drawWaveHero(me.x + jitter, me.y + jitter, gone * 1.35); // разбилась о стену — не рисуем, пока участок не начнётся заново
+      }
       else if (!crawling && !grabbed) drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
     }
     if (press) drawPiston(me.x, me.y);
+    if (settings.get("hitboxes") && o.judge !== undefined) drawHitboxes(o, me);
     ctx.restore();
 
     if (scene && zones.rast < 0.5 && zones.cloud < 0.5) scenes.front(scene, ctx, view);
@@ -3322,8 +3595,8 @@ const course = (() => {
     bgart.invert(ctx, cssW, cssH, tv.invert);
     bgart.letterbox(ctx, cssW, cssH, tv.letterbox);
     if (tv.message) bgart.message(ctx, cssW, cssH, tv.message.text, tv.message.alpha);
-    if (!reduce && flash > 0.02) {
-      ctx.fillStyle = rgba(flashRgb, flash * 0.6);
+    if (!reduce && flash * settings.get("flash") > 0.02) {
+      ctx.fillStyle = rgba(flashRgb, flash * 0.6 * settings.get("flash"));
       ctx.fillRect(0, 0, cssW, cssH);
     }
     if (o.wrong) {
