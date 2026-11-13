@@ -634,6 +634,19 @@ const music = (() => {
       boom(t, master, 0.5);
       return;
     }
+    if (kind === "piston") {
+      // поршень захлопнулся: металлический лязг и шипение пара
+      boom(t, master, 0.6);
+      noiseHit(t, "bandpass", 1800, 0.7, 0.12, master);
+      noiseHit(t + 0.05, "highpass", 4000, 0.3, 0.7, master);
+      return;
+    }
+    if (kind === "pistonUp") {
+      // отпустил: из зажима взлетает НЛО
+      noiseHit(t, "highpass", 3000, 0.4, 0.4, master);
+      sweep(t, 300, 1800, 0.35, master);
+      return;
+    }
     boom(t, master, 0.7);
     noiseHit(t, "highpass", 3000, 0.4, 1.4, master);
     if (kind === "swam") sweep(t, 180, 1400, 0.7, master);

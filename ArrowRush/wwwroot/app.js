@@ -1260,6 +1260,8 @@ function startMatch(d) {
     world: d.world || null, // настройки мира уровня: фон, частицы, цвета
     thunder: () => music.sting("thunder"),
     laser: () => music.sting("laser"),
+    pistonOn: !d.custom, // конвейерный поршень — только в обычных матчах, уровни из редактора не трогает
+    clank: (kind) => music.sting(kind),
     trailOf: trailOf(me.skin),
   });
   music.level(course.style()); // на этот дизайн уровня может стоять свой трек

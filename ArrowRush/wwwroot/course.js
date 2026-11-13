@@ -32,6 +32,13 @@ const course = (() => {
   const OBSTACLE_LOW = 90;   // насколько ячейка-препятствие опускается с пути, прямо на уровень персонажа
   const OBSTACLE_R = 36;
   const JUMP_HEIGHT = 260;   // высота прыжка с НЛО: выше препятствия он в той же доле прыжка, что на сервере (SwamClearFrom)
+  // конвейерный поршень: в случайный момент опускается сверху, забирает персонажа и выпускает его НЛО, как в GD
+  const PISTON_DOWN = 0.3;   // столько секунд поршень опускается
+  const PISTON_HOLD = 1;     // столько персонаж внутри
+  const PISTON_UP = 0.5;     // столько поршень уходит обратно
+  const PISTON_CELLS = 6;    // столько ячеек персонаж летит НЛО; в быстром темпе — PISTON_CELLS_FAST
+  const PISTON_CELLS_FAST = 14;
+  const SAUCER_HOP = 105;    // высота подскока НЛО на каждой ячейке
 
   // ивенты: подпись особой ячейки, цвет и палитра, в которую уходит космос (овердрайв)
   const EVENTS = {
@@ -122,6 +129,8 @@ const course = (() => {
   let rt = trigrun.create([]); // триггеры уровня (trigrun.js)
   let tv = rt.view();   // что они показывают в этом кадре: камера, фон, эффект, надпись
   let lastFake = -1;    // обман, который уже открылся
+  let press = null;     // поршень работает: { start, x, y — где он отпустил персонажа, closed, opened }
+  let pressed = false;  // поршень на этом уровне уже был
 
   /** Повторяемый генератор случайных чисел: один и тот же матч — одна и та же траектория. */
   function rng(seed) {
@@ -230,10 +239,35 @@ const course = (() => {
         const k = i / 14;
         pts.push([x + len * k, y + (to - y) * k + h * 4 * k * (1 - k)]);
       }
+    } else if (kind === "saucer") {
+      // НЛО из GD: резкий подскок от нажатия, потом падает дугой
+      const h = Math.max(0, Math.min(SAUCER_HOP, len * 0.5, y + Y_LIMIT + 30));
+      const to = clamp(y + (rand() - 0.35) * 70, -Y_LIMIT + 60, Y_LIMIT);
+      for (let i = 0; i <= 20; i++) {
+        const k = i / 20;
+        const bump = k < 0.25 ? Math.sin((k / 0.25) * Math.PI / 2) : 1 - ((k - 0.25) / 0.75) ** 2;
+        pts.push([x + len * k, y + (to - y) * k - h * bump]);
+      }
     } else {
       pts.push([x, y], [x + len, y]);
     }
     return pts;
+  }
+
+  /**
+   * Где опустится поршень: случайная ячейка в середине уровня, за ней подряд обычные ячейки на участок НЛО.
+   * Зависит только от id матча — у всех игроков одна и та же. null — на этом уровне поршня нет.
+   */
+  function pickPiston(level, fast, seed, allowed) {
+    if (!allowed) return null;
+    const rand = rng(seed ^ 0x5a17c0de);
+    const len = fast ? PISTON_CELLS_FAST : PISTON_CELLS;
+    const plain = (c) => !c.ufo && !c.zone && !c.wall && !c.event && !c.swam && !c.chart && !c.spike && !c.fake;
+    const from = Math.floor(level.length * (0.2 + rand() * 0.45));
+    for (let i = Math.max(3, from); i + len < level.length - 2; i++) {
+      if (level.slice(i, i + len).every(plain)) return { at: i, to: i + len };
+    }
+    return null;
   }
 
   /** Номер стиля: выбранный в лобби или тот, что выпал. */
@@ -242,7 +276,7 @@ const course = (() => {
     return named >= 0 ? named : rolled;
   }
 
-  function build(level, fast, seed, theme) {
+  function build(level, fast, seed, theme, piston) {
     const rand = rng(seed);
     const segs = [], sections = [];
     const st = { up: rand() < 0.5 ? -1 : 1 };
@@ -266,10 +300,20 @@ const course = (() => {
         sections.push({ from, to: i, kind: straight, x: sx });
         continue;
       }
+      if (piston && i === piston.at) {
+        // участок после поршня: персонаж — НЛО, путь из подскоков
+        sections.push({ from: i, to: piston.to, kind: "saucer", x });
+        for (; i < piston.to; i++) {
+          const pts = shape("saucer", x, y, fast ? FAST_STEP : level[i].fill * HOLD_SPEED, rand, st);
+          segs.push(pts);
+          [x, y] = pts[pts.length - 1];
+        }
+        continue;
+      }
       const prev = kind;
       do kind = Math.floor(rand() * KINDS.length); while (kind === prev);
       let end = Math.min(level.length, i + (fast ? 6 + Math.floor(rand() * 7) : 2 + Math.floor(rand() * 2)));
-      for (let k = i; k < end; k++) if (straightKind(level[k])) end = k;
+      for (let k = i; k < end; k++) if (straightKind(level[k]) || (piston && k === piston.at)) end = k;
       sections.push({ from: i, to: end, kind: KINDS[kind], x });
       for (; i < end; i++) {
         const len = level[i].wall ? WALL_STEP : fast ? FAST_STEP : level[i].fill * HOLD_SPEED;
@@ -282,7 +326,7 @@ const course = (() => {
     const endX = x + TO_PORTAL, endY = y;
     const walls = buildWalls(segs, endX, endY, rand);
     const styleId = [...THEME_IDS, ...scenes.names][style];
-    return { segs, sections, scene, styleId, colors, endX, endY, walls, deco: buildDeco(walls, endX, rand) };
+    return { segs, sections, scene, styleId, colors, endX, endY, walls, deco: buildDeco(walls, endX, rand), piston };
   }
 
   /** Стены коридора: середина идёт за сглаженным путём, зазор немного дышит. */
@@ -990,7 +1034,7 @@ const course = (() => {
   function drawPortals(left, right) {
     for (let i = 1; i < map.sections.length; i++) {
       const sec = map.sections[i];
-      if (sec.kind === "ufo" || sec.kind === "rast" || sec.x < left - 200 || sec.x > right + 200) continue;
+      if (sec.kind === "ufo" || sec.kind === "rast" || sec.kind === "saucer" || sec.x < left - 200 || sec.x > right + 200) continue;
       const p = map.segs[sec.from][0];
       drawPortal(p[0], p[1], palette.glow, 104);
     }
@@ -1098,6 +1142,203 @@ const course = (() => {
     ctx.stroke(ufo.rim);
     ctx.fillStyle = "#fff";
     drawUfoLights(12, 90, 8, 6, 10, 3.2, 1.5);
+    ctx.restore();
+  }
+
+  /** НЛО из GD: персонаж сидит под стеклянным колпаком в летающей тарелке. hop — доля ячейки: в начале подскока тарелка сжимается. */
+  function drawSaucer(x, y, size, lean, hop) {
+    const hero = HEROES[opts.hero] || HEROES.circle;
+    const squash = reduce ? 0 : hop < 0.18 ? Math.sin((hop / 0.18) * Math.PI) * 0.16 : 0;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(lean);
+    ctx.scale(size * 1.3 * (1 + squash), size * 1.3 * (1 - squash));
+    ctx.lineJoin = "round";
+
+    // свет снизу: в начале подскока вспыхивает
+    ctx.globalCompositeOperation = "lighter";
+    const glow = ctx.createRadialGradient(0, 22, 0, 0, 22, 60);
+    glow.addColorStop(0, `rgba(120,240,255,${0.45 + squash * 3})`);
+    glow.addColorStop(1, "rgba(120,240,255,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(-60, -38, 120, 120);
+    ctx.globalCompositeOperation = "source-over";
+
+    // колпак, в нём персонаж
+    const dome = new Path2D();
+    dome.ellipse(0, -4, 25, 29, 0, Math.PI, 0);
+    dome.closePath();
+    ctx.fillStyle = "rgba(150,235,255,.25)";
+    ctx.fill(dome);
+    drawHero(ctx, opts.hero, 0, -16, 0, 0.6, undefined, { spin: 0, sx: 1, sy: 1 });
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(220,250,255,.85)";
+    ctx.stroke(dome);
+    ctx.strokeStyle = "rgba(255,255,255,.7)";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(0, -4, 19, Math.PI * 1.15, Math.PI * 1.4);
+    ctx.stroke();
+
+    // чаша тарелки в цвет скина и кромка
+    const hull = new Path2D("M-46 -4 H46 C42 20 -42 20 -46 -4 Z");
+    const rim = new Path2D("M-52 -9 H52 V0 H-52 Z");
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 8;
+    ctx.stroke(hull);
+    ctx.stroke(rim);
+    ctx.fillStyle = hero.color;
+    ctx.fill(hull);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 4;
+    ctx.stroke(hull);
+    ctx.fillStyle = "#e8fdff";
+    ctx.fill(rim);
+    ctx.stroke(rim);
+    // огни на чаше бегут по кругу
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = Math.floor(time * 8) % 3 === i ? "#8ff4ff" : OUTLINE;
+      ctx.beginPath();
+      ctx.arc(-20 + i * 20, 7, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** Жёлто-чёрная полоса, как на заводских механизмах; shift сдвигает полоски — конвейер едет. */
+  function hazard(x, y, w, h, shift = 0) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.fillStyle = "#ffc93c";
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = "#1d1d24";
+    for (let i = -h - 28 + loop(shift, 28); i < w + h; i += 28) {
+      ctx.beginPath();
+      ctx.moveTo(x + i, y + h);
+      ctx.lineTo(x + i + 14, y + h);
+      ctx.lineTo(x + i + 14 + h, y);
+      ctx.lineTo(x + i + h, y);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+  }
+
+  /** Металл поршня: светлая середина, тёмные края. */
+  function steel(x0, x1) {
+    const g = ctx.createLinearGradient(x0, 0, x1, 0);
+    g.addColorStop(0, "#4a5268");
+    g.addColorStop(0.45, "#d4dcef");
+    g.addColorStop(1, "#3e4558");
+    return g;
+  }
+
+  /**
+   * Конвейерный поршень: каретка едет по рельсу у верха экрана, телескопический шток опускается,
+   * зажим закрывается вокруг персонажа и едет вместе с ним, потом отпускает и уходит вверх.
+   */
+  function drawPiston(hx, hy) {
+    const t = time - press.start;
+    const out = t - PISTON_DOWN - PISTON_HOLD; // больше нуля — персонаж уже отпущен
+    const x = out > 0 ? press.x : hx, y = out > 0 ? press.y : hy;
+    const u = clamp(out / PISTON_UP, 0, 1);
+    const k = t < PISTON_DOWN ? (t / PISTON_DOWN) ** 2 : out < 0 ? 1 : 1 - u * u * (3 - 2 * u); // 1 — внизу
+    const jaw = t < PISTON_DOWN * 0.8 ? 1 : out < 0 ? 0 : clamp(out / 0.15, 0, 1); // 1 — зажим раскрыт
+    const alpha = out > 0 ? 1 - clamp((out - PISTON_UP * 0.6) / (PISTON_UP * 0.4), 0, 1) : clamp(t / 0.12, 0, 1);
+    const rail = camY - VIEW_H / 2 + 46; // рельс виден у верхнего края экрана
+    const headY = rail + 40 + (y - 80 - rail) * k; // низ головы: внизу она над самым персонажем
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.lineJoin = "round";
+
+    // рельс конвейера через весь экран
+    hazard(x - viewW * 1.5, rail - 34, viewW * 3, 22, out > 0 ? 0 : -time * 260);
+    ctx.fillStyle = "#2b2f3d";
+    ctx.fillRect(x - viewW * 1.5, rail - 12, viewW * 3, 10);
+
+    // телескопический шток: три трубы друг в друге
+    const top = rail + 18, len = Math.max(0, headY - 44 - top);
+    for (const [w, a, b] of [[46, 0, 0.46], [34, 0.4, 0.76], [24, 0.7, 1]]) {
+      const y0 = top + len * a, y1 = top + len * b;
+      if (y1 - y0 < 1) continue;
+      ctx.fillStyle = steel(x - w / 2, x + w / 2);
+      ctx.fillRect(x - w / 2, y0, w, y1 - y0 + 2);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x - w / 2, y0, w, y1 - y0 + 2);
+    }
+
+    // каретка с колёсами
+    ctx.fillStyle = steel(x - 60, x + 60);
+    ctx.fillRect(x - 60, rail - 6, 120, 30);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x - 60, rail - 6, 120, 30);
+    for (const wx of [-38, 38]) {
+      ctx.save();
+      ctx.translate(x + wx, rail - 12);
+      ctx.rotate(out > 0 ? 0 : time * 9);
+      ctx.fillStyle = "#2b2f3d";
+      ctx.beginPath();
+      ctx.arc(0, 0, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#ffc93c";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-9, 0);
+      ctx.lineTo(9, 0);
+      ctx.moveTo(0, -9);
+      ctx.lineTo(0, 9);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // зажим: две щеки по бокам, закрытые прячут персонажа в камере
+    const gap = 40 + jaw * 26;
+    if (jaw < 1) {
+      // камера тёмная, внутри разгорается щель — персонаж превращается
+      const charge = out < 0 ? clamp((t - PISTON_DOWN) / PISTON_HOLD, 0, 1) : 1 - jaw;
+      ctx.globalAlpha = alpha * (1 - jaw);
+      ctx.fillStyle = "#23263a";
+      ctx.fillRect(x - gap, headY - 2, gap * 2, 80);
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = `rgba(120,240,255,${0.3 + 0.7 * charge * (0.7 + 0.3 * Math.sin(time * 30))})`;
+      ctx.fillRect(x - gap + 8, headY + 34, (gap - 8) * 2, 6 + charge * 8);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = alpha;
+    }
+    for (const side of [-1, 1]) {
+      const jx = x + side * gap;
+      ctx.fillStyle = steel(jx - 9, jx + 9);
+      ctx.beginPath();
+      ctx.moveTo(jx - 9, headY - 4);
+      ctx.lineTo(jx + 9, headY - 4);
+      ctx.lineTo(jx + 9, headY + 70);
+      ctx.lineTo(jx - side * 14, headY + 84);
+      ctx.lineTo(jx - 9, headY + 70);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    // голова с жёлто-чёрной полосой и лампой
+    ctx.fillStyle = steel(x - 72, x + 72);
+    ctx.fillRect(x - 72, headY - 44, 144, 44);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x - 72, headY - 44, 144, 44);
+    hazard(x - 72, headY - 16, 144, 16);
+    ctx.fillStyle = out < 0 && t >= PISTON_DOWN ? (Math.floor(time * 10) % 2 ? "#ff3b5c" : "#ffd84d") : "#8ff4ff";
+    ctx.beginPath();
+    ctx.arc(x, headY - 30, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -2316,7 +2557,9 @@ const course = (() => {
     tv = rt.view();
     lastFake = -1;
     reached = 0;
-    map = build(o.level, o.fast, o.seed, o.theme);
+    map = build(o.level, o.fast, o.seed, o.theme, pickPiston(o.level, o.fast, o.seed, o.pistonOn !== false));
+    press = null;
+    pressed = false;
     s = 0;
     parts = [];
     pops = [];
@@ -2365,6 +2608,8 @@ const course = (() => {
     rain = null;
     puff = null;
     eaten = 0;
+    press = null;
+    pressed = !!map.piston && pos >= map.piston.at; // у нового игрока поршень уже был — сцену не повторяем
     flash = Math.max(flash, 0.4);
   }
 
@@ -2690,6 +2935,52 @@ const course = (() => {
     }
 
     const me = at(s);
+    // конвейерный поршень: игрок дошёл до его ячейки — поршень опускается и забирает персонажа
+    const pist = map.piston;
+    if (pist && !pressed && reached >= pist.at) {
+      pressed = true;
+      if (reached === pist.at && !reduce) press = { start: time, x: 0, y: 0, closed: false, opened: false };
+      else flashOf(0.5, [150, 245, 255]);
+    }
+    const pt = press ? time - press.start : -1;
+    if (press && !press.closed && pt >= PISTON_DOWN) {
+      // удар: зажим захлопнулся
+      press.closed = true;
+      shake = 1;
+      punch = Math.max(punch, 0.7);
+      kick(0.07);
+      flashOf(0.35, [255, 230, 160]);
+      ring(me.x, me.y, 260, "#ffc93c");
+      pixels(me.x - 60, me.y + 50, 14, "#e8e8f0", 1.2);
+      pixels(me.x + 60, me.y + 50, 14, "#e8e8f0", 1.2);
+      if (opts.clank) opts.clank("piston");
+    }
+    if (press && !press.opened && pt >= PISTON_DOWN + PISTON_HOLD) {
+      // отпустил: из зажима вылетает НЛО
+      press.opened = true;
+      press.x = me.x;
+      press.y = me.y;
+      flashOf(0.7, [150, 245, 255]);
+      shake = Math.max(shake, 0.7);
+      punch = 1;
+      kick(0.09);
+      ring(me.x, me.y, 420, "#8ff4ff");
+      ring(me.x, me.y, 220, "#fff");
+      pixels(me.x, me.y, 40, "#8ff4ff", 1.6);
+      pixels(me.x, me.y, 16, "#fff", 1.1);
+      if (opts.clank) opts.clank("pistonUp");
+    }
+    if (press && pt >= PISTON_DOWN + PISTON_HOLD + PISTON_UP) press = null;
+    const grabbed = !!press && pt >= PISTON_DOWN && pt < PISTON_DOWN + PISTON_HOLD; // персонаж внутри поршня
+    if (grabbed) {
+      shake = Math.max(shake, 0.14);
+      // из зажима бьёт пар
+      if (!reduce && Math.random() < 0.6) {
+        const side = Math.random() < 0.5 ? -1 : 1;
+        pixel(me.x + side * 60, me.y + 30, side * (120 + Math.random() * 160), -40 - Math.random() * 80, 0.5, 5 + Math.random() * 7, "rgba(235,235,245,.8)");
+      }
+    }
+    const saucer = s < n && sectionAt(s).kind === "saucer" && !(press && pt < PISTON_DOWN + PISTON_HOLD);
     // камера смотрит на путь: НЛО и прыжки её не качают
     const pathY = me.y, drop = dropAt(s);
     me.y += drop - jumpLift(o.air);
@@ -2869,8 +3160,10 @@ const course = (() => {
       const pose = drop > 1 || air
         ? { spin: air ? Math.min(1, o.air / opts.jump) * Math.PI * 2 : Math.sin(time * 7) * 0.12, sx: 1 + squash, sy: 1 - squash }
         : undefined;
-      if (!crawling) drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
+      if (saucer) drawSaucer(me.x + jitter, me.y + jitter, (o.holding ? 1.08 : 1) * gone, clamp(me.a, -0.8, 0.8) * 0.3, s - Math.floor(s));
+      else if (!crawling && !grabbed) drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
     }
+    if (press) drawPiston(me.x, me.y);
     ctx.restore();
 
     if (scene && zones.rast < 0.5 && zones.cloud < 0.5) scenes.front(scene, ctx, view);
