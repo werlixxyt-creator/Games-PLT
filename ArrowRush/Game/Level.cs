@@ -93,9 +93,10 @@ public static class GameModes
 /// Lane — ячейка «Кловда»: стрелка летит по этой линии (0 — потолок, 1 — пол), FillSeconds — через сколько она долетит до игрока.
 /// Препятствия из редактора: Wall без Zone — отдельная стена, жизни у неё не тают. Spike — шипы: ячейка проходит сама,
 /// пока ничего не нажато, а нажатие — удар. Fake — обман: до неё видна стрелка Was, настоящая открывается, когда игрок дошёл.
+/// Gap — труба конвейерного поршня (Zone = Piston): центр просвета, на столько единиц выше пути.
 /// </summary>
 public sealed record Slider(Arrow Arrow, double FillSeconds, bool Chart = false, Arrow? Was = null, bool Swam = false, bool Ufo = false, string? Event = null, string? Zone = null, bool Wall = false, int? Lane = null,
-    bool Spike = false, bool Fake = false);
+    bool Spike = false, bool Fake = false, double? Gap = null);
 
 /// <summary>
 /// Уровень из редактора, готовый к матчу. Revision — номер правки: прохождение автора засчитывается,
@@ -172,7 +173,37 @@ public static class LevelGenerator
             sliders[i] = new Slider(arrow, Math.Round(seconds, 2));
         }
 
-        return AddSpecials(sliders, fast, rnd);
+        return AddPiston(AddSpecials(sliders, fast, rnd), rnd);
+    }
+
+    /// <summary>Ивент «Конвейерный поршень»: особой ячейки у него нет, он начинается внезапно, см. <see cref="AddPiston"/>.</summary>
+    public const string Piston = "piston";
+
+    /// <summary>
+    /// Конвейерный поршень: после случайной обычной ячейки в середине уровня добавляются трубы. Ставится только туда,
+    /// где не идёт другое явление. Пока поршень не опустился, трубы выглядят обычными ячейками (Was).
+    /// </summary>
+    private static Slider[] AddPiston(Slider[] sliders, Random rnd)
+    {
+        if (rnd.Next(100) >= GameRules.PistonChance || sliders.Length < 6) return sliders;
+
+        // после ячейки at: она и следующая обычные, значит, ни в чей участок не попадаем
+        bool Free(int at) => at + 1 < sliders.Length
+            && sliders[at] is { Event: null, Zone: null, Chart: false, Swam: false, Ufo: false, Was: null, Wall: false }
+            && sliders[at + 1] is { Zone: null, Ufo: false, Was: null, Wall: false };
+        var spots = Enumerable.Range(sliders.Length / 5, sliders.Length * 3 / 5).Where(Free).ToList();
+        if (spots.Count == 0) return sliders;
+        var at = spots[rnd.Next(spots.Count)];
+
+        var zone = new List<Slider>();
+        var gap = (rnd.NextDouble() - 0.5) * 60; // первая труба почти на уровне пути: персонаж только что стал НЛО
+        for (var i = 0; i < GameRules.PistonCells; i++)
+        {
+            if (i > 0) gap = Math.Clamp(gap + (rnd.NextDouble() * 2 - 1) * GameRules.PistonGapStep, -GameRules.PistonGapRange, GameRules.PistonGapRange);
+            zone.Add(new Slider((Arrow)rnd.Next(4), i == 0 ? GameRules.PistonIntroSeconds : GameRules.PistonCellSeconds,
+                Was: (Arrow)rnd.Next(4), Zone: Piston, Gap: Math.Round(gap)));
+        }
+        return [.. sliders.Take(at + 1), .. zone, .. sliders.Skip(at + 1)];
     }
 
     /// <summary>

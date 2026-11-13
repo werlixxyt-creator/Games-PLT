@@ -109,7 +109,10 @@ let lastLevel = null;     // последний сыгранный уровен�
 let skinSlot = "slider"; // открытая вкладка на экране скинов
 
 function newPrediction() {
-  return { idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false, jumpAt: -Infinity, lane: 1, laneAt: -Infinity, hops: 0 };
+  return {
+    idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false, jumpAt: -Infinity, lane: 1, laneAt: -Infinity, hops: 0,
+    fly: { y: 0, v: 0, idx: -1, at: 0 }, // поршень: свой полёт НЛО, считается здесь же, как на сервере
+  };
 }
 
 /** Какую стрелку надо нажать для нарисованной: в «Зеркале» — противоположную. */
@@ -1229,6 +1232,7 @@ function startMatch(d) {
     wrongDrain: d.wrongDrain,
     stun: d.stun,
     jump: d.jump,
+    piston: d.piston, // { grab, gravity, flap, limit } — физика НЛО после поршня
     holeStart: d.holeStart,
     wallHits: d.wallHits,
     tracks: new Map(),
@@ -1260,8 +1264,7 @@ function startMatch(d) {
     world: d.world || null, // настройки мира уровня: фон, частицы, цвета
     thunder: () => music.sting("thunder"),
     laser: () => music.sting("laser"),
-    pistonOn: !d.custom, // конвейерный поршень — только в обычных матчах, уровни из редактора не трогает
-    clank: (kind) => music.sting(kind),
+    clank: (kind) => music.sting(kind), // звуки поршня
     trailOf: trailOf(me.skin),
   });
   music.level(course.style()); // на этот дизайн уровня может стоять свой трек
@@ -1506,6 +1509,7 @@ function crashed() {
   course.hit();
   music.miss();
   pred.jumpAt = -Infinity;
+  pred.fly.y = pred.fly.v = 0; // поршень: участок начинается заново с пути
   combo = 0;
   showCombo();
 }
@@ -1528,7 +1532,7 @@ function celebrate(track, from, to, level) {
   const speed = match.press;
   for (let i = from; i < Math.min(to, level.length); i++) {
     const [x, y] = course.point(i);
-    if (!level[i].ufo && level[i].zone !== "cloud") fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
+    if (!level[i].ufo && level[i].zone !== "cloud" && level[i].zone !== "piston") fx.burst(x, y, burstColor(track.skin, level[i].arrow, i), speed ? 10 : 24, speed ? 0.7 : 1);
     if (level[i].wall) music.sting("wallBroken");
     if (level[i].zone === "cloud") music.sting("dodge");
     course.filled(i);
@@ -1559,7 +1563,42 @@ function showCombo() {
   if (combo % 10 === 0) playStreakFx(profile ? profile.equipped.streak : "flame", el, 0.5);
 }
 
-const held_by_server = (cell) => !!cell && (cell.ufo || cell.wall || cell.spike || cell.zone === "cloud");
+const held_by_server = (cell) => !!cell && (cell.ufo || cell.wall || cell.spike || cell.zone === "cloud" || cell.zone === "piston");
+
+/** Поршень ещё держит персонажа: начало первой трубы участка (как Match.Grabbed на сервере). pos — номер ячейки + доля. */
+function pistonGrabbed(idx, pos) {
+  const level = match.level;
+  return level[idx]?.zone === "piston" && level[idx - 1]?.zone !== "piston" && (pos - idx) * level[idx].fill < match.piston.grab;
+}
+
+/** Свой полёт НЛО после поршня: те же правила, что на сервере (Match.Flutter). Возвращает высоту над путём. */
+function stepFly(idx, pos, now) {
+  const f = pred.fly, phys = match.piston;
+  const dt = Math.min((now - f.at) / 1000, 0.05);
+  f.at = now;
+  const level = match.level;
+  // вне участка, в начале участка и после отката вниз — на пути
+  if (level[idx]?.zone !== "piston" || idx < f.idx || (idx !== f.idx && level[idx - 1]?.zone !== "piston")) f.y = f.v = 0;
+  f.idx = idx;
+  if (level[idx]?.zone !== "piston" || pistonGrabbed(idx, pos)) {
+    f.y = f.v = 0;
+    return 0;
+  }
+  f.v -= phys.gravity * dt;
+  f.y += f.v * dt;
+  if (Math.abs(f.y) > phys.limit) {
+    f.y = Math.max(-phys.limit, Math.min(phys.limit, f.y));
+    f.v = 0;
+  }
+  return f.y;
+}
+
+/** Высота НЛО соперника или напарника между снимками сервера: летит по той же дуге. */
+function flyOf(p, elapsed) {
+  if (match.level[p.idx]?.zone !== "piston" || !match.piston) return 0;
+  const y = p.fy + p.fv * elapsed - match.piston.gravity * elapsed * elapsed / 2;
+  return Math.max(-match.piston.limit, Math.min(match.piston.limit, y));
+}
 
 /** Режимы с нажатиями: сверяем своё предсказание с сервером. */
 function syncPrediction(server, now) {
@@ -1730,7 +1769,7 @@ function render(now) {
     }
 
     // на НЛО прогресс сам идёт к ячейке, а стрелки не бывают неправильными
-    if (idx === p.idx && (level[idx]?.ufo || level[idx]?.zone === "cloud")) {
+    if (idx === p.idx && (level[idx]?.ufo || level[idx]?.zone === "cloud" || level[idx]?.zone === "piston")) {
       progress = Math.min(1, p.p + elapsed / level[idx].fill);
       wrong = holding = false;
     }
@@ -1764,7 +1803,7 @@ function render(now) {
       myHolding = holding;
     } else {
       renderOpponent(track, idx, progress, wrong, level);
-      if (track.mate && !p.left && mates.length < MAX_MATES_DRAWN && !(match.watch && match.watch.slot === p.slot)) mates.push({ slot: p.slot, pos: p.idx + p.p, air: p.air, name: track.name, color: MATE_COLOR });
+      if (track.mate && !p.left && mates.length < MAX_MATES_DRAWN && !(match.watch && match.watch.slot === p.slot)) mates.push({ slot: p.slot, pos: p.idx + p.p, air: p.air, fly: flyOf(p, elapsed), name: track.name, color: MATE_COLOR });
     }
 
     if (p.done || p.out) {
@@ -1784,15 +1823,16 @@ function render(now) {
   const hole = shown && inRast(shown) ? shown.hole / match.holeStart : 1;
   const hp = shown && level[shown.idx]?.wall && level[shown.idx].zone === "rainbow" ? shown.hp : null; // у стены из редактора жизней нет
   const myLane = mine ? laneOf(mine, now) : pred.lane;
+  const myFly = mine ? stepFly(Math.min(Math.floor(myPos), level.length), myPos, now) : 0;
   const view = watched
-    ? { pos: watched.idx + watched.p, air: watched.air, hole, hp, lane: watched.lane, ...handsOf(watched, t) }
-    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp, lane: myLane };
+    ? { pos: watched.idx + watched.p, air: watched.air, hole, hp, lane: watched.lane, fly: flyOf(watched, elapsed), ...handsOf(watched, t) }
+    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp, lane: myLane, fly: myFly };
   const pos = Math.min(Math.floor(view.pos), level.length);
   course.frame(now, { ...view, mates, energy: music.energy(), part: music.part(), final: pos / level.length >= MARKS[1][0] && pos < level.length });
 
   // музыка идёт за тем, что сейчас на экране
   const cell = level[pos];
-  music.mood(cell ? (cell.ufo ? "swam" : cell.zone) : null);
+  music.mood(cell ? (cell.ufo || cell.zone === "piston" ? "swam" : cell.zone) : null);
   music.progress(pos / level.length);
 
   // подсказки для меня
@@ -1890,6 +1930,7 @@ function pressArrow(a) {
   // автоповтор зажатой клавиши — не новое нажатие
   if (!(held & bit)) {
     predictJump();
+    predictFlap();
     predictHop(bit);
     predictPress(bit);
   }
@@ -1949,6 +1990,17 @@ function predictJump() {
   if (!mine || mine.out || mine.done) return;
   const now = performance.now();
   if (match.level[match.press ? pred.idx : mine.idx]?.ufo && now - pred.jumpAt >= match.jump * 1000) pred.jumpAt = now;
+}
+
+/** Поршень: взмах НЛО виден сразу, те же правила, что на сервере (Match.Flap). */
+function predictFlap() {
+  const mine = match && lastState && lastState.players.find((p) => p.slot === match.you);
+  if (!mine || mine.out || mine.done || !match.piston) return;
+  if (match.level[mine.idx]?.zone !== "piston") return;
+  const pos = mine.idx + Math.min(1, mine.p + Math.min((performance.now() - stateAt) / 1000, 0.2) / match.level[mine.idx].fill);
+  if (pistonGrabbed(mine.idx, pos)) return;
+  pred.fly.v = match.piston.flap;
+  music.sting("hop");
 }
 
 const HOP_TIMEOUT = 1500; // столько ждём, что сервер учтёт прыжок: дольше — считаем нажатие потерянным

@@ -56,6 +56,30 @@ public static class GameRules
     public const double SwamClearFrom = 0.12;
     public const double SwamClearTo = 0.88;
 
+    // Конвейерный поршень: в случайный момент, без особой ячейки, забирает персонажа и выпускает НЛО.
+    // НЛО летит как во Flappy Bird: падает, любая стрелка — взмах вверх; каждая ячейка — труба, пролететь надо в просвет
+    /// <summary>Сколько уровней из ста получают поршень (один на уровень).</summary>
+    public const int PistonChance = 100;
+    /// <summary>Сколько труб: по одной на ячейку. Эти ячейки добавляются к уровню.</summary>
+    public const int PistonCells = 4;
+    /// <summary>Сколько поршень держит персонажа в начале участка: в это время НЛО стоит, нажатия не считаются.</summary>
+    public const double PistonGrabSeconds = 1.0;
+    /// <summary>Сколько длится первая ячейка: захват и подлёт к первой трубе.</summary>
+    public const double PistonIntroSeconds = 2.0;
+    /// <summary>Через сколько секунд следующая труба.</summary>
+    public const double PistonCellSeconds = 1.0;
+    /// <summary>Падение НЛО, единиц в секунду за секунду. Единицы — те же, что на сцене (высота экрана 720).</summary>
+    public const double PistonGravity = 1300;
+    /// <summary>Скорость вверх после взмаха.</summary>
+    public const double PistonFlap = 480;
+    /// <summary>Выше и ниже пути на столько НЛО не улетает: там потолок и пол.</summary>
+    public const double PistonLimit = 230;
+    /// <summary>Половина просвета, которую прощает сервер. На сцене он нарисован чуть уже (PISTON_GAP в course.js): задержка сети.</summary>
+    public const double PistonGapHalf = 95;
+    /// <summary>Насколько центр просвета уходит от пути и насколько он меняется от трубы к трубе.</summary>
+    public const double PistonGapRange = 110;
+    public const double PistonGapStep = 120;
+
     // Ивент «Кловд»: игрок становится пауком и уклоняется от стрелок, перескакивая между потолком и полом
     /// <summary>Сколько стрелок летит: по одной на ячейку. Эти ячейки добавляются к уровню.</summary>
     public const int CloudCells = 8;

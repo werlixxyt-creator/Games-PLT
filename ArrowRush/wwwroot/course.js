@@ -32,13 +32,14 @@ const course = (() => {
   const OBSTACLE_LOW = 90;   // насколько ячейка-препятствие опускается с пути, прямо на уровень персонажа
   const OBSTACLE_R = 36;
   const JUMP_HEIGHT = 260;   // высота прыжка с НЛО: выше препятствия он в той же доле прыжка, что на сервере (SwamClearFrom)
-  // конвейерный поршень: в случайный момент опускается сверху, забирает персонажа и выпускает его НЛО, как в GD
-  const PISTON_DOWN = 0.3;   // столько секунд поршень опускается
-  const PISTON_HOLD = 1;     // столько персонаж внутри
+  // конвейерный поршень: в случайный момент опускается сверху, забирает персонажа и выпускает его НЛО, как в GD.
+  // НЛО летит как во Flappy Bird между трубами из ячеек; физику считает сервер (Match.Flutter)
+  const PISTON_DOWN = 0.25;  // столько секунд поршень опускается; вместе с PISTON_HOLD — GameRules.PistonGrabSeconds
+  const PISTON_HOLD = 0.75;  // столько персонаж внутри
   const PISTON_UP = 0.5;     // столько поршень уходит обратно
-  const PISTON_CELLS = 6;    // столько ячеек персонаж летит НЛО; в быстром темпе — PISTON_CELLS_FAST
-  const PISTON_CELLS_FAST = 14;
-  const SAUCER_HOP = 105;    // высота подскока НЛО на каждой ячейке
+  const PISTON_SPEED = 420;  // единиц в секунду между трубами
+  const PISTON_GAP = 72;     // половина просвета трубы на экране; сервер прощает чуть больше (GameRules.PistonGapHalf)
+  const PIPE_TILE = 58;      // шаг ячеек в трубе
 
   // ивенты: подпись особой ячейки, цвет и палитра, в которую уходит космос (овердрайв)
   const EVENTS = {
@@ -130,7 +131,8 @@ const course = (() => {
   let tv = rt.view();   // что они показывают в этом кадре: камера, фон, эффект, надпись
   let lastFake = -1;    // обман, который уже открылся
   let press = null;     // поршень работает: { start, x, y — где он отпустил персонажа, closed, opened }
-  let pressed = false;  // поршень на этом уровне уже был
+  let lastReached = 0;  // на какой ячейке игрок был в прошлом кадре: поршень опускается, когда он вошёл в его участок
+  let lastFly = 0, flapped = 0; // высота НЛО в прошлом кадре и вспышка взмаха, затухает
 
   /** Повторяемый генератор случайных чисел: один и тот же матч — одна и та же траектория. */
   function rng(seed) {
@@ -170,8 +172,11 @@ const course = (() => {
   /** Ячейка «Кловда», который уже начался: вместо неё летит стрелка. */
   const cloudShown = (i) => opts.level[i]?.zone === "cloud" && reached > opts.level[i].chartAt;
 
+  /** Труба поршня, который уже опустился: вместо ячейки — столбы из ячеек с просветом. */
+  const pipeShown = (i) => opts.level[i]?.zone === "piston" && reached >= opts.level[i].pistonFrom;
+
   /** На этом участке нет дороги. */
-  const noRoad = (i) => ufoShown(i) || cloudShown(i);
+  const noRoad = (i) => ufoShown(i) || cloudShown(i) || pipeShown(i);
 
   /** Стена уже есть на уровне, 0..1: она вырастает там, куда прилетел лазер. Игрок у стены видит её сразу. */
   function wallK(i) {
@@ -239,35 +244,10 @@ const course = (() => {
         const k = i / 14;
         pts.push([x + len * k, y + (to - y) * k + h * 4 * k * (1 - k)]);
       }
-    } else if (kind === "saucer") {
-      // НЛО из GD: резкий подскок от нажатия, потом падает дугой
-      const h = Math.max(0, Math.min(SAUCER_HOP, len * 0.5, y + Y_LIMIT + 30));
-      const to = clamp(y + (rand() - 0.35) * 70, -Y_LIMIT + 60, Y_LIMIT);
-      for (let i = 0; i <= 20; i++) {
-        const k = i / 20;
-        const bump = k < 0.25 ? Math.sin((k / 0.25) * Math.PI / 2) : 1 - ((k - 0.25) / 0.75) ** 2;
-        pts.push([x + len * k, y + (to - y) * k - h * bump]);
-      }
     } else {
       pts.push([x, y], [x + len, y]);
     }
     return pts;
-  }
-
-  /**
-   * Где опустится поршень: случайная ячейка в середине уровня, за ней подряд обычные ячейки на участок НЛО.
-   * Зависит только от id матча — у всех игроков одна и та же. null — на этом уровне поршня нет.
-   */
-  function pickPiston(level, fast, seed, allowed) {
-    if (!allowed) return null;
-    const rand = rng(seed ^ 0x5a17c0de);
-    const len = fast ? PISTON_CELLS_FAST : PISTON_CELLS;
-    const plain = (c) => !c.ufo && !c.zone && !c.wall && !c.event && !c.swam && !c.chart && !c.spike && !c.fake;
-    const from = Math.floor(level.length * (0.2 + rand() * 0.45));
-    for (let i = Math.max(3, from); i + len < level.length - 2; i++) {
-      if (level.slice(i, i + len).every(plain)) return { at: i, to: i + len };
-    }
-    return null;
   }
 
   /** Номер стиля: выбранный в лобби или тот, что выпал. */
@@ -276,7 +256,7 @@ const course = (() => {
     return named >= 0 ? named : rolled;
   }
 
-  function build(level, fast, seed, theme, piston) {
+  function build(level, fast, seed, theme) {
     const rand = rng(seed);
     const segs = [], sections = [];
     const st = { up: rand() < 0.5 ? -1 : 1 };
@@ -287,33 +267,25 @@ const course = (() => {
     const colors = scene ? scenes.palettes[scene] : THEMES[style];
 
     for (let i = 0; i < level.length;) {
-      const straightKind = (c) => (c.ufo ? "ufo" : c.zone === "rast" || c.zone === "cloud" ? c.zone : null);
+      const straightKind = (c) => (c.ufo ? "ufo" : c.zone === "rast" || c.zone === "cloud" || c.zone === "piston" ? c.zone : null);
       const straight = straightKind(level[i]);
       if (straight) {
-        // НЛО, «Раст» и «Кловд»: ячейки стоят по прямой, иначе не рассчитать прыжок и полёт стрелок
+        // НЛО, «Раст», «Кловд» и трубы поршня: ячейки стоят по прямой, иначе не рассчитать прыжок и полёт
         const from = i, sx = x;
         for (; i < level.length && straightKind(level[i]) === straight; i++) {
-          const step = straight === "ufo" ? level[i].fill * UFO_SPEED : straight === "cloud" ? level[i].fill * CLOUD_SPEED : RAST_STEP;
+          const step = straight === "ufo" ? level[i].fill * UFO_SPEED
+            : straight === "cloud" ? level[i].fill * CLOUD_SPEED
+            : straight === "piston" ? level[i].fill * PISTON_SPEED : RAST_STEP;
           segs.push([[x, y], [x + step, y]]);
           x += step;
         }
         sections.push({ from, to: i, kind: straight, x: sx });
         continue;
       }
-      if (piston && i === piston.at) {
-        // участок после поршня: персонаж — НЛО, путь из подскоков
-        sections.push({ from: i, to: piston.to, kind: "saucer", x });
-        for (; i < piston.to; i++) {
-          const pts = shape("saucer", x, y, fast ? FAST_STEP : level[i].fill * HOLD_SPEED, rand, st);
-          segs.push(pts);
-          [x, y] = pts[pts.length - 1];
-        }
-        continue;
-      }
       const prev = kind;
       do kind = Math.floor(rand() * KINDS.length); while (kind === prev);
       let end = Math.min(level.length, i + (fast ? 6 + Math.floor(rand() * 7) : 2 + Math.floor(rand() * 2)));
-      for (let k = i; k < end; k++) if (straightKind(level[k]) || (piston && k === piston.at)) end = k;
+      for (let k = i; k < end; k++) if (straightKind(level[k])) end = k;
       sections.push({ from: i, to: end, kind: KINDS[kind], x });
       for (; i < end; i++) {
         const len = level[i].wall ? WALL_STEP : fast ? FAST_STEP : level[i].fill * HOLD_SPEED;
@@ -326,7 +298,7 @@ const course = (() => {
     const endX = x + TO_PORTAL, endY = y;
     const walls = buildWalls(segs, endX, endY, rand);
     const styleId = [...THEME_IDS, ...scenes.names][style];
-    return { segs, sections, scene, styleId, colors, endX, endY, walls, deco: buildDeco(walls, endX, rand), piston };
+    return { segs, sections, scene, styleId, colors, endX, endY, walls, deco: buildDeco(walls, endX, rand) };
   }
 
   /** Стены коридора: середина идёт за сглаженным путём, зазор немного дышит. */
@@ -1034,7 +1006,7 @@ const course = (() => {
   function drawPortals(left, right) {
     for (let i = 1; i < map.sections.length; i++) {
       const sec = map.sections[i];
-      if (sec.kind === "ufo" || sec.kind === "rast" || sec.kind === "saucer" || sec.x < left - 200 || sec.x > right + 200) continue;
+      if (sec.kind === "ufo" || sec.kind === "rast" || sec.kind === "piston" || sec.x < left - 200 || sec.x > right + 200) continue;
       const p = map.segs[sec.from][0];
       drawPortal(p[0], p[1], palette.glow, 104);
     }
@@ -1145,10 +1117,10 @@ const course = (() => {
     ctx.restore();
   }
 
-  /** НЛО из GD: персонаж сидит под стеклянным колпаком в летающей тарелке. hop — доля ячейки: в начале подскока тарелка сжимается. */
-  function drawSaucer(x, y, size, lean, hop) {
+  /** НЛО из GD: персонаж сидит под стеклянным колпаком в летающей тарелке. flap — вспышка взмаха 0..1: тарелка сжимается. */
+  function drawSaucer(x, y, size, lean, flap) {
     const hero = HEROES[opts.hero] || HEROES.circle;
-    const squash = reduce ? 0 : hop < 0.18 ? Math.sin((hop / 0.18) * Math.PI) * 0.16 : 0;
+    const squash = reduce ? 0 : Math.sin(Math.min(1, (1 - flap) * 2.5) * Math.PI) * 0.16 * flap;
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(lean);
@@ -1201,6 +1173,50 @@ const course = (() => {
       ctx.beginPath();
       ctx.arc(-20 + i * 20, 7, 4.5, 0, Math.PI * 2);
       ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Труба поршня, как во Flappy Bird, только сложена из ячеек: столб сверху и столб снизу, между ними просвет.
+   * appear 0..1 — столбы въезжают с краёв экрана, ячейки в них лопаются по очереди от просвета наружу.
+   */
+  function drawPipe(i, appear) {
+    if (appear <= 0) return;
+    const pts = map.segs[i], p = pts[pts.length - 1];
+    const gapY = p[1] - (opts.level[i].gap || 0);
+    const color = COLORS[opts.level[i].arrow];
+    const slide = (1 - appear) ** 2 * 460;
+    const reach = VIEW_H * 0.8; // столб уходит за край экрана
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, appear * 1.6);
+    for (const side of [-1, 1]) {
+      const edge = gapY + side * (PISTON_GAP + slide), far = camY + side * reach;
+      const len = (far - edge) * side;
+      if (len <= 0) continue;
+      // тёмный короб трубы
+      ctx.fillStyle = OUTLINE;
+      ctx.fillRect(p[0] - 33, Math.min(edge, far), 66, len);
+      ctx.strokeStyle = rgba(palette.glow, 0.5);
+      ctx.lineWidth = 3;
+      ctx.strokeRect(p[0] - 33, Math.min(edge, far), 66, len);
+      // ячейки внутри
+      for (let k = 0; (k + 0.5) * PIPE_TILE < len; k++) {
+        const pop = clamp(appear * 6 - k * 0.5, 0, 1);
+        if (pop <= 0) continue;
+        ctx.save();
+        ctx.translate(p[0], edge + side * (PIPE_TILE / 2 + k * PIPE_TILE));
+        ctx.scale(pop, pop);
+        cells.draw(ctx, { skin: opts.cell, r: 23, color, t: time + k * 0.3, hidden: false, k: 0, wrong: false });
+        ctx.restore();
+      }
+      // край трубы у просвета: широкий светлый бортик
+      const lipY = side < 0 ? edge - 16 : edge;
+      ctx.fillStyle = color;
+      ctx.fillRect(p[0] - 44, lipY, 88, 16);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#fff";
+      ctx.strokeRect(p[0] - 44, lipY, 88, 16);
     }
     ctx.restore();
   }
@@ -1366,7 +1382,7 @@ const course = (() => {
       }
 
       if (drop > 1) drawUfo(opts.ufo, p.x, p.y + UFO_DROP + UFO_UNDER, 0.6 * drop / UFO_DROP);
-      p.y += drop - jumpLift(m.air);
+      p.y += drop - jumpLift(m.air) - (opts.level[Math.floor(pos)]?.zone === "piston" ? m.fly || 0 : 0);
 
       const x = clamp(p.x, edgeL, edgeR);
       const inside = x === p.x;
@@ -2557,9 +2573,15 @@ const course = (() => {
     tv = rt.view();
     lastFake = -1;
     reached = 0;
-    map = build(o.level, o.fast, o.seed, o.theme, pickPiston(o.level, o.fast, o.seed, o.pistonOn !== false));
+    // трубы поршня: до него они выглядят обычными ячейками (Was), а начинается он внезапно, без особой ячейки
+    o.level.forEach((cell, i) => {
+      if (cell.zone !== "piston") return;
+      cell.pistonFrom = o.level[i - 1]?.zone === "piston" ? o.level[i - 1].pistonFrom : i;
+      cell.chartAt = cell.pistonFrom - 1;
+    });
+    map = build(o.level, o.fast, o.seed, o.theme);
     press = null;
-    pressed = false;
+    lastReached = 0;
     s = 0;
     parts = [];
     pops = [];
@@ -2609,7 +2631,7 @@ const course = (() => {
     puff = null;
     eaten = 0;
     press = null;
-    pressed = !!map.piston && pos >= map.piston.at; // у нового игрока поршень уже был — сцену не повторяем
+    lastReached = Math.floor(pos); // у нового игрока поршень уже был — сцену не повторяем
     flash = Math.max(flash, 0.4);
   }
 
@@ -2791,6 +2813,14 @@ const course = (() => {
   /** Ячейка заполнена: она лопается в стиле скина, разлетаются пиксели. */
   function filled(i) {
     if (ufoCell(i)) return; // препятствие перепрыгнули, а не заполнили: оно остаётся позади
+    if (opts.level[i].zone === "piston") {
+      // пролетел трубу: в просвете расходится кольцо
+      const pts = map.segs[i], p = pts[pts.length - 1], y = p[1] - (opts.level[i].gap || 0);
+      ring(p[0], y, 130, "#8ff4ff");
+      pixels(p[0], y, 12, COLORS[opts.level[i].arrow], 1);
+      punch = Math.max(punch, 0.2);
+      return;
+    }
     if (opts.level[i].zone === "cloud") {
       dodged(i);
       return;
@@ -2935,13 +2965,13 @@ const course = (() => {
     }
 
     const me = at(s);
-    // конвейерный поршень: игрок дошёл до его ячейки — поршень опускается и забирает персонажа
-    const pist = map.piston;
-    if (pist && !pressed && reached >= pist.at) {
-      pressed = true;
-      if (reached === pist.at && !reduce) press = { start: time, x: 0, y: 0, closed: false, opened: false };
-      else flashOf(0.5, [150, 245, 255]);
+    // конвейерный поршень: игрок вошёл в его участок (впервые или после удара) — поршень опускается и забирает персонажа
+    const entered = opts.level[reached];
+    if (reached !== lastReached && entered?.zone === "piston" && entered.pistonFrom === reached) {
+      if (reduce) flashOf(0.5, [150, 245, 255]);
+      else press = { start: time, x: 0, y: 0, closed: false, opened: false };
     }
+    lastReached = reached;
     const pt = press ? time - press.start : -1;
     if (press && !press.closed && pt >= PISTON_DOWN) {
       // удар: зажим захлопнулся
@@ -2980,10 +3010,20 @@ const course = (() => {
         pixel(me.x + side * 60, me.y + 30, side * (120 + Math.random() * 160), -40 - Math.random() * 80, 0.5, 5 + Math.random() * 7, "rgba(235,235,245,.8)");
       }
     }
-    const saucer = s < n && sectionAt(s).kind === "saucer" && !(press && pt < PISTON_DOWN + PISTON_HOLD);
+    const saucer = pipeShown(Math.floor(s)) && !(press && pt < PISTON_DOWN + PISTON_HOLD);
     // камера смотрит на путь: НЛО и прыжки её не качают
     const pathY = me.y, drop = dropAt(s);
     me.y += drop - jumpLift(o.air);
+    if (pipeShown(Math.floor(s))) me.y = pathY - (o.fly || 0); // НЛО поршня: высоту над путём считает сервер
+    // взмах: НЛО резко пошло вверх — тарелка сжимается, из-под неё бьёт свет
+    const fly = saucer ? o.fly || 0 : 0;
+    const lean = dt > 0 ? clamp(-(fly - lastFly) / dt / 1600, -0.35, 0.35) : 0; // вверх — носом вверх
+    if (fly - lastFly > 4 && flapped < 0.5) {
+      flapped = 1;
+      pixels(me.x, me.y + 30, 10, "#8ff4ff", 0.8);
+    }
+    lastFly = fly;
+    flapped *= Math.exp(-dt * 7);
 
     // гусеница мгновенно перескакивает между потолком и полом; в прыжке — столб света, тряска и поворот камеры
     const crawling = cloudShown(Math.floor(s));
@@ -3108,6 +3148,11 @@ const course = (() => {
           drawDart(i, pathY);
           continue;
         }
+        if (pipeShown(i)) {
+          // труба вырастает сверху и снизу, когда до неё остаётся меньше двух ячеек
+          drawPipe(i, clamp((2.3 - (i + 1 - s)) / 0.8, 0, 1));
+          continue;
+        }
         const wall = i >= cur ? wallK(i) : 0;
         if (wall > 0) {
           drawWall(i, wall, i === cur ? s - cur : 0);
@@ -3160,7 +3205,7 @@ const course = (() => {
       const pose = drop > 1 || air
         ? { spin: air ? Math.min(1, o.air / opts.jump) * Math.PI * 2 : Math.sin(time * 7) * 0.12, sx: 1 + squash, sy: 1 - squash }
         : undefined;
-      if (saucer) drawSaucer(me.x + jitter, me.y + jitter, (o.holding ? 1.08 : 1) * gone, clamp(me.a, -0.8, 0.8) * 0.3, s - Math.floor(s));
+      if (saucer) drawSaucer(me.x + jitter, me.y + jitter, gone, lean, flapped);
       else if (!crawling && !grabbed) drawHero(ctx, opts.hero, me.x + jitter, me.y + jitter + (air ? 0 : Math.sin(time * 5) * 5 + landed * 12), me.a, (o.holding ? 1.14 : 1) * gone, undefined, pose);
     }
     if (press) drawPiston(me.x, me.y);

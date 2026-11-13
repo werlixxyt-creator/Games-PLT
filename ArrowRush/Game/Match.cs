@@ -55,6 +55,10 @@ public sealed class Player
     /// <summary>Сколько прыжков паука дошло до сервера: так клиент узнаёт, что его прыжок учтён.</summary>
     public int Hops { get; set; }
 
+    /// <summary>Поршень: высота НЛО над путём и скорость вверх, единицы сцены.</summary>
+    public double FlyY { get; set; }
+    public double FlyV { get; set; }
+
     /// <summary>«Радуга»: какую стену ломает игрок, -1 — никакую.</summary>
     public int WallAt { get; set; } = -1;
     public int WallHits { get; set; }
@@ -203,6 +207,12 @@ public sealed class Match
             return;
         }
 
+        if (InPiston(p))
+        {
+            Flutter(p, dt);
+            return;
+        }
+
         if (Level[p.Index].Spike)
         {
             Wait(p, dt);
@@ -271,9 +281,66 @@ public sealed class Match
         p.JumpAt = double.NegativeInfinity;
         p.BotSeenIndex = -1;
         p.Progress = 0;
+        p.FlyY = p.FlyV = 0;
 
         if (Punishes) Slip(p);
-        else while (Level[p.Index - 1].Ufo || Level[p.Index - 1].Zone == LevelGenerator.Cloud) p.Index--;
+        else while (Level[p.Index - 1].Ufo || Level[p.Index - 1].Zone is LevelGenerator.Cloud or LevelGenerator.Piston) p.Index--;
+    }
+
+    private bool InPiston(Player p) => Level[p.Index].Zone == LevelGenerator.Piston;
+
+    /// <summary>Поршень ещё держит персонажа: начало первой трубы участка.</summary>
+    private bool Grabbed(Player p) =>
+        (p.Index == 0 || Level[p.Index - 1].Zone != LevelGenerator.Piston)
+        && p.Progress * Level[p.Index].FillSeconds < GameRules.PistonGrabSeconds;
+
+    /// <summary>
+    /// Поршень: НЛО падает, взмахи поднимают его, а к концу ячейки он должен быть в просвете трубы.
+    /// Клиент считает так же (app.js, stepFly), чтобы полёт был плавным.
+    /// </summary>
+    private void Flutter(Player p, double dt)
+    {
+        if (p.IsBot) BotFlutter(p);
+
+        if (Grabbed(p))
+        {
+            p.FlyY = p.FlyV = 0;
+        }
+        else
+        {
+            p.FlyV -= GameRules.PistonGravity * dt;
+            p.FlyY += p.FlyV * dt;
+            if (Math.Abs(p.FlyY) > GameRules.PistonLimit)
+            {
+                p.FlyY = Math.Clamp(p.FlyY, -GameRules.PistonLimit, GameRules.PistonLimit);
+                p.FlyV = 0;
+            }
+        }
+
+        p.Progress += dt / Level[p.Index].FillSeconds;
+        if (p.Progress < 1) return;
+
+        if (Math.Abs(p.FlyY - (Level[p.Index].Gap ?? 0)) <= GameRules.PistonGapHalf) Advance(p);
+        else Crash(p);
+    }
+
+    /// <summary>Взмах: любая стрелка, пока поршень не держит.</summary>
+    private void Flap(Player p)
+    {
+        if (!Grabbed(p)) p.FlyV = GameRules.PistonFlap;
+    }
+
+    /// <summary>Бот машет, когда опустился ниже просвета, а иногда зевает целую трубу и врезается.</summary>
+    private void BotFlutter(Player bot)
+    {
+        bot.HeldMask = 0;
+        if (bot.BotSeenIndex != bot.Index)
+        {
+            bot.BotSeenIndex = bot.Index;
+            bot.BotWrong = _rnd.NextDouble() < BotMistakeChance(0.05) ? 1 : 0;
+        }
+        var gap = Level[bot.Index].Gap ?? 0;
+        if (bot.BotWrong == 0 && bot.FlyY < gap - 20 && bot.FlyV < 60) Flap(bot);
     }
 
     private bool InCloud(Player p) => Level[p.Index].Zone == LevelGenerator.Cloud;
@@ -445,6 +512,10 @@ public sealed class Match
         {
             p.Lane = 1; // паук начинает на полу
         }
+        else if (InPiston(p) && Level[p.Index - 1].Zone != LevelGenerator.Piston)
+        {
+            p.FlyY = p.FlyV = 0; // поршень берёт персонажа с пути
+        }
     }
 
     /// <summary>
@@ -482,6 +553,7 @@ public sealed class Match
             p.Progress = 0;
             p.EnteredAt = GameTime;
             if (InRast(p)) StartHole(p); // ошибка отбросила обратно в «Раст»
+            p.FlyY = p.FlyV = 0;
         }
         else if (++p.Mistakes >= _rules.Lives)
         {
@@ -503,6 +575,7 @@ public sealed class Match
         else if (Phase == MatchPhase.Running && p.Active && InRast(p)) PressRast(p, pressed);
         else if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Wall) HitWall(p);
         else if (Phase == MatchPhase.Running && p.Active && InCloud(p)) Hop(p, pressed);
+        else if (Phase == MatchPhase.Running && p.Active && InPiston(p)) Flap(p);
         else if (Phase == MatchPhase.Running && p.Active && Level[p.Index].Spike) Prick(p);
         else if (Fast) Press(p, pressed);
         else if (Punishes && Phase == MatchPhase.Running && p.Active && (pressed & ~(1 << TargetOf(p.Index))) != 0) Slip(p);
@@ -644,9 +717,10 @@ public sealed class Match
         idleDrain = _diff.IdleDrainPerSecond,
         wrongDrain = _diff.WrongDrainPerSecond,
         jump = GameRules.SwamJumpSeconds,
+        piston = new { grab = GameRules.PistonGrabSeconds, gravity = GameRules.PistonGravity, flap = GameRules.PistonFlap, limit = GameRules.PistonLimit },
         holeStart = GameRules.RastStartGap,
         wallHits = GameRules.WallHits,
-        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall, lane = s.Lane, spike = s.Spike, fake = s.Fake }),
+        level = Level.Select(s => new { arrow = (int)s.Arrow, fill = s.FillSeconds, chart = s.Chart, was = (int?)s.Was, swam = s.Swam, ufo = s.Ufo, @event = s.Event, zone = s.Zone, wall = s.Wall, lane = s.Lane, spike = s.Spike, fake = s.Fake, gap = s.Gap }),
         // блоки, декор и триггеры уровня из редактора; C уже номер ползунка в матче
         objects = Custom?.Objects ?? [],
         world = Custom?.World, // настройки мира: фон, частицы, цвета
@@ -672,6 +746,8 @@ public sealed class Match
             hits = p.WallAt == p.Index ? p.WallHits : 0,
             // сколько секунд длится прыжок, -1 — на земле
             air = GameTime - p.JumpAt < GameRules.SwamJumpSeconds ? Math.Round(GameTime - p.JumpAt, 2) : -1,
+            fy = Math.Round(p.FlyY, 1), // поршень: высота НЛО над путём
+            fv = Math.Round(p.FlyV, 1),
             @out = p.Out,
             done = p.Done,
             place = p.Place,
