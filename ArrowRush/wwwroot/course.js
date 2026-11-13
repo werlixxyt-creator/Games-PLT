@@ -25,19 +25,26 @@ const course = (() => {
   const CELL = 40;           // шаг стен коридора
   const TO_PORTAL = 340;     // от последнего ползунка до финишного портала
   const POP_SECONDS = 0.35;  // как долго лопается заполненная ячейка
-  const UFO_SPEED = 355;     // участок с НЛО: единиц в секунду
+  const UFO_SPEED = 440;     // участок с НЛО: единиц в секунду
   const UFO_DROP = 120;      // насколько персонаж на НЛО ниже пути
   const UFO_UNDER = 60;      // центр НЛО ниже персонажа: тот стоит на куполе
   const UFO_ARRIVE = 0.75;   // сцена прилёта: столько НЛО летит к персонажу
   const OBSTACLE_LOW = 90;   // насколько ячейка-препятствие опускается с пути, прямо на уровень персонажа
   const OBSTACLE_R = 36;
-  const JUMP_HEIGHT = 260;   // высота прыжка с НЛО: выше препятствия он в той же доле прыжка, что на сервере (SwamClearFrom)
+  const JUMP_HEIGHT = 260;   // высота прыжка с НЛО
   // конвейерный поршень: в случайный момент опускается сверху, забирает персонажа и выпускает его НЛО, как в GD.
   // НЛО летит как во Flappy Bird между трубами из ячеек; физику считает сервер (Match.Flutter)
-  const PISTON_DOWN = 0.25;  // столько секунд поршень опускается; вместе с PISTON_HOLD — GameRules.PistonGrabSeconds
-  const PISTON_HOLD = 0.75;  // столько персонаж внутри
-  const PISTON_UP = 0.5;     // столько поршень уходит обратно
-  const SAUCER_HALF = 22;    // половина высоты тарелки: край трубы рисуется дальше хитбокса на столько — удар, когда тарелка коснулась
+  const PISTON_DOWN = 0.2;   // столько секунд поршень опускается; вместе с PISTON_HOLD — GameRules.PistonGrabSeconds
+  const PISTON_HOLD = 0.5;   // столько персонаж внутри
+  const PISTON_UP = 0.35;    // столько поршень уходит обратно
+  // хитбоксы своего персонажа: по ним course.js сам решает, врезался ли он (opts.judge). Чуть меньше нарисованного — задеть краем не обидно
+  const HIT_HERO = 18;       // персонаж в прыжке с НЛО
+  const HIT_SAW = 32;        // пила (нарисована зубьями до 48)
+  const HIT_DART = 16;       // стрелка «Кловда»: столько по ходу гусеница должна быть на другой линии
+  const HIT_PIPE = 33;       // полуширина трубы, как её тёмный короб
+  const HIT_SAUCER_W = 32;   // тарелка: полуширина, выше и ниже центра (GameRules.PistonSaucerUp, PistonSaucerDown)
+  const HIT_SAUCER_UP = 22;
+  const HIT_SAUCER_DOWN = 11;
   const PIPE_TILE = 58;      // шаг ячеек в трубе
 
   // ивенты: подпись особой ячейки, цвет и палитра, в которую уходит космос (овердрайв)
@@ -135,8 +142,10 @@ const course = (() => {
   // трубы видны только после превращения: до него участок выглядит обычным уровнем.
   // pipesFrom — первая ячейка участка, где персонаж уже НЛО, pipesAt — когда он им стал
   let pipesFrom = -1, pipesAt = 0;
-  let pistonSpeed = 420, pistonGap = 107; // скорость вдоль пути и половина нарисованного просвета (от сервера)
+  let pistonSpeed = 520, pistonGap = 100; // скорость вдоль пути и половина просвета (от сервера)
   let heroNow = null;   // где персонаж в этом кадре: в него бьёт удар
+  const judged = new Map(); // свои препятствия: "armed" — персонаж подошёл к нему, "done" — ответ уже дан
+  let judgeTries = -1;      // для какой попытки участка (сколько было ударов)
 
   /** Повторяемый генератор случайных чисел: один и тот же матч — одна и та же траектория. */
   function rng(seed) {
@@ -213,6 +222,56 @@ const course = (() => {
   }
 
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  /** Как далеко въехала труба i, 0..1: в миг превращения ячейки становятся трубами одна за другой. */
+  const pipeAppear = (i) => clamp((time - pipesAt - (i - pipesFrom) * 0.12) / 0.35, 0, 1);
+
+  /**
+   * Удары своего персонажа — по тому, что нарисовано в этом кадре: пила НЛО, стрелка «Кловда», труба поршня.
+   * Препятствие стоит в конце своей ячейки. Пока персонаж проходит его по ширине, хитбоксы не должны пересечься;
+   * прошёл — opts.judge(i, true), врезался — opts.judge(i, false) сразу. Сервер принимает ответ (Match.Verdict).
+   * Судим только препятствие, к которому персонаж подошёл сам: после отката и при наблюдении он оказывается сразу за ним.
+   */
+  function judge(o, me) {
+    if (o.tries !== judgeTries) {
+      judgeTries = o.tries; // новая попытка участка: всё судим заново
+      judged.clear();
+    }
+    if (o.dead) return;
+    const cur = Math.floor(s);
+    for (let i = cur - 1; i <= cur; i++) {
+      const cell = opts.level[i];
+      if (!cell || judged.get(i) === "done") continue;
+      const kind = ufoShown(i) ? "ufo" : cloudShown(i) ? "cloud" : pipeShown(i) ? "pipe" : null;
+      if (!kind) continue;
+      const pts = map.segs[i], p = pts[pts.length - 1];
+      const w = kind === "ufo" ? HIT_HERO + HIT_SAW : kind === "cloud" ? HIT_DART : HIT_PIPE + HIT_SAUCER_W;
+      const dx = me.x - p[0];
+      if (dx < -w) {
+        judged.set(i, "armed");
+        continue;
+      }
+      if (judged.get(i) !== "armed") continue;
+      let hit = false;
+      if (dx <= w) {
+        if (kind === "ufo") {
+          const m = morph(i);
+          hit = Math.hypot(dx, me.y - (p[1] + OBSTACLE_LOW * (1 - (1 - m) ** 3))) < HIT_HERO + HIT_SAW * (0.6 + 0.4 * m);
+        } else if (kind === "cloud") {
+          hit = (o.lane ?? 1) === cell.lane;
+        } else {
+          const gapY = p[1] - (cell.gap || 0), half = pistonGap + (1 - pipeAppear(i)) ** 2 * 460;
+          hit = me.y - HIT_SAUCER_UP < gapY - half || me.y + HIT_SAUCER_DOWN > gapY + half;
+        }
+      }
+      // участок кончился: персонаж может встать на следующей ячейке прямо у препятствия — середину прошёл, значит пролетел
+      const last = !opts.level[i + 1] || !(opts.level[i + 1].ufo || opts.level[i + 1].zone === "cloud" || opts.level[i + 1].zone === "piston");
+      if (hit || dx > w || (last && s >= i + 1 && dx >= 0)) {
+        judged.set(i, "done");
+        opts.judge(i, !hit);
+      }
+    }
+  }
   const rgba = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
   /** Псевдослучайное 0..1 по числу: книги на полках и капли дождя не прыгают от кадра к кадру. */
   const noise = (k) => {
@@ -1128,7 +1187,7 @@ const course = (() => {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(lean);
-    ctx.scale(size * 0.85 * (1 + squash), size * 0.85 * (1 - squash)); // по размеру хитбокса (GameRules.PistonReach, PistonGapHalf)
+    ctx.scale(size * 0.85 * (1 + squash), size * 0.85 * (1 - squash)); // хитбокс чуть меньше: HIT_SAUCER_*
     ctx.lineJoin = "round";
 
     // свет снизу: в начале подскока вспыхивает
@@ -2584,12 +2643,14 @@ const course = (() => {
       cell.chartAt = cell.pistonFrom - 1;
     });
     pistonSpeed = o.piston?.speed ?? 420;
-    pistonGap = (o.piston?.gap ?? 92) - 7 + SAUCER_HALF; // как строгий хитбокс клиента в app.js плюс полтарелки
+    pistonGap = o.piston?.gap ?? 100; // край трубы рисуется ровно там, где он бьёт
     map = build(o.level, o.fast, o.seed, o.theme);
     press = null;
     lastReached = 0;
     pipesFrom = -1;
     heroNow = null;
+    judged.clear();
+    judgeTries = -1;
     s = 0;
     parts = [];
     pops = [];
@@ -2638,6 +2699,7 @@ const course = (() => {
     rain = null;
     puff = null;
     eaten = 0;
+    judged.clear();
     press = null;
     lastReached = Math.floor(pos); // у нового игрока поршень уже был — сцену не повторяем
     pipesFrom = opts.level[lastReached]?.zone === "piston" ? opts.level[lastReached].pistonFrom : -1;
@@ -3065,6 +3127,9 @@ const course = (() => {
       me.y = pathY + crawlY * CLOUD_LANE;
     }
 
+    // свой персонаж и препятствия: удар считаем по тому, что нарисовано в этом кадре
+    if (o.judge && opts.judge) judge(o, me);
+
     // толчок при прыжке и удар при приземлении качают и персонажа, и НЛО
     const air = o.air >= 0;
     if (air && !inAir) {
@@ -3168,7 +3233,7 @@ const course = (() => {
         }
         if (pipeShown(i)) {
           // в миг превращения ячейки одна за другой становятся трубами: ячейка тает, труба въезжает сверху и снизу
-          const a = clamp((time - pipesAt - (i - pipesFrom) * 0.12) / 0.35, 0, 1);
+          const a = pipeAppear(i);
           if (a < 1 && i >= cur) {
             ctx.globalAlpha = 1 - a;
             drawKey(i, false, 0, false);

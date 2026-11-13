@@ -111,8 +111,12 @@ let skinSlot = "slider"; // открытая вкладка на экране с
 function newPrediction() {
   return {
     idx: 0, stunUntil: 0, hitUntil: 0, lastPress: 0, miss: 0, out: false, jumpAt: -Infinity, lane: 1, laneAt: -Infinity, hops: 0,
-    // поршень: свой полёт НЛО, считается здесь же, как на сервере; dead — разбилась о трубу, cleared — трубу позади не проверять
-    fly: { y: 0, v: 0, idx: -1, at: 0, dead: false, deadAt: 0, cleared: -1 },
+    // поршень: свой полёт НЛО, считается здесь же, как на сервере
+    fly: { y: 0, v: 0, idx: -1, at: 0 },
+    // удары о пилы, стрелки «Кловда» и трубы считаем сами, по нарисованному (course.js, judge); сервер принимает ответ.
+    // tries — сколько ударов уже было (со своими, ещё не подтверждёнными), triesAt — когда был последний свой;
+    // dead — разбился и ждёт, пока сервер вернёт к началу участка, персонаж стоит на deadPos; pos — где он на экране
+    tries: 0, triesAt: 0, dead: false, deadPos: 0, pos: 0,
   };
 }
 
@@ -1267,6 +1271,7 @@ function startMatch(d) {
     laser: () => music.sting("laser"),
     clank: (kind) => music.sting(kind), // звуки поршня
     piston: d.piston, // скорость и хитбокс НЛО: по ним стоят трубы
+    judge: judged, // свой персонаж пролетел препятствие или врезался в него
     trailOf: trailOf(me.skin),
   });
   music.level(course.style()); // на этот дизайн уровня может стоять свой трек
@@ -1505,6 +1510,26 @@ function markPassed(prev, idx, total) {
   }
 }
 
+const DEAD_WAIT = 1200; // столько ждём, что сервер подтвердит свой удар; не подтвердил — летим дальше
+
+/**
+ * Свой персонаж прошёл препятствие ячейки i (ok) или врезался в него — так, как это нарисовано.
+ * Удар показываем сразу, сервер его только принимает (Match.Verdict).
+ */
+function judged(i, ok) {
+  if (!match) return;
+  if (conn.state === signalR.HubConnectionState.Connected) conn.send("Verdict", i, ok, pred.tries).catch(() => {});
+  if (ok) return;
+  pred.tries++;
+  pred.triesAt = performance.now();
+  crashed();
+  // где ошибка стоит дорого, участок не начинается заново: персонаж летит дальше
+  if (!match.lives && !match.setback) {
+    pred.dead = true;
+    pred.deadPos = pred.pos;
+  }
+}
+
 /** Удар о ячейку на участке с НЛО. */
 function crashed() {
   fx.retrigger($("stage"), "hit");
@@ -1586,29 +1611,17 @@ function stepFly(idx, pos, now) {
     f.y = f.v = 0;
     return 0;
   }
-  // разбилась: ждём, пока сервер вернёт к началу участка; если он не согласился с ударом — летим дальше
-  if (f.dead && now - f.deadAt < FLY_CONFIRM) return f.y;
-  f.dead = false;
+  // разбилась: стоит, пока сервер не вернёт к началу участка
+  if (pred.dead) return f.y;
   f.v -= phys.gravity * dt;
   f.y += f.v * dt;
   if (Math.abs(f.y) > phys.limit) {
     f.y = Math.max(-phys.limit, Math.min(phys.limit, f.y));
     f.v = 0;
   }
-  // хитбокс как на сервере (Match.Flutter), только чуть строже: удар виден сразу, без задержки сети
-  const len = level[idx].fill * phys.speed, k = Math.min(1, pos - idx);
-  const outside = (cell) => Math.abs(f.y - (cell.gap || 0)) > phys.gap - 7;
-  const front = (1 - k) * len <= phys.reach + 3 && outside(level[idx]);
-  const back = level[idx - 1]?.zone === "piston" && f.cleared !== idx && k * len <= phys.reach + 3 && outside(level[idx - 1]);
-  if (front || back) {
-    f.dead = true;
-    f.deadAt = now;
-    crashed();
-  }
+  // о трубы бьётся course.js: по тому, что нарисовано
   return f.y;
 }
-
-const FLY_CONFIRM = 900; // столько ждём, что сервер подтвердит удар НЛО о трубу
 
 /** Высота НЛО соперника или напарника между снимками сервера: летит по той же дуге. */
 function flyOf(p, elapsed) {
@@ -1785,9 +1798,13 @@ function render(now) {
       }
     }
 
-    // на НЛО прогресс сам идёт к ячейке, а стрелки не бывают неправильными
+    // на НЛО прогресс сам идёт к ячейке, а стрелки не бывают неправильными.
+    // За конец ячейки не упираемся: сервер вот-вот перейдёт на следующую, персонаж летит дальше без остановки
     if (idx === p.idx && (level[idx]?.ufo || level[idx]?.zone === "cloud" || level[idx]?.zone === "piston")) {
-      progress = Math.min(1, p.p + elapsed / level[idx].fill);
+      progress = p.p + elapsed / level[idx].fill;
+      const next = level[idx + 1];
+      const flowing = next && (next.ufo || next.zone === "cloud" || next.zone === "piston");
+      if (progress > 1) progress = flowing ? Math.min(1.3, 1 + (progress - 1) * level[idx].fill / next.fill) : 1;
       wrong = holding = false;
     }
     // стена: прогресс — сколько ударов уже по ней пришлось
@@ -1805,14 +1822,20 @@ function render(now) {
 
     if (isMe) {
       if (p.crash > track.crash) {
-        // удар о трубу уже показан по своему предсказанию — сервер его только подтвердил
-        if (pred.fly.dead) pred.fly.dead = false;
-        else crashed();
+        // свой удар уже показан — сервер его только подтвердил; больше ударов, чем знали мы, — решил сам сервер
+        if (p.crash > pred.tries) crashed();
         pred.fly.y = pred.fly.v = 0;
-        pred.fly.cleared = p.idx;
         pred.fly.idx = p.idx;
       }
       track.crash = p.crash;
+      if (p.crash >= pred.tries) {
+        pred.tries = p.crash;
+        pred.dead = false;
+      } else if (now - pred.triesAt > DEAD_WAIT) {
+        // сервер не принял наш удар (ответ потерялся или опоздал): верим ему и летим дальше
+        pred.tries = p.crash;
+        pred.dead = false;
+      }
       if (p.out && inRast(p) && !track.devoured) {
         track.devoured = true;
         match.holdWatch = now + 1200; // наблюдение начнётся, когда игрока поглотит
@@ -1823,6 +1846,8 @@ function render(now) {
       underFire(track, p, level);
       trackMine(track, idx, wrong, level);
       myPos = idx >= level.length ? level.length + 1 : idx + progress;
+      if (pred.dead) myPos = pred.deadPos; // разбился: стоит там, пока сервер не вернёт к началу участка
+      pred.pos = myPos;
       myWrong = wrong;
       myHolding = holding;
     } else {
@@ -1850,7 +1875,7 @@ function render(now) {
   const myFly = mine ? stepFly(Math.min(Math.floor(myPos), level.length), myPos, now) : 0;
   const view = watched
     ? { pos: watched.idx + watched.p, air: watched.air, hole, hp, lane: watched.lane, fly: flyOf(watched, elapsed), ...handsOf(watched, t) }
-    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp, lane: myLane, fly: myFly, dead: pred.fly.dead };
+    : { pos: myPos, wrong: myWrong, holding: myHolding, air: myAir < match.jump ? myAir : -1, hole, hp, lane: myLane, fly: myFly, dead: pred.dead, judge: !!mine && !mine.out && !mine.done, tries: pred.tries };
   const pos = Math.min(Math.floor(view.pos), level.length);
   course.frame(now, { ...view, mates, energy: music.energy(), part: music.part(), final: pos / level.length >= MARKS[1][0] && pos < level.length });
 
@@ -2013,16 +2038,16 @@ function predictJump() {
   const mine = match && lastState && lastState.players.find((p) => p.slot === match.you);
   if (!mine || mine.out || mine.done) return;
   const now = performance.now();
-  if (match.level[match.press ? pred.idx : mine.idx]?.ufo && now - pred.jumpAt >= match.jump * 1000) pred.jumpAt = now;
+  // по тому, что на экране: сервер впереди на задержку сети и мог уже уйти с участка
+  if (!pred.dead && match.level[Math.floor(pred.pos)]?.ufo && now - pred.jumpAt >= match.jump * 1000) pred.jumpAt = now;
 }
 
 /** Поршень: взмах НЛО виден сразу, те же правила, что на сервере (Match.Flap). */
 function predictFlap() {
   const mine = match && lastState && lastState.players.find((p) => p.slot === match.you);
-  if (!mine || mine.out || mine.done || !match.piston || pred.fly.dead) return;
-  if (match.level[mine.idx]?.zone !== "piston") return;
-  const pos = mine.idx + Math.min(1, mine.p + Math.min((performance.now() - stateAt) / 1000, 0.2) / match.level[mine.idx].fill);
-  if (pistonGrabbed(mine.idx, pos)) return;
+  if (!mine || mine.out || mine.done || !match.piston || pred.dead) return;
+  const idx = Math.floor(pred.pos); // по тому, что на экране
+  if (match.level[idx]?.zone !== "piston" || pistonGrabbed(idx, pred.pos)) return;
   pred.fly.v = match.piston.flap;
   music.sting("hop");
 }
@@ -2040,7 +2065,7 @@ function laneOf(mine, now) {
 /** «Кловд»: гусеница перескакивает сразу, те же правила, что на сервере (Match.Hop). */
 function predictHop(bit) {
   const mine = match && lastState && lastState.players.find((p) => p.slot === match.you);
-  if (!mine || mine.out || mine.done || match.level[mine.idx]?.zone !== "cloud") return;
+  if (!mine || mine.out || mine.done || pred.dead || match.level[Math.floor(pred.pos)]?.zone !== "cloud") return;
   const now = performance.now();
   const from = laneOf(mine, now);
   if (now - pred.laneAt > HOP_TIMEOUT) pred.hops = mine.hops;

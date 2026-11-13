@@ -46,6 +46,9 @@ public sealed class GameHub(MatchManager manager, AppDb db, UserManager<AppUser>
     /// <summary>Какие стрелки сейчас зажаты (битовая маска, см. Arrow).</summary>
     public void Input(int heldMask) => manager.SetInput(Context.ConnectionId, heldMask);
 
+    /// <summary>Пила, стрелка «Кловда» или труба поршня в ячейке index: ok — пролетел, false — врезался. tries — сколько ударов клиент уже знал.</summary>
+    public void Verdict(int index, bool ok, int tries) => manager.Verdict(Context.ConnectionId, index, ok, tries);
+
     public Task LeaveMatch() => manager.LeaveAsync(Context.ConnectionId);
 
     public override Task OnDisconnectedAsync(Exception? exception) => manager.DisconnectAsync(Context.ConnectionId);

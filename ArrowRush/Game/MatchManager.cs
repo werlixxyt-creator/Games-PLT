@@ -95,6 +95,15 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
         }
     }
 
+    public void Verdict(string connectionId, int index, bool ok, int tries)
+    {
+        lock (_lock)
+        {
+            if (_matchByConnection.TryGetValue(connectionId, out var match))
+                match.Verdict(connectionId, index, ok, tries);
+        }
+    }
+
     public Task LeaveAsync(string connectionId)
     {
         List<Outgoing> outbox;

@@ -269,7 +269,7 @@ public static class LevelGenerator
     public static readonly Dictionary<string, SpecialSettings> EditorSpecials = new()
     {
         ["chart"] = new(GameRules.ChartCells, 3, 20),
-        ["swam"] = new(GameRules.SwamCells, 2, 12, HasP: true, DefP: GameRules.SwamCellSeconds, MinP: 0.8, MaxP: 1.6),
+        ["swam"] = new(GameRules.SwamCells, 2, 12, HasP: true, DefP: GameRules.SwamCellSeconds, MinP: 0.6, MaxP: 1.6),
         [Events[0]] = new(GameRules.EventCells, 2, 20, HasP: true, DefP: GameRules.OverdriveFill, MinP: 0.3, MaxP: 0.9),
         [Events[1]] = new(GameRules.EventCells, 2, 20),
         [Events[2]] = new(GameRules.EventCells, 2, 20),

@@ -22,7 +22,7 @@ const levels = (() => {
   const SPECIALS = {
     chart: { name: "Чарт", color: "#f2ad16", n: [10, 3, 20], about: (n) => `Следующие ${n} ячеек становятся такой же стрелкой, как сам чарт` },
     swam: {
-      name: "Свам", color: "#39e6ff", n: [6, 2, 12], p: [0.9, 0.8, 1.6, 0.05, "Время на пилу", "с"],
+      name: "Свам", color: "#39e6ff", n: [6, 2, 12], p: [0.7, 0.6, 1.6, 0.05, "Время на пилу", "с"],
       about: (n) => `Прилетает НЛО: следующие ${n} ячеек — пилы, через них прыгают любой стрелкой`,
     },
     over: {
@@ -92,7 +92,7 @@ const levels = (() => {
   // быстрый тест в превью считает как матч: числа из GameRules.cs и Difficulties
   const QUICK = {
     spikeFast: 0.6, spikeGrace: 0.3, wallHits: 10, wallLives: 10, wallLife: 0.9, overdrive: 0.6,
-    swamIntro: 1.8, swamCell: 0.9, jump: 0.75, clearFrom: 0.12, clearTo: 0.88,
+    swamIntro: 1.5, swamCell: 0.7, jump: 0.6, clearFrom: 0.25, clearTo: 0.75,
   };
   const QUICK_DIFF = {
     easy: { idle: 0.2, wrong: 0.7, stun: 0.35 },

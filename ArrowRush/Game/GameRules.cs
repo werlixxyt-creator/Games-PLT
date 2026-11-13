@@ -47,14 +47,14 @@ public static class GameRules
     // Ячейка «Свам»: персонаж падает на НЛО и перепрыгивает следующие ячейки
     public const int SwamCells = 6;
     /// <summary>За сколько секунд НЛО подлетает к следующей ячейке.</summary>
-    public const double SwamCellSeconds = 0.9;
+    public const double SwamCellSeconds = 0.7;
     /// <summary>Сколько НЛО летит к первой ячейке: за это время идёт сцена его прилёта.</summary>
-    public const double SwamIntroSeconds = 1.8;
+    public const double SwamIntroSeconds = 1.5;
     /// <summary>Сколько длится прыжок. Должно быть меньше <see cref="SwamCellSeconds"/>, иначе не успеть приземлиться.</summary>
-    public const double SwamJumpSeconds = 0.75;
+    public const double SwamJumpSeconds = 0.6;
     /// <summary>В какой доле прыжка персонаж выше ячейки: раньше и позже он в неё врезается.</summary>
-    public const double SwamClearFrom = 0.12;
-    public const double SwamClearTo = 0.88;
+    public const double SwamClearFrom = 0.25;
+    public const double SwamClearTo = 0.75;
 
     // Конвейерный поршень: в случайный момент, без особой ячейки, забирает персонажа и выпускает НЛО.
     // НЛО летит как во Flappy Bird: падает, любая стрелка — взмах вверх; каждая ячейка — труба, пролететь надо в просвет
@@ -63,37 +63,46 @@ public static class GameRules
     /// <summary>Сколько труб: по одной на ячейку. Эти ячейки добавляются к уровню.</summary>
     public const int PistonCells = 3;
     /// <summary>Сколько поршень держит персонажа в начале участка: в это время НЛО стоит, нажатия не считаются.</summary>
-    public const double PistonGrabSeconds = 1.0;
+    public const double PistonGrabSeconds = 0.7;
     /// <summary>Сколько длится первая ячейка: захват и подлёт к первой трубе.</summary>
-    public const double PistonIntroSeconds = 1.7;
+    public const double PistonIntroSeconds = 1.25;
     /// <summary>Через сколько секунд следующая труба.</summary>
-    public const double PistonCellSeconds = 0.9;
+    public const double PistonCellSeconds = 0.75;
     /// <summary>Скорость НЛО вдоль пути, единиц в секунду. Единицы — те же, что на сцене (высота экрана 720).</summary>
-    public const double PistonSpeed = 420;
+    public const double PistonSpeed = 520;
     /// <summary>Падение НЛО, единиц в секунду за секунду.</summary>
-    public const double PistonGravity = 1000;
+    public const double PistonGravity = 1800;
     /// <summary>Скорость вверх после взмаха.</summary>
-    public const double PistonFlap = 400;
+    public const double PistonFlap = 560;
     /// <summary>Выше и ниже пути на столько НЛО не улетает: там потолок и пол.</summary>
     public const double PistonLimit = 230;
+    /// <summary>Половина просвета между трубами — ровно как нарисовано (course.js рисует край трубы здесь).</summary>
+    public const double PistonGapHalf = 100;
     /// <summary>
-    /// Хитбокс: насколько центр НЛО может уйти от центра просвета. На сцене края трубы нарисованы дальше на половину высоты НЛО,
-    /// так что удар засчитывается, когда тарелка касается трубы. Клиент считает удар сразу и чуть строже (на 7), сервер прощает задержку сети.
+    /// Хитбокс тарелки, как в course.js (HIT_SAUCER_*): выше и ниже центра. Он чуть меньше нарисованной тарелки — задеть краем не обидно.
+    /// Удар считает клиент по тому, что нарисовано; сервер по этим числам решает сам, только если ответ клиента не пришёл.
     /// </summary>
-    public const double PistonGapHalf = 92;
-    /// <summary>Хитбокс по ходу полёта: удар считается, пока центр НЛО ближе к оси трубы, чем на столько (полтрубы + полтарелки).</summary>
-    public const double PistonReach = 70;
+    public const double PistonSaucerUp = 22;
+    public const double PistonSaucerDown = 11;
+    /// <summary>Хитбокс по ходу полёта: удар считается, пока центр НЛО ближе к оси трубы, чем на столько (полтрубы 33 + полтарелки 32).</summary>
+    public const double PistonReach = 65;
     /// <summary>Насколько центр просвета уходит от пути и насколько он меняется от трубы к трубе.</summary>
     public const double PistonGapRange = 90;
     public const double PistonGapStep = 70;
+
+    /// <summary>
+    /// Пилы НЛО, стрелки «Кловда», трубы поршня: удар считает клиент — по тому, что видит игрок, без задержки сети.
+    /// Сервер ждёт его ответ о препятствии столько секунд, потом решает сам.
+    /// </summary>
+    public const double VerdictWaitSeconds = 1.0;
 
     // Ивент «Кловд»: игрок становится пауком и уклоняется от стрелок, перескакивая между потолком и полом
     /// <summary>Сколько стрелок летит: по одной на ячейку. Эти ячейки добавляются к уровню.</summary>
     public const int CloudCells = 8;
     /// <summary>Через сколько секунд прилетает следующая стрелка.</summary>
-    public const double CloudCellSeconds = 0.7;
+    public const double CloudCellSeconds = 0.55;
     /// <summary>Сколько летит первая: за это время идёт превращение в паука.</summary>
-    public const double CloudIntroSeconds = 1.7;
+    public const double CloudIntroSeconds = 1.4;
     /// <summary>Как быстро бот реагирует на стрелку: столько секунд до неё он успевает уйти на другую линию.</summary>
     public const double CloudBotSeconds = 0.3;
 

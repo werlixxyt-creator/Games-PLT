@@ -61,6 +61,16 @@ public sealed class Player
     /// <summary>Поршень: на этой ячейке трубу позади не проверяем — игрок врезался и начал с неё заново.</summary>
     public int PipeCleared { get; set; } = -1;
 
+    /// <summary>
+    /// Препятствия, о которых ждём ответ клиента: ячейка, до какого времени ждём и что решил сам сервер
+    /// (null — труба поршня: смотреть <see cref="PipeHits"/>). См. <see cref="GameRules.VerdictWaitSeconds"/>.
+    /// </summary>
+    public List<(int Index, double Deadline, bool? Ok)> Pending { get; } = [];
+    /// <summary>Клиент уже сказал «пролетел», а сервер до препятствия ещё не дошёл.</summary>
+    public HashSet<int> Passed { get; } = [];
+    /// <summary>Поршень: о какие трубы НЛО ударилось по расчёту сервера.</summary>
+    public HashSet<int> PipeHits { get; } = [];
+
     /// <summary>«Радуга»: какую стену ломает игрок, -1 — никакую.</summary>
     public int WallAt { get; set; } = -1;
     public int WallHits { get; set; }
@@ -185,6 +195,8 @@ public sealed class Match
     {
         if (!p.Active) return;
 
+        Settle(p);
+
         if (Level[p.Index].Ufo)
         {
             Ride(p, dt);
@@ -260,8 +272,60 @@ public sealed class Match
         p.Progress += dt / Level[p.Index].FillSeconds;
         if (p.Progress < 1) return;
 
-        if (ClearsCell(p)) Advance(p);
-        else Crash(p);
+        Pass(p, ClearsCell(p));
+    }
+
+    /// <summary>
+    /// Персонаж дошёл до препятствия в конце ячейки. Бота судит сервер. Игрок летит дальше, а удар о препятствие
+    /// пришлёт его клиент: он считает по тому, что нарисовано (см. <see cref="Verdict"/>). Не пришлёт — решит ok.
+    /// </summary>
+    private void Pass(Player p, bool? ok)
+    {
+        var index = p.Index;
+        if (p.IsBot && ok == false)
+        {
+            Crash(p, index);
+            return;
+        }
+        Advance(p);
+        if (!p.IsBot && !p.Passed.Remove(index)) p.Pending.Add((index, GameTime + GameRules.VerdictWaitSeconds, ok));
+    }
+
+    /// <summary>Ответ клиента так и не пришёл: решает то, что посчитал сервер.</summary>
+    private void Settle(Player p)
+    {
+        for (var k = 0; k < p.Pending.Count; k++)
+        {
+            var (index, deadline, ok) = p.Pending[k];
+            if (GameTime < deadline) continue;
+            p.Pending.RemoveAt(k--);
+            if (!(ok ?? !p.PipeHits.Contains(index)))
+            {
+                Crash(p, index);
+                return;
+            }
+        }
+    }
+
+    private static bool Dodged(Slider s) => s.Ufo || s.Zone is LevelGenerator.Cloud or LevelGenerator.Piston;
+
+    /// <summary>
+    /// Клиент пролетел препятствие ячейки index или врезался в него. tries — сколько ударов он знал: ответ о прошлой попытке не считается.
+    /// </summary>
+    public void Verdict(string connectionId, int index, bool ok, int tries)
+    {
+        var p = FindByConnection(connectionId);
+        if (p is null || p.Left || p.IsBot || !p.Active || Phase != MatchPhase.Running || tries != p.Crashes) return;
+        if (index < Math.Max(0, p.Index - 3) || index > p.Index + 1 || index >= Level.Length || !Dodged(Level[index])) return;
+
+        if (!ok)
+        {
+            Crash(p, index);
+            return;
+        }
+        var k = p.Pending.FindIndex(x => x.Index == index);
+        if (k >= 0) p.Pending.RemoveAt(k);
+        else p.Passed.Add(index);
     }
 
     private bool ClearsCell(Player p)
@@ -277,16 +341,35 @@ public sealed class Match
     }
 
     /// <summary>Удар о ячейку. Где ошибка стоит дорого, считает режим, иначе участок с НЛО начинается заново.</summary>
-    private void Crash(Player p)
+    private void Crash(Player p, int index)
     {
         p.Crashes++;
         p.JumpAt = double.NegativeInfinity;
         p.BotSeenIndex = -1;
-        p.Progress = 0;
         p.FlyY = p.FlyV = 0;
+        p.Pending.Clear();
+        p.Passed.Clear();
+        p.PipeHits.Clear();
 
-        if (Punishes) Slip(p);
-        else while (Level[p.Index - 1].Ufo || Level[p.Index - 1].Zone is LevelGenerator.Cloud or LevelGenerator.Piston) p.Index--;
+        if (Punishes)
+        {
+            // игрок мог уже улететь дальше препятствия: тогда просто летит дальше.
+            // Клиент сказал об ударе раньше, чем сервер дошёл до препятствия: сам сервер его второй раз не засчитывает
+            if (p.Index == index)
+            {
+                p.Progress = 0;
+                if (_rules.Setback == 0) p.Passed.Add(index);
+            }
+            Slip(p);
+        }
+        else
+        {
+            p.Index = index;
+            while (p.Index > 0 && Dodged(Level[p.Index - 1])) p.Index--;
+            p.Progress = 0;
+            p.EnteredAt = GameTime;
+            p.Lane = 1;
+        }
         p.PipeCleared = p.Index;
     }
 
@@ -326,20 +409,35 @@ public sealed class Match
         // подлетает к трубе этой ячейки
         if ((1 - p.Progress) * len <= GameRules.PistonReach && !InGap(p, Level[p.Index]))
         {
-            Crash(p);
-            return;
+            if (!HitPipe(p, p.Index)) return;
         }
         // ещё не вылетел из трубы прошлой ячейки; после удара о неё не проверяем — персонаж уже начал заново
-        if (p.Index > 0 && Level[p.Index - 1].Zone == LevelGenerator.Piston && p.PipeCleared != p.Index
+        else if (p.Index > 0 && Level[p.Index - 1].Zone == LevelGenerator.Piston && p.PipeCleared != p.Index
             && p.Progress * len <= GameRules.PistonReach && !InGap(p, Level[p.Index - 1]))
         {
-            Crash(p);
-            return;
+            if (!HitPipe(p, p.Index - 1)) return;
         }
-        if (p.Progress >= 1) Advance(p);
+        if (p.Progress >= 1) Pass(p, null);
     }
 
-    private static bool InGap(Player p, Slider pipe) => Math.Abs(p.FlyY - (pipe.Gap ?? 0)) <= GameRules.PistonGapHalf;
+    /// <summary>Сервер насчитал удар о трубу. Бот разбивается сразу (false — дальше не лететь), про игрока решит его клиент.</summary>
+    private bool HitPipe(Player p, int index)
+    {
+        if (!p.IsBot)
+        {
+            p.PipeHits.Add(index);
+            return true;
+        }
+        Crash(p, index);
+        return false;
+    }
+
+    /// <summary>Тарелка в просвете: её хитбокс (выше центра <see cref="GameRules.PistonSaucerUp"/>, ниже — Down) не задевает края трубы.</summary>
+    private static bool InGap(Player p, Slider pipe)
+    {
+        var off = p.FlyY - (pipe.Gap ?? 0);
+        return off <= GameRules.PistonGapHalf - GameRules.PistonSaucerUp && -off <= GameRules.PistonGapHalf - GameRules.PistonSaucerDown;
+    }
 
     /// <summary>Взмах: любая стрелка, пока поршень не держит.</summary>
     private void Flap(Player p)
@@ -373,8 +471,7 @@ public sealed class Match
         p.Progress += dt / Level[p.Index].FillSeconds;
         if (p.Progress < 1) return;
 
-        if (p.Lane == Level[p.Index].Lane) Crash(p);
-        else Advance(p);
+        Pass(p, p.Lane != Level[p.Index].Lane);
     }
 
     /// <summary>↑ — на потолок, ↓ — на пол, остальные стрелки перебрасывают на другую линию.</summary>
