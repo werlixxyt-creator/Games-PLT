@@ -24,6 +24,10 @@ public sealed class AppUser : IdentityUser
 
     /// <summary>Рейтинг (см. <see cref="ArrowRush.Game.Ranks"/>): растёт за места в рейтинговых матчах, падает за последние.</summary>
     public int Rating { get; set; } = ArrowRush.Game.Ranks.Start;
+    /// <summary>Сколько рейтинговых матчей сыграно: первые <see cref="ArrowRush.Game.Ranks.CalibrationGames"/> — калибровка, звания ещё нет.</summary>
+    public int RatedGames { get; set; }
+    /// <summary>Калибровка: сумма очков за места в её матчах (<see cref="ArrowRush.Game.Ranks.Raw"/>); по ней выдаётся первое звание.</summary>
+    public int CalibrationScore { get; set; }
 }
 
 /// <summary>Заявка в друзья от From к To; принятая заявка — это дружба. На пару игроков одна запись.</summary>

@@ -41,5 +41,24 @@ const ranks = (() => {
     return el;
   }
 
-  return { all: ALL, of, next, shield, badge };
+  /** Калибровка: звания ещё нет — щит со знаком вопроса и деления сыгранных матчей. */
+  function calibration(games, need, { compact = false } = {}) {
+    const el = document.createElement("span");
+    el.className = "rank-badge rank-calib" + (compact ? " compact" : "");
+    el.style.setProperty("--rank", "#b9b3d6");
+    el.style.setProperty("--rank-dark", "#5d5585");
+    const pips = Array.from({ length: need }, (_, i) => `<i class="${i < games ? "on" : ""}"></i>`).join("");
+    el.innerHTML = `<svg class="rank-shield" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path d="M12 1.5 21 5v6.5c0 5.4-3.8 9.6-9 11-5.2-1.4-9-5.6-9-11V5z" fill="#5d5585"/>
+      <path d="M12 3.4 19.2 6.2v5.3c0 4.4-3 7.9-7.2 9.2-4.2-1.3-7.2-4.8-7.2-9.2V6.2z" fill="#b9b3d6"/>
+      <text x="12" y="16" text-anchor="middle" font-size="11" font-weight="900" fill="#2b2450">?</text>
+    </svg><b>Калибровка</b><span class="rank-num">${games}/${need}</span><span class="calib-pips">${pips}</span>`;
+    el.title = `Калибровка: сыграно ${games} из ${need} рейтинговых матчей. После ${need}-го — звание по их итогам`;
+    return el;
+  }
+
+  /** Значок для профиля: звание или калибровка (calibration — { games, need } от сервера). */
+  const of2 = (rating, calib, opt) => (calib ? calibration(calib.games, calib.need, opt) : badge(rating, opt));
+
+  return { all: ALL, of, next, shield, badge, calibration, any: of2 };
 })();

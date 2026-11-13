@@ -103,7 +103,7 @@ const social = (() => {
     $("pf-about").textContent = p.about || (p.relation === "self" ? "Расскажи о себе: нажми «Редактировать»" : "");
     $("pf-about").classList.toggle("empty", !p.about);
     course.paintHero($("pf-hero"), p.hero);
-    $("pf-rank").replaceChildren(...(p.rating != null ? [ranks.badge(p.rating)] : []));
+    $("pf-rank").replaceChildren(...(p.rating != null ? [ranks.any(p.rating, p.calibration)] : []));
     renderActions();
 
     const stats = $("pf-stats");

@@ -132,7 +132,9 @@ public static class AccountEndpoints
             about = user.About,
             color = AvatarColor(user.AvatarColor),
             rating = user.Rating,
-            rank = Ranks.Of(user.Rating),
+            rank = Ranks.Calibrating(user.RatedGames) ? null : Ranks.Of(user.Rating),
+            // калибровка: звания ещё нет, видно, сколько матчей сыграно из нужных
+            calibration = Ranks.Calibrating(user.RatedGames) ? new { games = user.RatedGames, need = Ranks.CalibrationGames } : null,
             avatarColors = AvatarColors,
             // входящие заявки в друзья — значок на кнопке «Друзья»
             incoming = await db.Friendships.CountAsync(f => f.ToId == userId && !f.Accepted),

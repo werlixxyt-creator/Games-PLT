@@ -298,14 +298,34 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
             using var scope = scopes.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDb>();
             // рейтинг: очки за место поправляем по рейтингу игрока (ниже старта потери мягче) и сразу прибавляем
-            var ratings = new List<(string User, int Delta, int Rating)>();
+            // калибровка: первые матчи звания не меняют, их очки копятся; после последнего выдаётся звание
+            var ratings = new List<(string User, object Event)>();
             foreach (var p in records.SelectMany(r => r.Participants).Where(p => p is { RatingDelta: not null, UserId: not null }))
             {
                 var user = await db.Users.FindAsync(p.UserId);
                 if (user is null) continue;
-                p.RatingDelta = Ranks.Apply(p.RatingDelta!.Value, user.Rating);
+                var raw = p.RatingDelta!.Value;
+                if (Ranks.Calibrating(user.RatedGames))
+                {
+                    user.RatedGames++;
+                    user.CalibrationScore += raw;
+                    var placed = !Ranks.Calibrating(user.RatedGames);
+                    if (placed) user.Rating = Ranks.Calibrated(user.CalibrationScore);
+                    p.RatingDelta = 0; // рейтинг до звания не двигался
+                    ratings.Add((user.Id, new
+                    {
+                        calibration = new { games = user.RatedGames, need = Ranks.CalibrationGames, score = raw },
+                        placed,
+                        delta = 0,
+                        rating = user.Rating,
+                        rank = placed ? Ranks.Of(user.Rating) : null,
+                    }));
+                    continue;
+                }
+                user.RatedGames++;
+                p.RatingDelta = Ranks.Apply(raw, user.Rating);
                 user.Rating += p.RatingDelta.Value;
-                ratings.Add((user.Id, p.RatingDelta.Value, user.Rating));
+                ratings.Add((user.Id, new { calibration = (object?)null, placed = false, delta = p.RatingDelta.Value, rating = user.Rating, rank = Ranks.Of(user.Rating) }));
             }
             db.Matches.AddRange(records);
             await db.SaveChangesAsync();
@@ -313,8 +333,8 @@ public sealed partial class MatchManager(IHubContext<GameHub> hub, IServiceScope
             // клиент уже мог перечитать профиль: матч сохраняется позже, чем приходят итоги
             var users = records.SelectMany(r => r.Participants).Select(p => p.UserId).OfType<string>().Distinct().ToList();
             await hub.Clients.Users(users).SendAsync("stats");
-            foreach (var (user, delta, rating) in ratings)
-                await hub.Clients.User(user).SendAsync("rating", new { delta, rating, rank = Ranks.Of(rating) });
+            foreach (var (user, ev) in ratings)
+                await hub.Clients.User(user).SendAsync("rating", ev);
         }
         catch (Exception e)
         {

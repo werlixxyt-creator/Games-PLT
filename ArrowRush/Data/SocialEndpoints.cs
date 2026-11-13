@@ -51,17 +51,18 @@ public static class SocialEndpoints
     private static string Relation(Friendship? link, string me) =>
         link is null ? "none" : link.Accepted ? "friends" : link.FromId == me ? "outgoing" : "incoming";
 
-    /// <summary>Топ игроков по рейтингу и место того, кто спрашивает (его строка — me, даже если он не в топе).</summary>
+    /// <summary>Топ игроков по рейтингу (только со званием — прошедшие калибровку) и место того, кто спрашивает: его строка — me, даже если он не в топе.</summary>
     private static async Task<IResult> Leaderboard(ClaimsPrincipal principal, AppDb db)
     {
         var me = Me(principal);
-        var top = await db.Users
+        var top = await db.Users.Where(u => u.RatedGames >= Ranks.CalibrationGames)
             .OrderByDescending(u => u.Rating).ThenBy(u => u.CreatedAt)
             .Take(LeaderboardSize)
             .Select(u => new { u.Id, u.UserName, u.AvatarColor, u.Rating })
             .ToListAsync();
-        var mine = await db.Users.Where(u => u.Id == me).Select(u => new { u.UserName, u.AvatarColor, u.Rating }).FirstOrDefaultAsync();
-        var place = mine is null ? 0 : await db.Users.CountAsync(u => u.Rating > mine.Rating) + 1;
+        var mine = await db.Users.Where(u => u.Id == me).Select(u => new { u.UserName, u.AvatarColor, u.Rating, u.RatedGames }).FirstOrDefaultAsync();
+        var calibrating = mine is not null && Ranks.Calibrating(mine.RatedGames);
+        var place = mine is null || calibrating ? 0 : await db.Users.CountAsync(u => u.RatedGames >= Ranks.CalibrationGames && u.Rating > mine.Rating) + 1;
 
         return Results.Ok(new
         {
@@ -74,7 +75,15 @@ public static class SocialEndpoints
                 rank = Ranks.Of(u.Rating),
                 me = u.Id == me,
             }),
-            me = mine is null ? null : new { place, userName = mine.UserName, color = AccountEndpoints.AvatarColor(mine.AvatarColor), rating = mine.Rating, rank = Ranks.Of(mine.Rating) },
+            me = mine is null ? null : new
+            {
+                place,
+                userName = mine.UserName,
+                color = AccountEndpoints.AvatarColor(mine.AvatarColor),
+                rating = mine.Rating,
+                rank = calibrating ? null : Ranks.Of(mine.Rating),
+                calibration = calibrating ? new { games = mine.RatedGames, need = Ranks.CalibrationGames } : null,
+            },
         });
     }
 
@@ -128,7 +137,9 @@ public static class SocialEndpoints
             about = user.About,
             color = AccountEndpoints.AvatarColor(user.AvatarColor),
             rating = user.Rating,
-            rank = Ranks.Of(user.Rating),
+            rank = Ranks.Calibrating(user.RatedGames) ? null : Ranks.Of(user.Rating),
+            // калибровка: звания ещё нет, видно, сколько матчей сыграно из нужных
+            calibration = Ranks.Calibrating(user.RatedGames) ? new { games = user.RatedGames, need = Ranks.CalibrationGames } : null,
             hero = Skins.Equipped(Skins.Hero, user.HeroSkin),
             // SQLite теряет пометку UTC
             joined = DateTime.SpecifyKind(user.CreatedAt, DateTimeKind.Utc),

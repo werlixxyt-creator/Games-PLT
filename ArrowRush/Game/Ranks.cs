@@ -24,6 +24,20 @@ public static class Ranks
 
     public static string Of(int rating) => All.Last(r => rating >= r.From).Id;
 
+    /// <summary>Калибровка: столько рейтинговых матчей играется без звания, потом оно выдаётся по их итогам.</summary>
+    public const int CalibrationGames = 10;
+    /// <summary>Первое звание не выше Алмаза и не ниже Бронзы: дальше — обычным рейтингом.</summary>
+    public const int CalibrationMin = 700;
+    public const int CalibrationMax = 1750;
+
+    /// <summary>
+    /// Рейтинг после калибровки по сумме очков за её матчи (<see cref="Raw"/>: места, победы команд, сложность, выходы).
+    /// Очки калибровки весят втрое: 10 побед подряд на нормальной — Алмаз, половина побед в дуэлях — Серебро, все поражения — Бронза.
+    /// </summary>
+    public static int Calibrated(int score) => Math.Clamp(Start + 3 * score, CalibrationMin, CalibrationMax);
+
+    public static bool Calibrating(int ratedGames) => ratedGames < CalibrationGames;
+
     /// <summary>Очки за матч по месту, без учёта рейтинга игрока (его знает только база, см. <see cref="Apply"/>).</summary>
     public static int Raw(int place, int players, bool teams, bool won, bool left, Difficulty difficulty)
     {

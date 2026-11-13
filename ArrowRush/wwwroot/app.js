@@ -43,7 +43,7 @@ const MENU_SCREENS = new Set(["auth", "menu", "modes", "stats", "skins", "search
 // советы под витриной в меню
 const TIPS = [
   "«Волна»: держи стрелку — летишь вверх под 45°, отпусти — вниз. Короткие нажатия держат её ровно.",
-  "Рейтинг растёт за места в матчах из поиска. Тренировки и лобби его не трогают.",
+  "Первые 10 матчей из поиска — калибровка: чем лучше места, тем выше первое звание.",
   "Не понимаешь, обо что разбился? Включи хитбоксы в ⚙ Настройках.",
   "Через пилы НЛО прыгай заранее: лучше всего — примерно за треть секунды до пилы.",
   "В «Зеркале» держи стрелку, противоположную нарисованной.",
@@ -602,7 +602,7 @@ $("btn-showcase").addEventListener("click", () => social.open(profile.userName))
 /** Значок ранга в меню, под ником. */
 function renderRank() {
   if (!profile || profile.rating == null) return;
-  $("showcase-rank").replaceChildren(ranks.badge(profile.rating));
+  $("showcase-rank").replaceChildren(ranks.any(profile.rating, profile.calibration));
 }
 
 /** Топ игроков на экране статистики: место, ник, ранг; своя строка — внизу, если не попал в топ. */
@@ -634,18 +634,22 @@ function leaderRow(p, i) {
   n.textContent = p.userName;
   n.addEventListener("click", () => social.open(p.userName));
   name.append(n);
-  li.append(place, name, ranks.badge(p.rating, { compact: true }));
+  // своя строка во время калибровки: места ещё нет
+  if (p.calibration) place.textContent = "—";
+  li.append(place, name, ranks.any(p.rating, p.calibration, { compact: !p.calibration }));
   return li;
 }
 
 /**
  * Рейтинг за только что сыгранный матч: сервер присылает его, когда сохранит матч.
- * В итогах — сколько дали и ранг; новый ранг — вывеска и салют.
+ * Калибровка — деления и очки за этот матч; после последнего её матча — звание с большой сценой.
+ * Иначе — сколько рейтинга дали и ранг; новый ранг — вывеска и салют.
  */
 function ratingChanged(d) {
   if (!profile) return;
-  const before = profile.rating ?? d.rating - d.delta;
+  const before = profile.calibration ? null : profile.rating ?? d.rating - d.delta;
   profile.rating = d.rating;
+  profile.calibration = d.calibration && !d.placed ? { games: d.calibration.games, need: d.calibration.need } : null;
   renderRank();
   const box = $("res-rating");
   if (box.dataset.wait !== "1") {
@@ -660,8 +664,45 @@ let lastRating = null; // рейтинг, пришедший раньше ито
 function showRating(d, before) {
   const box = $("res-rating");
   box.dataset.wait = "0";
-  const up = ranks.of(d.rating).from > ranks.of(before).from;
-  const down = ranks.of(d.rating).from < ranks.of(before).from;
+  box.className = "res-rating";
+  const c = d.calibration;
+  if (c && !d.placed) {
+    const score = document.createElement("span");
+    score.className = "res-delta " + (c.score > 0 ? "up" : c.score < 0 ? "down" : "");
+    score.textContent = `${c.score > 0 ? "+" : c.score < 0 ? "−" : "±"}${Math.abs(c.score)}`;
+    const left = document.createElement("span");
+    left.className = "muted small";
+    left.textContent = `ещё ${c.need - c.games} ${plural(c.need - c.games, "матч", "матча", "матчей")} до звания`;
+    box.replaceChildren(ranks.calibration(c.games, c.need), score, left);
+    box.title = "Очки калибровки за матч: из них после последнего матча сложится звание";
+    return;
+  }
+  if (d.placed) {
+    // калибровка завершена: звание «открывается» — щит крутится, салют цветом ранга
+    const rank = ranks.of(d.rating);
+    const title = document.createElement("b");
+    title.className = "res-promo";
+    title.textContent = "Калибровка завершена!";
+    const reveal = ranks.badge(d.rating);
+    reveal.classList.add("rank-reveal");
+    const next = ranks.next(d.rating);
+    const toNext = document.createElement("span");
+    toNext.className = "muted small";
+    toNext.textContent = next ? `до ранга «${next.name}» — ${next.from - d.rating}` : "высший ранг";
+    box.replaceChildren(title, reveal, toNext);
+    box.classList.add("promoted", "placed");
+    box.style.setProperty("--rank", rank.color);
+    setTimeout(() => {
+      const [x, y] = fx.anchor(reveal);
+      fx.ring(x, y, rank.color, 320, 7);
+      fx.ring(x, y, "#ffffff", 180, 4);
+      fx.burst(x, y, rank.color, 60, 1.8);
+      music.sting("pistonUp");
+    }, 900);
+    return;
+  }
+  const up = before != null && ranks.of(d.rating).from > ranks.of(before).from;
+  const down = before != null && ranks.of(d.rating).from < ranks.of(before).from;
   const sign = d.delta > 0 ? "+" : d.delta < 0 ? "−" : "±";
   const delta = document.createElement("span");
   delta.className = "res-delta " + (d.delta > 0 ? "up" : d.delta < 0 ? "down" : "");
@@ -1481,7 +1522,7 @@ function showResults(r) {
   rating.hidden = !(r.rated && me);
   rating.className = "res-rating";
   rating.dataset.wait = rating.hidden ? "0" : "1";
-  rating.textContent = "Считаем рейтинг…";
+  rating.textContent = profile && profile.calibration ? "Считаем калибровку…" : "Считаем рейтинг…";
   if (!rating.hidden && lastRating && performance.now() - lastRating.at < 15000) {
     showRating(lastRating, lastRating.before);
     lastRating = null;

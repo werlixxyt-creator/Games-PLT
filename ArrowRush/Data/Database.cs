@@ -55,6 +55,8 @@ public static class Database
         AddColumnIfMissing(db, "AspNetUsers", "AvatarColor", "TEXT NULL");
         AddColumnIfMissing(db, "AspNetUsers", "Rating", $"INTEGER NOT NULL DEFAULT {ArrowRush.Game.Ranks.Start}");
         AddColumnIfMissing(db, "MatchParticipants", "RatingDelta", "INTEGER NULL");
+        AddColumnIfMissing(db, "AspNetUsers", "RatedGames", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(db, "AspNetUsers", "CalibrationScore", "INTEGER NOT NULL DEFAULT 0");
         // EnsureCreated не добавляет и новые таблицы; SQLite принимает типы PostgreSQL
         db.ExecuteSqlRaw("""
             CREATE TABLE IF NOT EXISTS "Friendships" (
